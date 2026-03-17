@@ -1,73 +1,184 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+# Noderax API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Noderax is an agent-based infrastructure management platform. This repository contains the monolithic NestJS control plane API used by the web dashboard and remote Go agents.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Stack
 
-## Description
+- NestJS 10
+- TypeScript
+- PostgreSQL with TypeORM
+- Redis for pub/sub and future queue work
+- JWT authentication
+- Socket.IO gateway for realtime updates
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Module Layout
 
-## Installation
-
-```bash
-$ pnpm install
+```text
+src/
+  modules/
+    agents/
+    auth/
+    events/
+    metrics/
+    nodes/
+    notifications/
+    realtime/
+    tasks/
+    users/
+  common/
+    decorators/
+    filters/
+    guards/
+    interceptors/
+    interfaces/
+  config/
+  database/
+  redis/
 ```
 
-## Running the app
+## MVP Features
+
+- JWT login flow with seeded default admin
+- User roles: `admin`, `user`
+- Node inventory with heartbeat-driven online status
+- Agent registration with generated agent token
+- Metrics ingestion persisted to PostgreSQL
+- Task creation and retrieval
+- Event persistence with notification stubs
+- Realtime broadcasts for node, metric, task, and event updates
+
+## Quick Start
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm install
+cp .env.example .env
+pnpm start:dev
 ```
 
-## Test
+The API listens on `http://localhost:3000` by default.
+
+## Environment
+
+Key variables are documented in `.env.example`.
+
+Important defaults:
+
+- `SEED_DEFAULT_ADMIN=true`
+- `ADMIN_EMAIL=admin@noderax.local`
+- `ADMIN_PASSWORD=ChangeMe123!`
+- `DB_SYNCHRONIZE=true` for local MVP development
+
+## Main Endpoints
+
+### Public
+
+- `GET /health`
+- `POST /auth/login`
+- `POST /agent/register`
+- `POST /agent/heartbeat`
+- `POST /agent/metrics`
+
+### Authenticated
+
+- `GET /users/me`
+- `GET /nodes`
+- `GET /nodes/:id`
+- `GET /metrics`
+- `GET /tasks`
+- `GET /tasks/:id`
+- `GET /events`
+
+### Admin
+
+- `GET /users`
+- `POST /users`
+- `POST /nodes`
+- `DELETE /nodes/:id`
+
+## Example Flow
+
+### 1. Login
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@noderax.local",
+    "password": "ChangeMe123!"
+  }'
 ```
 
-## Support
+### 2. Register an Agent
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+curl -X POST http://localhost:3000/agent/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "hostname": "srv-01",
+    "os": "ubuntu-24.04",
+    "arch": "amd64"
+  }'
+```
 
-## Stay in touch
+### 3. Send a Heartbeat
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```bash
+curl -X POST http://localhost:3000/agent/heartbeat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nodeId": "generated-node-id",
+    "agentToken": "generated-agent-token"
+  }'
+```
 
-## License
+### 4. Ingest Metrics
 
-Nest is [MIT licensed](LICENSE).
+```bash
+curl -X POST http://localhost:3000/agent/metrics \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nodeId": "generated-node-id",
+    "agentToken": "generated-agent-token",
+    "cpuUsage": 74.2,
+    "memoryUsage": 63.1,
+    "diskUsage": 48.9,
+    "networkStats": {
+      "rxBytes": 124000,
+      "txBytes": 98000
+    }
+  }'
+```
+
+### 5. Create a Task
+
+```bash
+curl -X POST http://localhost:3000/tasks \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <jwt>" \
+  -d '{
+    "nodeId": "generated-node-id",
+    "type": "shell.exec",
+    "payload": {
+      "command": "docker ps"
+    }
+  }'
+```
+
+## Realtime
+
+Socket.IO is exposed at the `realtime` namespace.
+
+- Connect to `/realtime`
+- Subscribe to node-specific events with `subscribe.node`
+- Published events include:
+  - `node.status.updated`
+  - `metrics.ingested`
+  - `task.created`
+  - `task.updated`
+  - `event.created`
+
+## Notes
+
+- Agent metrics ingestion requires `agentToken` for authentication.
+- Redis is optional at runtime. If unavailable, the API still works and logs Redis connection warnings when publish operations are attempted.
+- Notifications are stubbed and ready for Telegram or webhook integrations later.
