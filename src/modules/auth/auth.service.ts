@@ -2,6 +2,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { JwtPayload } from '../../common/types/jwt-payload.type';
 import { authConfig } from '../../config';
 import { LoginDto } from './dto/login.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
@@ -48,5 +50,50 @@ export class AuthService {
       expiresIn: authSettings.jwtExpiresIn,
       user: this.usersService.toResponse(user),
     };
+  }
+
+  async verifyAccessToken(accessToken: string): Promise<AuthenticatedUser> {
+    try {
+      const payload =
+        await this.jwtService.verifyAsync<JwtPayload>(accessToken);
+      return this.validateJwtPayload(payload);
+    } catch (error) {
+      throw this.createTokenVerificationException(error);
+    }
+  }
+
+  async validateJwtPayload(payload: JwtPayload): Promise<AuthenticatedUser> {
+    const user = await this.usersService
+      .findOneOrFail(payload.sub)
+      .catch(() => null);
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('Invalid authentication token');
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
+  }
+
+  private createTokenVerificationException(
+    error: unknown,
+  ): UnauthorizedException {
+    const errorName = error instanceof Error ? error.name : undefined;
+
+    if (errorName === 'TokenExpiredError') {
+      return new UnauthorizedException('Authentication token expired');
+    }
+
+    if (errorName === 'JsonWebTokenError' || errorName === 'NotBeforeError') {
+      return new UnauthorizedException('Invalid authentication token');
+    }
+
+    return new UnauthorizedException(
+      'Authentication token could not be verified',
+    );
   }
 }

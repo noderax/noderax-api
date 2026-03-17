@@ -9,3 +9,10 @@ export const REALTIME_EVENTS = {
   TASK_UPDATED: 'task.updated',
   UNSUBSCRIBE_NODE: 'unsubscribe.node',
 } as const;
+
+export const REALTIME_ERROR_CODES = {
+  BAD_REQUEST: 'BAD_REQUEST',
+  FORBIDDEN: 'FORBIDDEN',
+  NOT_FOUND: 'NOT_FOUND',
+  UNAUTHORIZED: 'UNAUTHORIZED',
+} as const;
