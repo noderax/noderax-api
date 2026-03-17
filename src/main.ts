@@ -1,5 +1,5 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigService, ConfigType } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import {
   DocumentBuilder,
@@ -7,8 +7,10 @@ import {
   SwaggerModule,
 } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { SWAGGER_BEARER_AUTH_NAME } from './common/constants/swagger.constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { appConfig } from './config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -16,12 +18,12 @@ async function bootstrap() {
   });
 
   const configService = app.get(ConfigService);
+  const appSettings = configService.getOrThrow<ConfigType<typeof appConfig>>(
+    appConfig.KEY,
+  );
   const logger = new Logger('Bootstrap');
-  const apiPrefix = configService.get<string>('app.apiPrefix');
-  const port = configService.get<number>('app.port', 3000);
-  const corsOrigin = configService.get<string>('app.corsOrigin', '*');
-  const swaggerEnabled = configService.get<boolean>('app.swaggerEnabled', true);
-  const swaggerPath = configService.get<string>('app.swaggerPath', 'docs');
+  const { apiPrefix, corsOrigin, port, swaggerEnabled, swaggerPath } =
+    appSettings;
 
   if (apiPrefix) {
     app.setGlobalPrefix(apiPrefix);
@@ -63,7 +65,7 @@ async function bootstrap() {
             'Paste a JWT access token to authorize protected endpoints.',
           in: 'header',
         },
-        'bearer',
+        SWAGGER_BEARER_AUTH_NAME,
       )
       .build();
 

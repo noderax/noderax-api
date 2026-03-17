@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
+import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RedisService } from '../../redis/redis.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodeStatus } from '../nodes/entities/node-status.enum';
 import { NodesService } from '../nodes/nodes.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { AgentHeartbeatResponseDto } from './dto/agent-heartbeat-response.dto';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
+import { AgentRegisterResponseDto } from './dto/agent-register-response.dto';
 import { AgentRegisterDto } from './dto/agent-register.dto';
 
 @Injectable()
@@ -18,7 +22,9 @@ export class AgentsService {
     private readonly redisService: RedisService,
   ) {}
 
-  async register(agentRegisterDto: AgentRegisterDto) {
+  async register(
+    agentRegisterDto: AgentRegisterDto,
+  ): Promise<AgentRegisterResponseDto> {
     const agentToken = randomBytes(32).toString('hex');
     const agentTokenHash = this.nodesService.hashAgentToken(agentToken);
 
@@ -31,7 +37,7 @@ export class AgentsService {
 
     await this.eventsService.record({
       nodeId: node.id,
-      type: 'node.registered',
+      type: SYSTEM_EVENT_TYPES.NODE_REGISTERED,
       severity: EventSeverity.INFO,
       message: `Node ${node.hostname} registered with the control plane`,
     });
@@ -44,7 +50,10 @@ export class AgentsService {
     };
 
     this.realtimeGateway.emitNodeStatusUpdate(statusPayload);
-    await this.redisService.publish('nodes.status.updated', statusPayload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
+      statusPayload,
+    );
 
     return {
       nodeId: node.id,
@@ -52,7 +61,9 @@ export class AgentsService {
     };
   }
 
-  async heartbeat(agentHeartbeatDto: AgentHeartbeatDto) {
+  async heartbeat(
+    agentHeartbeatDto: AgentHeartbeatDto,
+  ): Promise<AgentHeartbeatResponseDto> {
     const node = await this.nodesService.authenticateAgent(
       agentHeartbeatDto.nodeId,
       agentHeartbeatDto.agentToken,
@@ -63,7 +74,7 @@ export class AgentsService {
     if (wasOffline) {
       await this.eventsService.record({
         nodeId: updatedNode.id,
-        type: 'node.online',
+        type: SYSTEM_EVENT_TYPES.NODE_ONLINE,
         severity: EventSeverity.INFO,
         message: `Node ${updatedNode.hostname} is back online`,
       });
@@ -77,7 +88,10 @@ export class AgentsService {
     };
 
     this.realtimeGateway.emitNodeStatusUpdate(statusPayload);
-    await this.redisService.publish('nodes.status.updated', statusPayload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
+      statusPayload,
+    );
 
     return {
       acknowledged: true,

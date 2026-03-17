@@ -17,6 +17,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user-role.enum';
 import { CreateNodeDto } from './dto/create-node.dto';
@@ -25,7 +26,7 @@ import { NodeEntity } from './entities/node.entity';
 import { NodesService } from './nodes.service';
 
 @ApiTags('Nodes')
-@ApiBearerAuth('bearer')
+@ApiBearerAuth(SWAGGER_BEARER_AUTH_NAME)
 @ApiUnauthorizedResponse({
   description: 'JWT authentication required.',
 })

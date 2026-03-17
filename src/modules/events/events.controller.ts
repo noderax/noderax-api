@@ -6,12 +6,13 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { EventsService } from './events.service';
 import { QueryEventsDto } from './dto/query-events.dto';
 import { EventEntity } from './entities/event.entity';
 
 @ApiTags('Events')
-@ApiBearerAuth('bearer')
+@ApiBearerAuth(SWAGGER_BEARER_AUTH_NAME)
 @ApiUnauthorizedResponse({
   description: 'JWT authentication required.',
 })

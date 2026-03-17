@@ -8,16 +8,17 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UserRole } from './entities/user-role.enum';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
-@ApiBearerAuth('bearer')
+@ApiBearerAuth(SWAGGER_BEARER_AUTH_NAME)
 @ApiUnauthorizedResponse({
   description: 'JWT authentication required.',
 })

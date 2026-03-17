@@ -4,11 +4,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
+import { authConfig, bootstrapConfig } from '../../config';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UserResponseDto } from './dto/user-response.dto';
 import { UserEntity } from './entities/user.entity';
 import { UserRole } from './entities/user-role.enum';
 
@@ -22,7 +24,7 @@ export class UsersService {
     private readonly configService: ConfigService,
   ) {}
 
-  async create(createUserDto: CreateUserDto) {
+  async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
     const existingUser = await this.usersRepository.findOne({
       where: { email: createUserDto.email },
     });
@@ -44,7 +46,7 @@ export class UsersService {
     return this.toResponse(savedUser);
   }
 
-  async findAll() {
+  async findAll(): Promise<UserResponseDto[]> {
     const users = await this.usersRepository.find({
       order: { createdAt: 'DESC' },
     });
@@ -77,7 +79,9 @@ export class UsersService {
   }
 
   async ensureDefaultAdmin() {
-    const bootstrap = this.configService.get('bootstrap');
+    const bootstrap = this.configService.getOrThrow<
+      ConfigType<typeof bootstrapConfig>
+    >(bootstrapConfig.KEY);
 
     if (!bootstrap.seedDefaultAdmin) {
       return;
@@ -104,7 +108,7 @@ export class UsersService {
     this.logger.log(`Seeded default admin user: ${bootstrap.adminEmail}`);
   }
 
-  toResponse(user: UserEntity) {
+  toResponse(user: UserEntity): UserResponseDto {
     return {
       id: user.id,
       email: user.email,
@@ -117,7 +121,9 @@ export class UsersService {
   }
 
   private async hashPassword(password: string) {
-    const auth = this.configService.get('auth');
+    const auth = this.configService.getOrThrow<ConfigType<typeof authConfig>>(
+      authConfig.KEY,
+    );
     return bcrypt.hash(password, auth.bcryptSaltRounds);
   }
 }

@@ -9,6 +9,10 @@ import {
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import {
+  REALTIME_EVENTS,
+  REALTIME_NODE_ROOM_PREFIX,
+} from '../../common/constants/realtime.constants';
 
 @WebSocketGateway({
   namespace: 'realtime',
@@ -33,60 +37,66 @@ export class RealtimeGateway
     this.logger.debug(`Client disconnected: ${client.id}`);
   }
 
-  @SubscribeMessage('subscribe.node')
+  @SubscribeMessage(REALTIME_EVENTS.SUBSCRIBE_NODE)
   handleNodeSubscription(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { nodeId: string },
   ) {
-    client.join(`node:${payload.nodeId}`);
+    client.join(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`);
     return { subscribed: true, nodeId: payload.nodeId };
   }
 
-  @SubscribeMessage('unsubscribe.node')
+  @SubscribeMessage(REALTIME_EVENTS.UNSUBSCRIBE_NODE)
   handleNodeUnsubscribe(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { nodeId: string },
   ) {
-    client.leave(`node:${payload.nodeId}`);
+    client.leave(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`);
     return { unsubscribed: true, nodeId: payload.nodeId };
   }
 
   emitNodeStatusUpdate(payload: Record<string, unknown>) {
-    this.server.emit('node.status.updated', payload);
+    this.server.emit(REALTIME_EVENTS.NODE_STATUS_UPDATED, payload);
     if (payload.nodeId) {
       this.server
-        .to(`node:${payload.nodeId}`)
-        .emit('node.status.updated', payload);
+        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
+        .emit(REALTIME_EVENTS.NODE_STATUS_UPDATED, payload);
     }
   }
 
   emitMetricIngested(payload: Record<string, unknown>) {
-    this.server.emit('metrics.ingested', payload);
+    this.server.emit(REALTIME_EVENTS.METRICS_INGESTED, payload);
     if (payload.nodeId) {
       this.server
-        .to(`node:${payload.nodeId}`)
-        .emit('metrics.ingested', payload);
+        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
+        .emit(REALTIME_EVENTS.METRICS_INGESTED, payload);
     }
   }
 
   emitTaskCreated(payload: Record<string, unknown>) {
-    this.server.emit('task.created', payload);
+    this.server.emit(REALTIME_EVENTS.TASK_CREATED, payload);
     if (payload.nodeId) {
-      this.server.to(`node:${payload.nodeId}`).emit('task.created', payload);
+      this.server
+        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
+        .emit(REALTIME_EVENTS.TASK_CREATED, payload);
     }
   }
 
   emitTaskUpdated(payload: Record<string, unknown>) {
-    this.server.emit('task.updated', payload);
+    this.server.emit(REALTIME_EVENTS.TASK_UPDATED, payload);
     if (payload.nodeId) {
-      this.server.to(`node:${payload.nodeId}`).emit('task.updated', payload);
+      this.server
+        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
+        .emit(REALTIME_EVENTS.TASK_UPDATED, payload);
     }
   }
 
   emitEventCreated(payload: Record<string, unknown>) {
-    this.server.emit('event.created', payload);
+    this.server.emit(REALTIME_EVENTS.EVENT_CREATED, payload);
     if (payload.nodeId) {
-      this.server.to(`node:${payload.nodeId}`).emit('event.created', payload);
+      this.server
+        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
+        .emit(REALTIME_EVENTS.EVENT_CREATED, payload);
     }
   }
 }

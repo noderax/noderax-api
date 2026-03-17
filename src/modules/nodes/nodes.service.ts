@@ -4,10 +4,11 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
 import { In, LessThan, Repository } from 'typeorm';
+import { agentsConfig } from '../../config';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
 import { NodeEntity } from './entities/node.entity';
@@ -167,7 +168,9 @@ export class NodesService {
   }
 
   private async refreshStaleNodes() {
-    const agents = this.configService.get('agents');
+    const agents = this.configService.getOrThrow<
+      ConfigType<typeof agentsConfig>
+    >(agentsConfig.KEY);
     const cutoff = new Date(Date.now() - agents.heartbeatTimeoutSeconds * 1000);
 
     const staleNodes = await this.nodesRepository.find({

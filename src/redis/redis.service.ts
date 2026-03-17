@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigService, ConfigType } from '@nestjs/config';
 import Redis from 'ioredis';
+import { redisConfig } from '../config';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -8,7 +9,9 @@ export class RedisService implements OnModuleDestroy {
   private readonly client: Redis | null;
 
   constructor(private readonly configService: ConfigService) {
-    const redis = this.configService.get('redis');
+    const redis = this.configService.getOrThrow<ConfigType<typeof redisConfig>>(
+      redisConfig.KEY,
+    );
 
     if (!redis.enabled) {
       this.client = null;
@@ -45,6 +48,14 @@ export class RedisService implements OnModuleDestroy {
     }
 
     await this.ensureConnected();
+
+    if (this.client.status !== 'ready') {
+      this.logger.warn(
+        `Redis publish skipped for channel ${channel}: client is not ready`,
+      );
+      return 0;
+    }
+
     return this.client.publish(channel, JSON.stringify(payload));
   }
 
@@ -53,7 +64,7 @@ export class RedisService implements OnModuleDestroy {
   }
 
   private async ensureConnected() {
-    if (!this.client || this.client.status !== 'wait') {
+    if (!this.client || !['wait', 'end'].includes(this.client.status)) {
       return;
     }
 
@@ -69,6 +80,15 @@ export class RedisService implements OnModuleDestroy {
       return;
     }
 
-    await this.client.quit();
+    try {
+      if (['ready', 'connect', 'reconnecting'].includes(this.client.status)) {
+        await this.client.quit();
+        return;
+      }
+
+      this.client.disconnect(false);
+    } catch (error) {
+      this.logger.warn(`Redis shutdown skipped: ${(error as Error).message}`);
+    }
   }
 }

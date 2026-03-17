@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
+import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RedisService } from '../../redis/redis.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
@@ -36,7 +38,7 @@ export class TasksService {
 
     await this.eventsService.record({
       nodeId: savedTask.nodeId,
-      type: 'task.queued',
+      type: SYSTEM_EVENT_TYPES.TASK_QUEUED,
       severity: EventSeverity.INFO,
       message: `Task ${savedTask.type} queued for node ${savedTask.nodeId}`,
       metadata: {
@@ -48,7 +50,7 @@ export class TasksService {
     this.realtimeGateway.emitTaskCreated(
       savedTask as unknown as Record<string, unknown>,
     );
-    await this.redisService.publish('tasks.created', {
+    await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
       taskId: savedTask.id,
       nodeId: savedTask.nodeId,
       status: savedTask.status,

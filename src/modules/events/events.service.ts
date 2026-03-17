@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RedisService } from '../../redis/redis.service';
@@ -38,7 +39,7 @@ export class EventsService {
     this.realtimeGateway.emitEventCreated(
       savedEvent as unknown as Record<string, unknown>,
     );
-    await this.redisService.publish('events.created', {
+    await this.redisService.publish(PUBSUB_CHANNELS.EVENTS_CREATED, {
       eventId: savedEvent.id,
       nodeId: savedEvent.nodeId,
       type: savedEvent.type,

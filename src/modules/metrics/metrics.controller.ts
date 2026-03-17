@@ -7,6 +7,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { Public } from '../../common/decorators/public.decorator';
 import { AgentMetricsDto } from './dto/agent-metrics.dto';
 import { QueryMetricsDto } from './dto/query-metrics.dto';
@@ -38,7 +39,7 @@ export class MetricsController {
   }
 
   @Get('metrics')
-  @ApiBearerAuth('bearer')
+  @ApiBearerAuth(SWAGGER_BEARER_AUTH_NAME)
   @ApiOperation({
     summary: 'List ingested metrics',
   })

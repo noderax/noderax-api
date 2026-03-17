@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { agentsConfig } from '../../config';
+import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
+import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RedisService } from '../../redis/redis.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
@@ -41,11 +44,13 @@ export class MetricsService {
 
     const savedMetric = await this.metricsRepository.save(metric);
 
-    const agents = this.configService.get('agents');
+    const agents = this.configService.getOrThrow<
+      ConfigType<typeof agentsConfig>
+    >(agentsConfig.KEY);
     if (savedMetric.cpuUsage >= agents.highCpuThreshold) {
       await this.eventsService.record({
         nodeId: savedMetric.nodeId,
-        type: 'high.cpu',
+        type: SYSTEM_EVENT_TYPES.HIGH_CPU,
         severity:
           savedMetric.cpuUsage >= Math.min(100, agents.highCpuThreshold + 5)
             ? EventSeverity.CRITICAL
@@ -60,7 +65,7 @@ export class MetricsService {
     this.realtimeGateway.emitMetricIngested(
       savedMetric as unknown as Record<string, unknown>,
     );
-    await this.redisService.publish('metrics.ingested', {
+    await this.redisService.publish(PUBSUB_CHANNELS.METRICS_INGESTED, {
       metricId: savedMetric.id,
       nodeId: savedMetric.nodeId,
       recordedAt: savedMetric.recordedAt.toISOString(),
