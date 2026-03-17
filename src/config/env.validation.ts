@@ -5,7 +5,7 @@ export const validationSchema = Joi.object({
     .valid('development', 'production', 'test')
     .default('development'),
   PORT: Joi.number().default(3000),
-  API_PREFIX: Joi.string().allow('').default(''),
+  API_PREFIX: Joi.string().allow('').default('api/v1'),
   CORS_ORIGIN: Joi.string().default('*'),
   SWAGGER_ENABLED: Joi.boolean().default(true),
   SWAGGER_PATH: Joi.string().default('docs'),

@@ -83,11 +83,11 @@ If you want the API to create a first admin user automatically, set:
 pnpm start:dev
 ```
 
-The default API base URL is `http://localhost:3000`.
-Swagger UI is available at `http://localhost:3000/docs`.
-OpenAPI JSON is available at `http://localhost:3000/docs-json`.
+The default API base URL is `http://localhost:3000/api/v1`.
+Swagger UI is available at `http://localhost:3000/api/v1/docs`.
+OpenAPI JSON is available at `http://localhost:3000/api/v1/docs-json`.
 
-If `API_PREFIX=api`, the API base URL becomes `http://localhost:3000/api` and Swagger UI becomes `http://localhost:3000/api/docs`.
+If you want to remove the prefix locally, set `API_PREFIX=` and the API base URL becomes `http://localhost:3000`.
 
 ## Docker
 
