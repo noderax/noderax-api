@@ -32,7 +32,8 @@ export class AgentRegisterDto {
 
   @ApiProperty({
     example: 'your-token',
-    description: 'Security token required to register new agents.',
+    description:
+      'Shared enrollment token used during initial agent registration to prevent unauthorized servers from enrolling.',
   })
   @IsString()
   enrollmentToken: string;

@@ -25,9 +25,13 @@ export class AgentsController {
   @ApiOperation({
     summary: 'Register a new agent',
     description:
-      'Creates or refreshes a node record and returns the node ID with an agent token.',
+      'Creates or refreshes a node record and returns the node ID with an agent token. Requires the shared enrollment token used to authorize initial agent enrollment.',
   })
-  @ApiBody({ type: AgentRegisterDto })
+  @ApiBody({
+    type: AgentRegisterDto,
+    description:
+      'Agent identity payload plus the shared enrollment token required for initial registration.',
+  })
   @ApiCreatedResponse({
     description: 'Agent successfully registered.',
     type: AgentRegisterResponseDto,

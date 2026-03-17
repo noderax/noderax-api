@@ -69,6 +69,8 @@ Set at least these values before real usage:
 - database credentials
 - Redis settings if Redis is enabled
 
+`AGENT_ENROLLMENT_TOKEN` is a shared secret used only for initial agent enrollment. It prevents unauthorized servers from registering themselves with the control plane.
+
 If you want the API to create a first admin user automatically, set:
 
 - `SEED_DEFAULT_ADMIN=true`
@@ -84,6 +86,8 @@ pnpm start:dev
 The default API base URL is `http://localhost:3000`.
 Swagger UI is available at `http://localhost:3000/docs`.
 OpenAPI JSON is available at `http://localhost:3000/docs-json`.
+
+If `API_PREFIX=api`, the API base URL becomes `http://localhost:3000/api` and Swagger UI becomes `http://localhost:3000/api/docs`.
 
 ## Docker
 
@@ -222,6 +226,6 @@ Socket.IO is exposed at the `realtime` namespace.
 ## Notes
 
 - Agent metrics ingestion requires `agentToken` for authentication.
-- Agent registration requires a valid `enrollmentToken`.
+- Agent registration requires a valid `enrollmentToken` shared during initial agent enrollment.
 - Redis is optional at runtime. If unavailable, the API still works and logs Redis connection warnings when publish operations are attempted.
 - Notifications are stubbed and ready for Telegram or webhook integrations later.

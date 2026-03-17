@@ -80,6 +80,7 @@ async function bootstrap() {
 
     const swaggerOptions: SwaggerCustomOptions = {
       customSiteTitle: 'Noderax API Docs',
+      useGlobalPrefix: Boolean(apiPrefix),
       jsonDocumentUrl: `${swaggerPath}-json`,
       swaggerOptions: {
         persistAuthorization: true,
@@ -93,12 +94,41 @@ async function bootstrap() {
   }
 
   await app.listen(port);
-  logger.log(
-    `Noderax API listening on port ${port}${apiPrefix ? ` with prefix /${apiPrefix}` : ''}`,
-  );
+  const publicBaseUrl = normalizePublicBaseUrl(await app.getUrl());
+  const apiBaseUrl = buildPublicUrl(publicBaseUrl, apiPrefix);
+
+  logger.log(`Noderax API listening at ${apiBaseUrl}`);
   if (swaggerEnabled) {
-    logger.log(`Swagger UI available at /${swaggerPath}`);
+    logger.log(
+      `Swagger UI available at ${buildPublicUrl(publicBaseUrl, apiPrefix, swaggerPath)}`,
+    );
+    logger.log(
+      `OpenAPI JSON available at ${buildPublicUrl(publicBaseUrl, apiPrefix, `${swaggerPath}-json`)}`,
+    );
   }
+}
+
+function normalizePublicBaseUrl(url: string): string {
+  const parsedUrl = new URL(url);
+
+  if (['[::1]', '::1', '127.0.0.1', '0.0.0.0'].includes(parsedUrl.hostname)) {
+    parsedUrl.hostname = 'localhost';
+  }
+
+  return parsedUrl.toString().replace(/\/$/, '');
+}
+
+function buildPublicUrl(baseUrl: string, ...segments: string[]): string {
+  const url = new URL(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
+  const normalizedPath = segments
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => segment.replace(/^\/+|\/+$/g, ''))
+    .join('/');
+
+  url.pathname = normalizedPath ? `/${normalizedPath}` : '/';
+
+  return url.toString().replace(/\/$/, '');
 }
 
 bootstrap();
