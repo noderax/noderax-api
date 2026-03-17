@@ -1,14 +1,21 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
-import { In, LessThan, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
+import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
+import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { agentsConfig } from '../../config';
+import { RedisService } from '../../redis/redis.service';
+import { EventSeverity } from '../events/entities/event-severity.enum';
+import { EventsService } from '../events/events.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
 import { NodeEntity } from './entities/node.entity';
@@ -16,13 +23,18 @@ import { NodeStatus } from './entities/node-status.enum';
 
 @Injectable()
 export class NodesService {
+  private readonly logger = new Logger(NodesService.name);
+
   constructor(
     @InjectRepository(NodeEntity)
     private readonly nodesRepository: Repository<NodeEntity>,
     private readonly configService: ConfigService,
+    private readonly eventsService: EventsService,
+    private readonly realtimeGateway: RealtimeGateway,
+    private readonly redisService: RedisService,
   ) {}
 
-  async create(createNodeDto: CreateNodeDto) {
+  async create(createNodeDto: CreateNodeDto): Promise<NodeEntity> {
     const existingNode = await this.nodesRepository.findOne({
       where: { hostname: createNodeDto.hostname },
     });
@@ -42,9 +54,7 @@ export class NodesService {
     return this.nodesRepository.save(node);
   }
 
-  async findAll(query: QueryNodesDto) {
-    await this.refreshStaleNodes();
-
+  async findAll(query: QueryNodesDto): Promise<NodeEntity[]> {
     const nodesQuery = this.nodesRepository
       .createQueryBuilder('node')
       .orderBy('node.createdAt', 'DESC');
@@ -65,9 +75,7 @@ export class NodesService {
     return nodesQuery.getMany();
   }
 
-  async findOneOrFail(id: string) {
-    await this.refreshStaleNodes();
-
+  async findOneOrFail(id: string): Promise<NodeEntity> {
     const node = await this.nodesRepository.findOne({
       where: { id },
     });
@@ -79,14 +87,14 @@ export class NodesService {
     return node;
   }
 
-  async delete(id: string) {
+  async delete(id: string): Promise<{ deleted: true; id: string }> {
     const node = await this.findOneOrFail(id);
     await this.nodesRepository.remove(node);
 
     return { deleted: true, id };
   }
 
-  async ensureExists(nodeId: string) {
+  async ensureExists(nodeId: string): Promise<NodeEntity> {
     return this.findOneOrFail(nodeId);
   }
 
@@ -95,7 +103,7 @@ export class NodesService {
     os: string;
     arch: string;
     agentTokenHash: string;
-  }) {
+  }): Promise<NodeEntity> {
     const existingNode = await this.nodesRepository.findOne({
       where: { hostname: input.hostname },
     });
@@ -126,7 +134,10 @@ export class NodesService {
     return this.nodesRepository.save(node);
   }
 
-  async authenticateAgent(nodeId: string, agentToken: string) {
+  async authenticateAgent(
+    nodeId: string,
+    agentToken: string,
+  ): Promise<NodeEntity> {
     const node = await this.nodesRepository
       .createQueryBuilder('node')
       .addSelect('node.agentTokenHash')
@@ -150,7 +161,7 @@ export class NodesService {
     return node;
   }
 
-  async touchOnline(nodeId: string) {
+  async touchOnline(nodeId: string): Promise<NodeEntity> {
     const node = await this.nodesRepository.findOne({ where: { id: nodeId } });
 
     if (!node) {
@@ -163,30 +174,86 @@ export class NodesService {
     return this.nodesRepository.save(node);
   }
 
-  hashAgentToken(agentToken: string) {
-    return createHash('sha256').update(agentToken).digest('hex');
+  async broadcastStatusUpdate(
+    node: Pick<NodeEntity, 'id' | 'hostname' | 'status' | 'lastSeenAt'>,
+  ): Promise<void> {
+    const statusPayload = {
+      nodeId: node.id,
+      hostname: node.hostname,
+      status: node.status,
+      lastSeenAt: node.lastSeenAt,
+    };
+
+    this.realtimeGateway.emitNodeStatusUpdate(statusPayload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
+      statusPayload,
+    );
   }
 
-  private async refreshStaleNodes() {
+  async markStaleNodesOffline(): Promise<number> {
     const agents = this.configService.getOrThrow<
       ConfigType<typeof agentsConfig>
     >(agentsConfig.KEY);
     const cutoff = new Date(Date.now() - agents.heartbeatTimeoutSeconds * 1000);
+    const updatedAt = new Date();
 
-    const staleNodes = await this.nodesRepository.find({
-      where: {
-        status: NodeStatus.ONLINE,
-        lastSeenAt: LessThan(cutoff),
-      },
-    });
+    const updateResult = await this.nodesRepository
+      .createQueryBuilder()
+      .update(NodeEntity)
+      .set({
+        status: NodeStatus.OFFLINE,
+        updatedAt,
+      })
+      .where('status = :status', { status: NodeStatus.ONLINE })
+      .andWhere('lastSeenAt < :cutoff', { cutoff })
+      .returning(['id', 'name', 'hostname', 'status', 'lastSeenAt'])
+      .execute();
 
-    if (!staleNodes.length) {
-      return;
+    const offlineNodes = updateResult.raw as Array<
+      Pick<NodeEntity, 'id' | 'name' | 'hostname' | 'status' | 'lastSeenAt'>
+    >;
+
+    if (!offlineNodes.length) {
+      return 0;
     }
 
-    await this.nodesRepository.update(
-      { id: In(staleNodes.map((node) => node.id)) },
-      { status: NodeStatus.OFFLINE },
-    );
+    for (const node of offlineNodes) {
+      await this.eventsService.record({
+        nodeId: node.id,
+        type: SYSTEM_EVENT_TYPES.NODE_OFFLINE,
+        severity: EventSeverity.WARNING,
+        message: `Node ${this.getNodeLabel(node)} was marked offline after missing heartbeats for more than ${agents.heartbeatTimeoutSeconds} seconds`,
+        metadata: {
+          heartbeatTimeoutSeconds: agents.heartbeatTimeoutSeconds,
+          lastSeenAt: this.formatTimestamp(node.lastSeenAt),
+        },
+      });
+      await this.broadcastStatusUpdate(node);
+    }
+
+    this.logger.log(`Marked ${offlineNodes.length} stale node(s) offline`);
+
+    return offlineNodes.length;
+  }
+
+  hashAgentToken(agentToken: string): string {
+    return createHash('sha256').update(agentToken).digest('hex');
+  }
+
+  private getNodeLabel(node: Pick<NodeEntity, 'name' | 'hostname'>): string {
+    if (!node.name || node.name === node.hostname) {
+      return node.hostname;
+    }
+
+    return `${node.name} (${node.hostname})`;
+  }
+
+  private formatTimestamp(value: Date | string | null): string | null {
+    if (!value) {
+      return null;
+    }
+
+    return value instanceof Date ? value.toISOString() : value;
   }
 }

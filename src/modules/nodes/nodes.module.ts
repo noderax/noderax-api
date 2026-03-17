@@ -1,13 +1,20 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventsModule } from '../events/events.module';
+import { RealtimeModule } from '../realtime/realtime.module';
+import { NodeOfflineDetectorService } from './node-offline-detector.service';
 import { NodeEntity } from './entities/node.entity';
 import { NodesController } from './nodes.controller';
 import { NodesService } from './nodes.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([NodeEntity])],
+  imports: [
+    TypeOrmModule.forFeature([NodeEntity]),
+    EventsModule,
+    RealtimeModule,
+  ],
   controllers: [NodesController],
-  providers: [NodesService],
+  providers: [NodesService, NodeOfflineDetectorService],
   exports: [NodesService],
 })
 export class NodesModule {}

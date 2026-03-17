@@ -1,13 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { randomBytes } from 'crypto';
-import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
-import { RedisService } from '../../redis/redis.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodeStatus } from '../nodes/entities/node-status.enum';
 import { NodesService } from '../nodes/nodes.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AgentHeartbeatResponseDto } from './dto/agent-heartbeat-response.dto';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
 import { AgentRegisterResponseDto } from './dto/agent-register-response.dto';
@@ -18,8 +15,6 @@ export class AgentsService {
   constructor(
     private readonly nodesService: NodesService,
     private readonly eventsService: EventsService,
-    private readonly realtimeGateway: RealtimeGateway,
-    private readonly redisService: RedisService,
   ) {}
 
   async register(
@@ -41,19 +36,7 @@ export class AgentsService {
       severity: EventSeverity.INFO,
       message: `Node ${node.hostname} registered with the control plane`,
     });
-
-    const statusPayload = {
-      nodeId: node.id,
-      hostname: node.hostname,
-      status: node.status,
-      lastSeenAt: node.lastSeenAt,
-    };
-
-    this.realtimeGateway.emitNodeStatusUpdate(statusPayload);
-    await this.redisService.publish(
-      PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
-      statusPayload,
-    );
+    await this.nodesService.broadcastStatusUpdate(node);
 
     return {
       nodeId: node.id,
@@ -79,19 +62,7 @@ export class AgentsService {
         message: `Node ${updatedNode.hostname} is back online`,
       });
     }
-
-    const statusPayload = {
-      nodeId: updatedNode.id,
-      hostname: updatedNode.hostname,
-      status: updatedNode.status,
-      lastSeenAt: updatedNode.lastSeenAt,
-    };
-
-    this.realtimeGateway.emitNodeStatusUpdate(statusPayload);
-    await this.redisService.publish(
-      PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
-      statusPayload,
-    );
+    await this.nodesService.broadcastStatusUpdate(updatedNode);
 
     return {
       acknowledged: true,
