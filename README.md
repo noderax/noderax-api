@@ -123,6 +123,15 @@ All required variables are documented in `.env.example`.
 - `POST /agent/heartbeat`
 - `POST /agent/metrics`
 
+### Agent-Authenticated
+
+These endpoints are intended for registered agents and require `nodeId` plus `agentToken` in the request body.
+
+- `POST /agent/tasks/pull`
+- `POST /agent/tasks/:id/start`
+- `POST /agent/tasks/:id/logs`
+- `POST /agent/tasks/:id/complete`
+
 ### Authenticated
 
 - `GET /users/me`
@@ -207,6 +216,43 @@ curl -X POST http://localhost:3000/tasks \
     "payload": {
       "command": "docker ps"
     }
+  }'
+```
+
+### 6. Pull Queued Tasks as an Agent
+
+```bash
+curl -X POST http://localhost:3000/agent/tasks/pull \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nodeId": "generated-node-id",
+    "agentToken": "generated-agent-token",
+    "limit": 10
+  }'
+```
+
+### 7. Start and Complete a Task as an Agent
+
+```bash
+curl -X POST http://localhost:3000/agent/tasks/<task-id>/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nodeId": "generated-node-id",
+    "agentToken": "generated-agent-token"
+  }'
+```
+
+```bash
+curl -X POST http://localhost:3000/agent/tasks/<task-id>/complete \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nodeId": "generated-node-id",
+    "agentToken": "generated-agent-token",
+    "status": "success",
+    "result": {
+      "exitCode": 0
+    },
+    "output": "command completed successfully"
   }'
 ```
 
