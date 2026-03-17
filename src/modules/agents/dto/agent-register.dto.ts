@@ -13,7 +13,7 @@ export class AgentRegisterDto {
   hostname: string;
 
   @ApiProperty({
-    example: 'ubuntu-24.04',
+    example: 'ubuntu',
     description: 'Operating system label reported by the agent.',
   })
   @Transform(({ value }) => value?.trim())
@@ -31,7 +31,7 @@ export class AgentRegisterDto {
   arch: string;
 
   @ApiProperty({
-    example: 'enrollment-token-123',
+    example: 'your-token',
     description: 'Security token required to register new agents.',
   })
   @IsString()

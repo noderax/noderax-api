@@ -341,20 +341,6 @@ export class TasksService {
     return this.taskLogsRepository.save(taskLog);
   }
 
-  private assertTaskCanTransition(task: TaskEntity, action: 'start'): void {
-    if (this.isTerminalStatus(task.status)) {
-      throw new ConflictException(
-        `Task ${task.id} is already ${task.status} and cannot ${action}`,
-      );
-    }
-
-    if (action === 'start' && task.status !== TaskStatus.QUEUED) {
-      throw new ConflictException(
-        `Task ${task.id} must be queued before it can start`,
-      );
-    }
-  }
-
   private isTerminalStatus(status: TaskStatus): boolean {
     return TERMINAL_TASK_STATUSES.has(status);
   }

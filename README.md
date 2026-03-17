@@ -4,7 +4,7 @@ Noderax is an agent-based infrastructure management platform. This repository co
 
 ## Stack
 
-- NestJS 10
+- NestJS 11
 - TypeScript
 - PostgreSQL with TypeORM
 - Redis for pub/sub and future queue work
@@ -30,7 +30,8 @@ src/
     filters/
     guards/
     interceptors/
-    interfaces/
+    types/
+    utils/
   config/
   database/
   redis/
@@ -38,35 +39,75 @@ src/
 
 ## MVP Features
 
-- JWT login flow with seeded default admin
+- JWT login flow with optional seeded default admin
 - User roles: `admin`, `user`
-- Node inventory with heartbeat-driven online status
-- Agent registration with generated agent token
+- Node inventory with scheduler-driven online and offline status
+- Agent registration secured with enrollment token
 - Metrics ingestion persisted to PostgreSQL
-- Task creation and retrieval
+- Task creation, polling, execution updates, and logs
 - Event persistence with notification stubs
 - Realtime broadcasts for node, metric, task, and event updates
 
-## Quick Start
+## Local Setup
+
+### 1. Install dependencies
 
 ```bash
 pnpm install
+```
+
+### 2. Configure environment
+
+```bash
 cp .env.example .env
+```
+
+Set at least these values before real usage:
+
+- `JWT_SECRET`
+- `AGENT_ENROLLMENT_TOKEN`
+- database credentials
+- Redis settings if Redis is enabled
+
+If you want the API to create a first admin user automatically, set:
+
+- `SEED_DEFAULT_ADMIN=true`
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD`
+
+### 3. Run in development
+
+```bash
 pnpm start:dev
 ```
 
-The API listens on `http://localhost:3000` by default.
+The default API base URL is `http://localhost:3000`.
+Swagger UI is available at `http://localhost:3000/docs`.
+OpenAPI JSON is available at `http://localhost:3000/docs-json`.
+
+## Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Services:
+
+- API: `http://localhost:3000`
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
+
+## Production Build
+
+```bash
+pnpm build
+pnpm start:prod
+```
 
 ## Environment
 
-Key variables are documented in `.env.example`.
-
-Important defaults:
-
-- `SEED_DEFAULT_ADMIN=true`
-- `ADMIN_EMAIL=admin@noderax.local`
-- `ADMIN_PASSWORD=ChangeMe123!`
-- `DB_SYNCHRONIZE=true` for local MVP development
+All required variables are documented in `.env.example`.
 
 ## Main Endpoints
 
@@ -103,7 +144,7 @@ Important defaults:
 curl -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
   -d '{
-    "email": "admin@noderax.local",
+    "email": "admin@example.com",
     "password": "ChangeMe123!"
   }'
 ```
@@ -115,8 +156,9 @@ curl -X POST http://localhost:3000/agent/register \
   -H "Content-Type: application/json" \
   -d '{
     "hostname": "srv-01",
-    "os": "ubuntu-24.04",
-    "arch": "amd64"
+    "os": "ubuntu",
+    "arch": "amd64",
+    "enrollmentToken": "your-token"
   }'
 ```
 
@@ -180,5 +222,6 @@ Socket.IO is exposed at the `realtime` namespace.
 ## Notes
 
 - Agent metrics ingestion requires `agentToken` for authentication.
+- Agent registration requires a valid `enrollmentToken`.
 - Redis is optional at runtime. If unavailable, the API still works and logs Redis connection warnings when publish operations are attempted.
 - Notifications are stubbed and ready for Telegram or webhook integrations later.
