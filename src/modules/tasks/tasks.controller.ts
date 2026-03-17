@@ -10,7 +10,9 @@ import {
 } from '@nestjs/swagger';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { QueryTaskLogsDto } from './dto/query-task-logs.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
+import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskEntity } from './entities/task.entity';
 import { TasksService } from './tasks.service';
 
@@ -62,5 +64,21 @@ export class TasksController {
   })
   findOne(@Param('id') id: string) {
     return this.tasksService.findOneOrFail(id);
+  }
+
+  @Get(':id/logs')
+  @ApiOperation({
+    summary: 'List task logs',
+  })
+  @ApiOkResponse({
+    description: 'Chronological task log entries.',
+    type: TaskLogEntity,
+    isArray: true,
+  })
+  @ApiNotFoundResponse({
+    description: 'Task not found.',
+  })
+  findLogs(@Param('id') id: string, @Query() query: QueryTaskLogsDto) {
+    return this.tasksService.findLogs(id, query);
   }
 }

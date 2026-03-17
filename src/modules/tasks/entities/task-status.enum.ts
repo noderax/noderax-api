@@ -3,4 +3,5 @@ export enum TaskStatus {
   RUNNING = 'running',
   SUCCESS = 'success',
   FAILED = 'failed',
+  CANCELLED = 'cancelled',
 }

@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { TaskStatus } from './task-status.enum';
 
+@Index('IDX_tasks_node_status_created_at', ['nodeId', 'status', 'createdAt'])
 @Entity({ name: 'tasks' })
 export class TaskEntity {
   @ApiProperty({
@@ -54,6 +55,41 @@ export class TaskEntity {
     default: TaskStatus.QUEUED,
   })
   status: TaskStatus;
+
+  @ApiPropertyOptional({
+    example: {
+      exitCode: 0,
+      containers: 3,
+    },
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+  })
+  @Column({ type: 'jsonb', nullable: true })
+  result: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({
+    example: 'Container check completed successfully',
+    nullable: true,
+  })
+  @Column({ type: 'text', nullable: true })
+  output: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    example: '2026-03-17T12:41:00.000Z',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  startedAt: Date | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    example: '2026-03-17T12:42:00.000Z',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  finishedAt: Date | null;
 
   @ApiProperty({
     format: 'date-time',
