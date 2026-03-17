@@ -87,7 +87,9 @@ export class TasksService {
   async findAll(query: QueryTasksDto): Promise<TaskEntity[]> {
     const tasksQuery = this.tasksRepository
       .createQueryBuilder('task')
-      .orderBy('task.createdAt', 'DESC');
+      .orderBy('task.createdAt', 'DESC')
+      .take(query.limit ?? 50)
+      .skip(query.offset ?? 0);
 
     if (query.nodeId) {
       tasksQuery.andWhere('task.nodeId = :nodeId', { nodeId: query.nodeId });
@@ -151,19 +153,52 @@ export class TasksService {
       startAgentTaskDto.nodeId,
       startAgentTaskDto.agentToken,
     );
-    const task = await this.findTaskForNodeOrFail(taskId, node.id);
 
-    if (task.status === TaskStatus.RUNNING) {
-      return task;
+    // Atomic state transition to prevent race conditions
+    const updateResult = await this.tasksRepository
+      .createQueryBuilder()
+      .update(TaskEntity)
+      .set({
+        status: TaskStatus.RUNNING,
+        startedAt: new Date(),
+        // Ensure finishedAt is nullified if it was set (though from QUEUED it shouldn't be)
+        finishedAt: null,
+      })
+      .where('id = :id', { id: taskId })
+      .andWhere('nodeId = :nodeId', { nodeId: node.id })
+      .andWhere('status = :status', { status: TaskStatus.QUEUED })
+      .returning('*')
+      .execute();
+
+    if (updateResult.affected === 0) {
+      // If we didn't update anything, either:
+      // 1. The task doesn't exist
+      // 2. The task doesn't belong to this node
+      // 3. The task is not in QUEUED state using the optimistic lock
+      const task = await this.tasksRepository.findOne({
+        where: { id: taskId },
+      });
+
+      if (!task || task.nodeId !== node.id) {
+        throw new NotFoundException(
+          `Task ${taskId} was not found for this node`,
+        );
+      }
+
+      if (task.status === TaskStatus.RUNNING) {
+        // Idempotency: If already running, just return it
+        return task;
+      }
+
+      throw new ConflictException(
+        `Task ${taskId} is in ${task.status} state and cannot be started`,
+      );
     }
 
-    this.assertTaskCanTransition(task, 'start');
-
-    task.status = TaskStatus.RUNNING;
-    task.startedAt = task.startedAt ?? new Date();
-    task.finishedAt = null;
-
-    const savedTask = await this.tasksRepository.save(task);
+    // Identify the updated task reliably
+    const savedTask = await this.tasksRepository.findOneOrFail({
+      where: { id: taskId },
+    });
 
     await this.eventsService.record({
       nodeId: savedTask.nodeId,

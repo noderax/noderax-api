@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 import { TaskStatus } from '../entities/task-status.enum';
 
 export class QueryTasksDto {
@@ -18,5 +19,28 @@ export class QueryTasksDto {
   })
   @IsOptional()
   @IsEnum(TaskStatus)
+  status?: TaskStatus;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 100,
+    default: 50,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  limit?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  offset?: number;
+}
   status?: TaskStatus;
 }

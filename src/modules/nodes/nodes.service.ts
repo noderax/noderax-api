@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHash } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { Repository } from 'typeorm';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
@@ -57,7 +57,9 @@ export class NodesService {
   async findAll(query: QueryNodesDto): Promise<NodeEntity[]> {
     const nodesQuery = this.nodesRepository
       .createQueryBuilder('node')
-      .orderBy('node.createdAt', 'DESC');
+      .orderBy('node.createdAt', 'DESC')
+      .take(query.limit ?? 50)
+      .skip(query.offset ?? 0);
 
     if (query.status) {
       nodesQuery.andWhere('node.status = :status', { status: query.status });
@@ -154,7 +156,17 @@ export class NodesService {
       );
     }
 
-    if (node.agentTokenHash !== this.hashAgentToken(agentToken)) {
+    const providedHash = this.hashAgentToken(agentToken);
+    const storedHash = node.agentTokenHash;
+
+    // Constant-time comparison to prevent timing attacks
+    const providedBuffer = Buffer.from(providedHash);
+    const storedBuffer = Buffer.from(storedHash);
+
+    if (
+      providedBuffer.length !== storedBuffer.length ||
+      !timingSafeEqual(providedBuffer, storedBuffer)
+    ) {
       throw new UnauthorizedException('Invalid agent token');
     }
 

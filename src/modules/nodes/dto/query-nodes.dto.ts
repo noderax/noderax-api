@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { NodeStatus } from '../entities/node-status.enum';
 
 export class QueryNodesDto {
@@ -18,5 +19,28 @@ export class QueryNodesDto {
   })
   @IsOptional()
   @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 100,
+    default: 50,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  limit?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  offset?: number;
+}
   search?: string;
 }
