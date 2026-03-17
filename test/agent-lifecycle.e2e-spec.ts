@@ -1,12 +1,13 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { io, Socket } from 'socket.io-client';
+import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
 
 function configureTestEnv() {
   process.env.NODE_ENV = 'test';
   process.env.PORT = '0';
-  process.env.API_PREFIX = '';
+  process.env.API_PREFIX = 'api/v1';
   process.env.CORS_ORIGIN = '*';
   process.env.SWAGGER_ENABLED = 'false';
   process.env.SWAGGER_PATH = 'docs';
@@ -110,7 +111,7 @@ describe('Agent Lifecycle (e2e)', () => {
 
   it('logs in as the seeded admin user', async () => {
     const response = await request(app.getHttpServer())
-      .post('/auth/login')
+      .post(apiPath('/auth/login'))
       .send({
         email: process.env.ADMIN_EMAIL,
         password: process.env.ADMIN_PASSWORD,
@@ -123,10 +124,10 @@ describe('Agent Lifecycle (e2e)', () => {
   });
 
   it('protects authenticated routes', async () => {
-    await request(app.getHttpServer()).get('/users/me').expect(401);
+    await request(app.getHttpServer()).get(apiPath('/users/me')).expect(401);
 
     await request(app.getHttpServer())
-      .get('/users/me')
+      .get(apiPath('/users/me'))
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200)
       .expect(({ body }) => {
@@ -137,7 +138,7 @@ describe('Agent Lifecycle (e2e)', () => {
 
   it('rejects agent registration with an invalid enrollment token', async () => {
     await request(app.getHttpServer())
-      .post('/agent/register')
+      .post(apiPath('/agent/register'))
       .send({
         hostname: 'srv-test-01',
         os: 'linux',
@@ -149,7 +150,7 @@ describe('Agent Lifecycle (e2e)', () => {
 
   it('registers agents with the valid enrollment token', async () => {
     const firstResponse = await request(app.getHttpServer())
-      .post('/agent/register')
+      .post(apiPath('/agent/register'))
       .send({
         hostname: 'srv-test-01',
         os: 'linux',
@@ -162,7 +163,7 @@ describe('Agent Lifecycle (e2e)', () => {
     agentToken = firstResponse.body.agentToken;
 
     const secondResponse = await request(app.getHttpServer())
-      .post('/agent/register')
+      .post(apiPath('/agent/register'))
       .send({
         hostname: 'srv-test-02',
         os: 'linux',
@@ -182,7 +183,7 @@ describe('Agent Lifecycle (e2e)', () => {
 
   it('accepts heartbeats and ingests metrics for a valid agent', async () => {
     await request(app.getHttpServer())
-      .post('/agent/heartbeat')
+      .post(apiPath('/agent/heartbeat'))
       .send({
         nodeId,
         agentToken,
@@ -194,7 +195,7 @@ describe('Agent Lifecycle (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post('/agent/metrics')
+      .post(apiPath('/agent/metrics'))
       .send({
         nodeId,
         agentToken,
@@ -215,7 +216,7 @@ describe('Agent Lifecycle (e2e)', () => {
 
   it('allows only admins to create tasks and lets agents fetch their own queued tasks', async () => {
     await request(app.getHttpServer())
-      .post('/tasks')
+      .post(apiPath('/tasks'))
       .send({
         nodeId,
         type: 'shell.exec',
@@ -226,7 +227,7 @@ describe('Agent Lifecycle (e2e)', () => {
       .expect(401);
 
     const response = await request(app.getHttpServer())
-      .post('/tasks')
+      .post(apiPath('/tasks'))
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         nodeId,
@@ -240,7 +241,7 @@ describe('Agent Lifecycle (e2e)', () => {
     taskId = response.body.id;
 
     await request(app.getHttpServer())
-      .post('/agent/tasks/pull')
+      .post(apiPath('/agent/tasks/pull'))
       .send({
         nodeId,
         agentToken,
@@ -254,7 +255,7 @@ describe('Agent Lifecycle (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/agent/tasks/${taskId}/start`)
+      .post(apiPath(`/agent/tasks/${taskId}/start`))
       .send({
         nodeId: secondNodeId,
         agentToken: secondAgentToken,
@@ -264,7 +265,7 @@ describe('Agent Lifecycle (e2e)', () => {
 
   it('executes the task lifecycle for the owning agent', async () => {
     await request(app.getHttpServer())
-      .post(`/agent/tasks/${taskId}/start`)
+      .post(apiPath(`/agent/tasks/${taskId}/start`))
       .send({
         nodeId,
         agentToken,
@@ -276,7 +277,7 @@ describe('Agent Lifecycle (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/agent/tasks/${taskId}/logs`)
+      .post(apiPath(`/agent/tasks/${taskId}/logs`))
       .send({
         nodeId,
         agentToken,
@@ -290,7 +291,7 @@ describe('Agent Lifecycle (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/agent/tasks/${taskId}/complete`)
+      .post(apiPath(`/agent/tasks/${taskId}/complete`))
       .send({
         nodeId,
         agentToken,
@@ -309,7 +310,7 @@ describe('Agent Lifecycle (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .get(`/tasks/${taskId}`)
+      .get(apiPath(`/tasks/${taskId}`))
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200)
       .expect(({ body }) => {
@@ -317,7 +318,7 @@ describe('Agent Lifecycle (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .get(`/tasks/${taskId}/logs`)
+      .get(apiPath(`/tasks/${taskId}/logs`))
       .set('Authorization', `Bearer ${adminToken}`)
       .query({ limit: 1000 })
       .expect(200)
@@ -390,7 +391,7 @@ describe('Agent Lifecycle (e2e)', () => {
     await waitFor(
       async () => {
         const response = await request(app.getHttpServer())
-          .get(`/nodes/${nodeId}`)
+          .get(apiPath(`/nodes/${nodeId}`))
           .set('Authorization', `Bearer ${adminToken}`);
 
         return response.body.status === 'offline';
@@ -399,7 +400,7 @@ describe('Agent Lifecycle (e2e)', () => {
     );
 
     await request(app.getHttpServer())
-      .post('/agent/heartbeat')
+      .post(apiPath('/agent/heartbeat'))
       .send({
         nodeId,
         agentToken,
@@ -410,7 +411,7 @@ describe('Agent Lifecycle (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .get(`/nodes/${nodeId}`)
+      .get(apiPath(`/nodes/${nodeId}`))
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200)
       .expect(({ body }) => {

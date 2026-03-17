@@ -115,6 +115,8 @@ All required variables are documented in `.env.example`.
 
 ## Main Endpoints
 
+All HTTP routes below are relative to the configured API base URL. With the default `.env`, that base URL is `http://localhost:3000/api/v1`.
+
 ### Public
 
 - `GET /health`
@@ -154,7 +156,7 @@ These endpoints are intended for registered agents and require `nodeId` plus `ag
 ### 1. Login
 
 ```bash
-curl -X POST http://localhost:3000/auth/login \
+curl -X POST http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@example.com",
@@ -165,7 +167,7 @@ curl -X POST http://localhost:3000/auth/login \
 ### 2. Register an Agent
 
 ```bash
-curl -X POST http://localhost:3000/agent/register \
+curl -X POST http://localhost:3000/api/v1/agent/register \
   -H "Content-Type: application/json" \
   -d '{
     "hostname": "srv-01",
@@ -178,7 +180,7 @@ curl -X POST http://localhost:3000/agent/register \
 ### 3. Send a Heartbeat
 
 ```bash
-curl -X POST http://localhost:3000/agent/heartbeat \
+curl -X POST http://localhost:3000/api/v1/agent/heartbeat \
   -H "Content-Type: application/json" \
   -d '{
     "nodeId": "generated-node-id",
@@ -189,7 +191,7 @@ curl -X POST http://localhost:3000/agent/heartbeat \
 ### 4. Ingest Metrics
 
 ```bash
-curl -X POST http://localhost:3000/agent/metrics \
+curl -X POST http://localhost:3000/api/v1/agent/metrics \
   -H "Content-Type: application/json" \
   -d '{
     "nodeId": "generated-node-id",
@@ -207,7 +209,7 @@ curl -X POST http://localhost:3000/agent/metrics \
 ### 5. Create a Task
 
 ```bash
-curl -X POST http://localhost:3000/tasks \
+curl -X POST http://localhost:3000/api/v1/tasks \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <jwt>" \
   -d '{
@@ -222,7 +224,7 @@ curl -X POST http://localhost:3000/tasks \
 ### 6. Pull Queued Tasks as an Agent
 
 ```bash
-curl -X POST http://localhost:3000/agent/tasks/pull \
+curl -X POST http://localhost:3000/api/v1/agent/tasks/pull \
   -H "Content-Type: application/json" \
   -d '{
     "nodeId": "generated-node-id",
@@ -234,7 +236,7 @@ curl -X POST http://localhost:3000/agent/tasks/pull \
 ### 7. Start and Complete a Task as an Agent
 
 ```bash
-curl -X POST http://localhost:3000/agent/tasks/<task-id>/start \
+curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/start \
   -H "Content-Type: application/json" \
   -d '{
     "nodeId": "generated-node-id",
@@ -243,7 +245,7 @@ curl -X POST http://localhost:3000/agent/tasks/<task-id>/start \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/agent/tasks/<task-id>/complete \
+curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/complete \
   -H "Content-Type: application/json" \
   -d '{
     "nodeId": "generated-node-id",
@@ -258,7 +260,7 @@ curl -X POST http://localhost:3000/agent/tasks/<task-id>/complete \
 
 ## Realtime
 
-Socket.IO is exposed at the `realtime` namespace.
+Socket.IO is exposed separately at the `realtime` namespace and does not use the HTTP API prefix.
 
 - Connect to `/realtime`
 - Subscribe to node-specific events with `subscribe.node`

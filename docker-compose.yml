@@ -27,7 +27,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "const prefix = (process.env.API_PREFIX || '').replace(/^\\/+|\\/+$/g, ''); const path = prefix ? `/${prefix}/health` : '/health'; fetch(`http://127.0.0.1:3000${path}`).then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))",
+          "const prefix = (process.env.API_PREFIX || '').replace(/^\\/+|\\/+$/g, ''); const path = prefix ? '/' + prefix + '/health' : '/health'; fetch('http://127.0.0.1:3000' + path).then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))",
         ]
       interval: 15s
       timeout: 5s

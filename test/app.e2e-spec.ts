@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
+import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
 
 describe('App (e2e)', () => {
@@ -8,7 +9,7 @@ describe('App (e2e)', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.PORT = '0';
-    process.env.API_PREFIX = '';
+    process.env.API_PREFIX = 'api/v1';
     process.env.CORS_ORIGIN = '*';
     process.env.SWAGGER_ENABLED = 'false';
     process.env.SWAGGER_PATH = 'docs';
@@ -50,7 +51,7 @@ describe('App (e2e)', () => {
 
   it('/health (GET)', () => {
     return request(app.getHttpServer())
-      .get('/health')
+      .get(apiPath('/health'))
       .expect(200)
       .expect(({ body }) => {
         expect(body.service).toBe('noderax-api');
