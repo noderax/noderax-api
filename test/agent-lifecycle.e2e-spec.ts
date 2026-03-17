@@ -181,12 +181,34 @@ describe('Agent Lifecycle (e2e)', () => {
     expect(secondAgentToken).toBeDefined();
   });
 
+  it('accepts the Go agent registration payload shape', async () => {
+    await request(app.getHttpServer())
+      .post(apiPath('/agent/register'))
+      .send({
+        hostname: 'srv-go-agent-01',
+        operatingSystem: 'ubuntu',
+        platform: 'linux',
+        platformVersion: '24.04',
+        kernelVersion: '6.8.0',
+        architecture: 'amd64',
+        agentVersion: 'dev',
+        enrollmentToken: process.env.AGENT_ENROLLMENT_TOKEN,
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.nodeId).toBeDefined();
+        expect(body.agentToken).toBeDefined();
+      });
+  });
+
   it('accepts heartbeats and ingests metrics for a valid agent', async () => {
     await request(app.getHttpServer())
       .post(apiPath('/agent/heartbeat'))
       .send({
         nodeId,
         agentToken,
+        agentVersion: 'dev',
+        sentAt: new Date().toISOString(),
       })
       .expect(200)
       .expect(({ body }) => {
@@ -199,13 +221,37 @@ describe('Agent Lifecycle (e2e)', () => {
       .send({
         nodeId,
         agentToken,
-        cpuUsage: 12.5,
-        memoryUsage: 33.3,
-        diskUsage: 44.4,
-        networkStats: {
-          rxBytes: 1000,
-          txBytes: 2000,
+        collectedAt: new Date().toISOString(),
+        cpu: {
+          usagePercent: 12.5,
         },
+        memory: {
+          totalBytes: 1024,
+          usedBytes: 341,
+          freeBytes: 683,
+          usedPercent: 33.3,
+          availableBytes: 683,
+        },
+        disk: {
+          path: '/',
+          totalBytes: 4096,
+          usedBytes: 1819,
+          freeBytes: 2277,
+          usedPercent: 44.4,
+        },
+        networks: [
+          {
+            interface: 'eth0',
+            bytesSent: 2000,
+            bytesRecv: 1000,
+            packetsSent: 20,
+            packetsRecv: 10,
+            errorsIn: 0,
+            errorsOut: 0,
+            dropIn: 0,
+            dropOut: 0,
+          },
+        ],
       })
       .expect(200)
       .expect(({ body }) => {
@@ -249,9 +295,9 @@ describe('Agent Lifecycle (e2e)', () => {
       })
       .expect(200)
       .expect(({ body }) => {
-        expect(body).toHaveLength(1);
-        expect(body[0].id).toBe(taskId);
-        expect(body[0].status).toBe('queued');
+        expect(body.tasks).toHaveLength(1);
+        expect(body.tasks[0].id).toBe(taskId);
+        expect(body.tasks[0].status).toBe('queued');
       });
 
     await request(app.getHttpServer())
@@ -269,6 +315,8 @@ describe('Agent Lifecycle (e2e)', () => {
       .send({
         nodeId,
         agentToken,
+        taskId,
+        startedAt: new Date().toISOString(),
       })
       .expect(200)
       .expect(({ body }) => {
@@ -281,13 +329,20 @@ describe('Agent Lifecycle (e2e)', () => {
       .send({
         nodeId,
         agentToken,
-        level: 'stdout',
-        message: 'hostname resolved to srv-test-01',
+        taskId,
+        entries: [
+          {
+            timestamp: new Date().toISOString(),
+            stream: 'stdout',
+            line: 'hostname resolved to srv-test-01',
+          },
+        ],
       })
       .expect(201)
       .expect(({ body }) => {
-        expect(body.taskId).toBe(taskId);
-        expect(body.level).toBe('stdout');
+        expect(body).toHaveLength(1);
+        expect(body[0].taskId).toBe(taskId);
+        expect(body[0].level).toBe('stdout');
       });
 
     await request(app.getHttpServer())
@@ -295,17 +350,17 @@ describe('Agent Lifecycle (e2e)', () => {
       .send({
         nodeId,
         agentToken,
+        taskId,
         status: 'success',
-        result: {
-          exitCode: 0,
-        },
-        output: 'hostname resolved to srv-test-01',
+        exitCode: 0,
+        completedAt: new Date().toISOString(),
+        durationMs: 25,
       })
       .expect(200)
       .expect(({ body }) => {
         expect(body.status).toBe('success');
         expect(body.result.exitCode).toBe(0);
-        expect(body.output).toBe('hostname resolved to srv-test-01');
+        expect(body.result.durationMs).toBe(25);
         expect(body.finishedAt).toBeDefined();
       });
 
@@ -323,9 +378,8 @@ describe('Agent Lifecycle (e2e)', () => {
       .query({ limit: 1000 })
       .expect(200)
       .expect(({ body }) => {
-        expect(body).toHaveLength(2);
+        expect(body).toHaveLength(1);
         expect(body[0].message).toContain('hostname resolved');
-        expect(body[1].message).toContain('hostname resolved');
       });
   });
 

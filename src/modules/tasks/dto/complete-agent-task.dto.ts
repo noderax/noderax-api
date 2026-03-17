@@ -1,9 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsDateString,
   IsIn,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
 } from 'class-validator';
 import { TaskStatus } from '../entities/task-status.enum';
@@ -13,6 +16,8 @@ export const AGENT_TASK_TERMINAL_STATUSES = [
   TaskStatus.SUCCESS,
   TaskStatus.FAILED,
   TaskStatus.CANCELLED,
+  'canceled',
+  'timeout',
 ] as const;
 
 export class CompleteAgentTaskDto extends AgentTaskAuthDto {
@@ -42,4 +47,25 @@ export class CompleteAgentTaskDto extends AgentTaskAuthDto {
   @IsString()
   @MaxLength(10000)
   output?: string;
+
+  @IsOptional()
+  @IsUUID()
+  taskId?: string;
+
+  @IsOptional()
+  @IsInt()
+  exitCode?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10000)
+  error?: string;
+
+  @IsOptional()
+  @IsDateString()
+  completedAt?: string;
+
+  @IsOptional()
+  @IsInt()
+  durationMs?: number;
 }

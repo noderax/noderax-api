@@ -20,6 +20,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { AppendTaskLogDto } from './dto/append-task-log.dto';
 import { CompleteAgentTaskDto } from './dto/complete-agent-task.dto';
 import { PullAgentTasksDto } from './dto/pull-agent-tasks.dto';
+import { PullAgentTasksResponseDto } from './dto/pull-agent-tasks-response.dto';
 import { StartAgentTaskDto } from './dto/start-agent-task.dto';
 import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskEntity } from './entities/task.entity';
@@ -41,14 +42,15 @@ export class AgentTasksController {
   @ApiBody({ type: PullAgentTasksDto })
   @ApiOkResponse({
     description: 'Queued tasks for the node.',
-    type: TaskEntity,
-    isArray: true,
+    type: PullAgentTasksResponseDto,
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid node ID or agent token.',
   })
-  pull(@Body() pullAgentTasksDto: PullAgentTasksDto) {
-    return this.tasksService.pullQueuedForAgent(pullAgentTasksDto);
+  async pull(@Body() pullAgentTasksDto: PullAgentTasksDto) {
+    return {
+      tasks: await this.tasksService.pullQueuedForAgent(pullAgentTasksDto),
+    };
   }
 
   @Post(':id/start')

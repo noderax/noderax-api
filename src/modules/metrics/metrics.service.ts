@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -36,10 +36,25 @@ export class MetricsService {
 
     const metric = this.metricsRepository.create({
       nodeId: agentMetricsDto.nodeId,
-      cpuUsage: agentMetricsDto.cpuUsage,
-      memoryUsage: agentMetricsDto.memoryUsage,
-      diskUsage: agentMetricsDto.diskUsage,
-      networkStats: agentMetricsDto.networkStats,
+      cpuUsage: this.resolvePercentageMetric(
+        agentMetricsDto.cpuUsage,
+        agentMetricsDto.cpu,
+        'usagePercent',
+        'cpuUsage',
+      ),
+      memoryUsage: this.resolvePercentageMetric(
+        agentMetricsDto.memoryUsage,
+        agentMetricsDto.memory,
+        'usedPercent',
+        'memoryUsage',
+      ),
+      diskUsage: this.resolvePercentageMetric(
+        agentMetricsDto.diskUsage,
+        agentMetricsDto.disk,
+        'usedPercent',
+        'diskUsage',
+      ),
+      networkStats: this.resolveNetworkStats(agentMetricsDto),
     });
 
     const savedMetric = await this.metricsRepository.save(metric);
@@ -88,5 +103,68 @@ export class MetricsService {
     }
 
     return metricsQuery.getMany();
+  }
+
+  private resolvePercentageMetric(
+    directValue: number | undefined,
+    nestedValue: Record<string, unknown> | undefined,
+    nestedKey: string,
+    fieldName: string,
+  ): number {
+    if (typeof directValue === 'number') {
+      return directValue;
+    }
+
+    const candidate = nestedValue?.[nestedKey];
+    if (typeof candidate === 'number') {
+      return candidate;
+    }
+
+    throw new BadRequestException(`${fieldName} is required`);
+  }
+
+  private resolveNetworkStats(
+    agentMetricsDto: AgentMetricsDto,
+  ): Record<string, unknown> {
+    if (agentMetricsDto.networkStats) {
+      return agentMetricsDto.networkStats;
+    }
+
+    if (!Array.isArray(agentMetricsDto.networks)) {
+      throw new BadRequestException('networkStats is required');
+    }
+
+    const summary = {
+      rxBytes: 0,
+      txBytes: 0,
+      rxPackets: 0,
+      txPackets: 0,
+      errorsIn: 0,
+      errorsOut: 0,
+      dropIn: 0,
+      dropOut: 0,
+      interfaces: agentMetricsDto.networks,
+    };
+
+    for (const network of agentMetricsDto.networks) {
+      summary.rxBytes += this.readNetworkCounter(network, 'bytesRecv');
+      summary.txBytes += this.readNetworkCounter(network, 'bytesSent');
+      summary.rxPackets += this.readNetworkCounter(network, 'packetsRecv');
+      summary.txPackets += this.readNetworkCounter(network, 'packetsSent');
+      summary.errorsIn += this.readNetworkCounter(network, 'errorsIn');
+      summary.errorsOut += this.readNetworkCounter(network, 'errorsOut');
+      summary.dropIn += this.readNetworkCounter(network, 'dropIn');
+      summary.dropOut += this.readNetworkCounter(network, 'dropOut');
+    }
+
+    return summary;
+  }
+
+  private readNetworkCounter(
+    network: Record<string, unknown>,
+    key: string,
+  ): number {
+    const value = network[key];
+    return typeof value === 'number' ? value : 0;
   }
 }

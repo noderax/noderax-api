@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MinLength } from 'class-validator';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class AgentRegisterDto {
   @ApiProperty({
@@ -17,18 +17,20 @@ export class AgentRegisterDto {
     description: 'Operating system label reported by the agent.',
   })
   @Transform(({ value }) => value?.trim())
+  @IsOptional()
   @IsString()
   @MinLength(2)
-  os: string;
+  os?: string;
 
   @ApiProperty({
     example: 'amd64',
     description: 'CPU architecture reported by the agent.',
   })
   @Transform(({ value }) => value?.trim())
+  @IsOptional()
   @IsString()
   @MinLength(2)
-  arch: string;
+  arch?: string;
 
   @ApiProperty({
     example: 'your-token',
@@ -37,4 +39,40 @@ export class AgentRegisterDto {
   })
   @IsString()
   enrollmentToken: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => value?.trim())
+  @IsString()
+  operatingSystem?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => value?.trim())
+  @IsString()
+  architecture?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => value?.trim())
+  @IsString()
+  platform?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => value?.trim())
+  @IsString()
+  platformVersion?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => value?.trim())
+  @IsString()
+  kernelVersion?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => value?.trim())
+  @IsString()
+  agentVersion?: string;
 }

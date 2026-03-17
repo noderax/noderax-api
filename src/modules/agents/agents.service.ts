@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
@@ -34,13 +38,26 @@ export class AgentsService {
       throw new ForbiddenException('Invalid enrollment token');
     }
 
+    const os = this.resolveRequiredRegistrationField(
+      [
+        agentRegisterDto.os,
+        agentRegisterDto.operatingSystem,
+        agentRegisterDto.platform,
+      ],
+      'os',
+    );
+    const arch = this.resolveRequiredRegistrationField(
+      [agentRegisterDto.arch, agentRegisterDto.architecture],
+      'arch',
+    );
+
     const agentToken = randomBytes(32).toString('hex');
     const agentTokenHash = this.nodesService.hashAgentToken(agentToken);
 
     const node = await this.nodesService.upsertFromAgentRegistration({
       hostname: agentRegisterDto.hostname,
-      os: agentRegisterDto.os,
-      arch: agentRegisterDto.arch,
+      os,
+      arch,
       agentTokenHash,
     });
 
@@ -56,6 +73,22 @@ export class AgentsService {
       nodeId: node.id,
       agentToken,
     };
+  }
+
+  private resolveRequiredRegistrationField(
+    candidates: Array<string | undefined>,
+    fieldName: string,
+  ): string {
+    const value = candidates.find(
+      (candidate) =>
+        typeof candidate === 'string' && candidate.trim().length > 0,
+    );
+
+    if (!value) {
+      throw new BadRequestException(`${fieldName} is required`);
+    }
+
+    return value.trim();
   }
 
   async heartbeat(

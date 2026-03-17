@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -28,9 +29,11 @@ import { TaskLogLevel } from './entities/task-log-level.enum';
 import { TaskEntity } from './entities/task.entity';
 import { TaskStatus } from './entities/task-status.enum';
 
-const TERMINAL_TASK_STATUSES = new Set<TaskStatus>(
-  AGENT_TASK_TERMINAL_STATUSES,
-);
+const TERMINAL_TASK_STATUSES = new Set<TaskStatus>([
+  TaskStatus.SUCCESS,
+  TaskStatus.FAILED,
+  TaskStatus.CANCELLED,
+]);
 
 @Injectable()
 export class TasksService {
@@ -149,6 +152,8 @@ export class TasksService {
     taskId: string,
     startAgentTaskDto: StartAgentTaskDto,
   ): Promise<TaskEntity> {
+    this.assertTaskIdMatchesRoute(taskId, startAgentTaskDto.taskId);
+
     const node = await this.nodesService.authenticateAgent(
       startAgentTaskDto.nodeId,
       startAgentTaskDto.agentToken,
@@ -159,7 +164,9 @@ export class TasksService {
       .update(TaskEntity)
       .set({
         status: TaskStatus.RUNNING,
-        startedAt: new Date(),
+        startedAt: startAgentTaskDto.startedAt
+          ? new Date(startAgentTaskDto.startedAt)
+          : new Date(),
         finishedAt: null,
         updatedAt: new Date(),
       })
@@ -209,7 +216,9 @@ export class TasksService {
   async appendLogForAgent(
     taskId: string,
     appendTaskLogDto: AppendTaskLogDto,
-  ): Promise<TaskLogEntity> {
+  ): Promise<TaskLogEntity | TaskLogEntity[]> {
+    this.assertTaskIdMatchesRoute(taskId, appendTaskLogDto.taskId);
+
     const node = await this.nodesService.authenticateAgent(
       appendTaskLogDto.nodeId,
       appendTaskLogDto.agentToken,
@@ -228,6 +237,33 @@ export class TasksService {
       );
     }
 
+    if (Array.isArray(appendTaskLogDto.entries) && appendTaskLogDto.entries.length > 0) {
+      const entries = appendTaskLogDto.entries.filter(
+        (entry) => typeof entry.line === 'string' && entry.line.trim().length > 0,
+      );
+
+      if (entries.length === 0) {
+        throw new BadRequestException('entries must contain at least one log line');
+      }
+
+      task.output = entries[entries.length - 1].line;
+      await this.tasksRepository.save(task);
+
+      const taskLogs = entries.map((entry) =>
+        this.taskLogsRepository.create({
+          taskId: task.id,
+          level: this.resolveTaskLogLevel(entry.stream),
+          message: entry.line,
+        }),
+      );
+
+      return this.taskLogsRepository.save(taskLogs);
+    }
+
+    if (!appendTaskLogDto.message) {
+      throw new BadRequestException('message is required');
+    }
+
     task.output = appendTaskLogDto.message;
     await this.tasksRepository.save(task);
 
@@ -244,6 +280,11 @@ export class TasksService {
     taskId: string,
     completeAgentTaskDto: CompleteAgentTaskDto,
   ): Promise<TaskEntity> {
+    this.assertTaskIdMatchesRoute(taskId, completeAgentTaskDto.taskId);
+    const normalizedStatus = this.normalizeCompletionStatus(
+      completeAgentTaskDto.status,
+    );
+
     const node = await this.nodesService.authenticateAgent(
       completeAgentTaskDto.nodeId,
       completeAgentTaskDto.agentToken,
@@ -251,7 +292,7 @@ export class TasksService {
     const task = await this.findTaskForNodeOrFail(taskId, node.id);
 
     if (this.isTerminalStatus(task.status)) {
-      if (task.status === completeAgentTaskDto.status) {
+      if (task.status === normalizedStatus) {
         return task;
       }
 
@@ -261,24 +302,31 @@ export class TasksService {
     }
 
     const now = new Date();
+    const completionOutput =
+      completeAgentTaskDto.output ?? completeAgentTaskDto.error;
+    const completionResult =
+      completeAgentTaskDto.result ??
+      this.buildCompletionResult(completeAgentTaskDto);
 
-    task.status = completeAgentTaskDto.status;
+    task.status = normalizedStatus;
     task.startedAt = task.startedAt ?? now;
-    task.finishedAt = now;
-    task.result = completeAgentTaskDto.result ?? null;
-    if (completeAgentTaskDto.output !== undefined) {
-      task.output = completeAgentTaskDto.output;
+    task.finishedAt = completeAgentTaskDto.completedAt
+      ? new Date(completeAgentTaskDto.completedAt)
+      : now;
+    task.result = completionResult;
+    if (completionOutput !== undefined) {
+      task.output = completionOutput;
     }
 
     const savedTask = await this.tasksRepository.save(task);
 
-    if (completeAgentTaskDto.output) {
+    if (completionOutput) {
       await this.createTaskLog(savedTask.id, {
         level:
-          completeAgentTaskDto.status === TaskStatus.FAILED
+          savedTask.status === TaskStatus.FAILED
             ? TaskLogLevel.ERROR
             : TaskLogLevel.INFO,
-        message: completeAgentTaskDto.output,
+        message: completionOutput,
       });
     }
 
@@ -391,5 +439,66 @@ export class TasksService {
       taskType: task.type,
       taskStatus: task.status,
     };
+  }
+
+  private assertTaskIdMatchesRoute(
+    routeTaskId: string,
+    bodyTaskId?: string,
+  ): void {
+    if (bodyTaskId && bodyTaskId !== routeTaskId) {
+      throw new BadRequestException('taskId in request body must match route parameter');
+    }
+  }
+
+  private resolveTaskLogLevel(stream: string): TaskLogLevel {
+    switch (stream) {
+      case TaskLogLevel.STDOUT:
+        return TaskLogLevel.STDOUT;
+      case TaskLogLevel.STDERR:
+        return TaskLogLevel.STDERR;
+      default:
+        return TaskLogLevel.INFO;
+    }
+  }
+
+  private normalizeCompletionStatus(
+    status: CompleteAgentTaskDto['status'],
+  ): TaskStatus {
+    switch (status) {
+      case TaskStatus.SUCCESS:
+        return TaskStatus.SUCCESS;
+      case TaskStatus.CANCELLED:
+      case 'canceled':
+        return TaskStatus.CANCELLED;
+      case 'timeout':
+      case TaskStatus.FAILED:
+        return TaskStatus.FAILED;
+      default:
+        throw new ConflictException(`Task status ${status} is not terminal`);
+    }
+  }
+
+  private buildCompletionResult(
+    completeAgentTaskDto: CompleteAgentTaskDto,
+  ): Record<string, unknown> | null {
+    const result: Record<string, unknown> = {};
+
+    if (completeAgentTaskDto.exitCode !== undefined) {
+      result.exitCode = completeAgentTaskDto.exitCode;
+    }
+    if (completeAgentTaskDto.durationMs !== undefined) {
+      result.durationMs = completeAgentTaskDto.durationMs;
+    }
+    if (completeAgentTaskDto.completedAt !== undefined) {
+      result.completedAt = completeAgentTaskDto.completedAt;
+    }
+    if (completeAgentTaskDto.error !== undefined) {
+      result.error = completeAgentTaskDto.error;
+    }
+    if (completeAgentTaskDto.status === 'timeout') {
+      result.reason = 'timeout';
+    }
+
+    return Object.keys(result).length > 0 ? result : null;
   }
 }

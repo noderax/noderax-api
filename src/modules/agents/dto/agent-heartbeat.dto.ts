@@ -1,5 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID, MinLength } from 'class-validator';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
+import {
+  IsDateString,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MinLength,
+} from 'class-validator';
 
 export class AgentHeartbeatDto {
   @ApiProperty({
@@ -18,4 +24,15 @@ export class AgentHeartbeatDto {
   @IsString()
   @MinLength(32)
   agentToken: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  agentVersion?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @IsDateString()
+  sentAt?: string;
 }

@@ -1,6 +1,9 @@
 import {
+  IsArray,
+  IsDateString,
   IsNumber,
   IsObject,
+  IsOptional,
   IsString,
   IsUUID,
   Max,
@@ -30,30 +33,33 @@ export class AgentMetricsDto {
     minimum: 0,
     maximum: 100,
   })
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
-  cpuUsage: number;
+  cpuUsage?: number;
 
   @ApiProperty({
     example: 63.1,
     minimum: 0,
     maximum: 100,
   })
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
-  memoryUsage: number;
+  memoryUsage?: number;
 
   @ApiProperty({
     example: 58.4,
     minimum: 0,
     maximum: 100,
   })
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
-  diskUsage: number;
+  diskUsage?: number;
 
   @ApiProperty({
     example: {
@@ -65,6 +71,27 @@ export class AgentMetricsDto {
     type: 'object',
     additionalProperties: true,
   })
+  @IsOptional()
   @IsObject()
-  networkStats: Record<string, unknown>;
+  networkStats?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsDateString()
+  collectedAt?: string;
+
+  @IsOptional()
+  @IsObject()
+  cpu?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  memory?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  disk?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  networks?: Array<Record<string, unknown>>;
 }
