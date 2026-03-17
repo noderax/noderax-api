@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { agentsConfig } from '../../config';
+import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RedisService } from '../../redis/redis.service';
@@ -32,7 +32,7 @@ export class MetricsService {
       agentMetricsDto.agentToken,
     );
 
-    await this.nodesService.touchOnline(node.id);
+    await this.nodesService.markOnline(node.id);
 
     const metric = this.metricsRepository.create({
       nodeId: agentMetricsDto.nodeId,
@@ -44,9 +44,10 @@ export class MetricsService {
 
     const savedMetric = await this.metricsRepository.save(metric);
 
-    const agents = this.configService.getOrThrow<
-      ConfigType<typeof agentsConfig>
-    >(agentsConfig.KEY);
+    const agents =
+      this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
+        AGENTS_CONFIG_KEY,
+      );
     if (savedMetric.cpuUsage >= agents.highCpuThreshold) {
       await this.eventsService.record({
         nodeId: savedMetric.nodeId,

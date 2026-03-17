@@ -121,7 +121,7 @@ export class TasksService {
     return this.taskLogsRepository.find({
       where: { taskId },
       order: { createdAt: 'ASC' },
-      take: query.limit ?? 200,
+      take: query.limit ?? 100,
     });
   }
 
@@ -154,15 +154,14 @@ export class TasksService {
       startAgentTaskDto.agentToken,
     );
 
-    // Atomic state transition to prevent race conditions
     const updateResult = await this.tasksRepository
       .createQueryBuilder()
       .update(TaskEntity)
       .set({
         status: TaskStatus.RUNNING,
         startedAt: new Date(),
-        // Ensure finishedAt is nullified if it was set (though from QUEUED it shouldn't be)
         finishedAt: null,
+        updatedAt: new Date(),
       })
       .where('id = :id', { id: taskId })
       .andWhere('nodeId = :nodeId', { nodeId: node.id })
@@ -171,10 +170,6 @@ export class TasksService {
       .execute();
 
     if (updateResult.affected === 0) {
-      // If we didn't update anything, either:
-      // 1. The task doesn't exist
-      // 2. The task doesn't belong to this node
-      // 3. The task is not in QUEUED state using the optimistic lock
       const task = await this.tasksRepository.findOne({
         where: { id: taskId },
       });
@@ -186,7 +181,6 @@ export class TasksService {
       }
 
       if (task.status === TaskStatus.RUNNING) {
-        // Idempotency: If already running, just return it
         return task;
       }
 
@@ -195,7 +189,6 @@ export class TasksService {
       );
     }
 
-    // Identify the updated task reliably
     const savedTask = await this.tasksRepository.findOneOrFail({
       where: { id: taskId },
     });

@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import Redis from 'ioredis';
-import { redisConfig } from '../config';
+import { REDIS_CONFIG_KEY, redisConfig } from '../config';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -9,9 +9,10 @@ export class RedisService implements OnModuleDestroy {
   private readonly client: Redis | null;
 
   constructor(private readonly configService: ConfigService) {
-    const redis = this.configService.getOrThrow<ConfigType<typeof redisConfig>>(
-      redisConfig.KEY,
-    );
+    const redis =
+      this.configService.getOrThrow<ConfigType<typeof redisConfig>>(
+        REDIS_CONFIG_KEY,
+      );
 
     if (!redis.enabled) {
       this.client = null;

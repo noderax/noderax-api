@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConfigService, ConfigType } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
+import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
-import { NodeStatus } from '../nodes/entities/node-status.enum';
 import { NodesService } from '../nodes/nodes.service';
 import { AgentHeartbeatResponseDto } from './dto/agent-heartbeat-response.dto';
 import { AgentHeartbeatDto } from './dto/agent-heartbeat.dto';
@@ -15,11 +16,24 @@ export class AgentsService {
   constructor(
     private readonly nodesService: NodesService,
     private readonly eventsService: EventsService,
+    private readonly configService: ConfigService,
   ) {}
 
   async register(
     agentRegisterDto: AgentRegisterDto,
   ): Promise<AgentRegisterResponseDto> {
+    const agents =
+      this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
+        AGENTS_CONFIG_KEY,
+      );
+
+    if (
+      agents.enrollmentToken &&
+      agentRegisterDto.enrollmentToken !== agents.enrollmentToken
+    ) {
+      throw new ForbiddenException('Invalid enrollment token');
+    }
+
     const agentToken = randomBytes(32).toString('hex');
     const agentTokenHash = this.nodesService.hashAgentToken(agentToken);
 
@@ -51,10 +65,10 @@ export class AgentsService {
       agentHeartbeatDto.nodeId,
       agentHeartbeatDto.agentToken,
     );
-    const wasOffline = node.status === NodeStatus.OFFLINE;
-    const updatedNode = await this.nodesService.touchOnline(node.id);
+    const { node: updatedNode, transitionedToOnline } =
+      await this.nodesService.markOnline(node.id);
 
-    if (wasOffline) {
+    if (transitionedToOnline) {
       await this.eventsService.record({
         nodeId: updatedNode.id,
         type: SYSTEM_EVENT_TYPES.NODE_ONLINE,

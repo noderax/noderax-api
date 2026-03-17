@@ -1,6 +1,7 @@
-import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { clampInteger } from '../../../common/utils/clamp-integer.util';
 
 export class QueryMetricsDto {
   @ApiPropertyOptional({
@@ -18,9 +19,9 @@ export class QueryMetricsDto {
     default: 50,
   })
   @IsOptional()
-  @Type(() => Number)
+  @Transform(({ value }) => clampInteger(value, { min: 1, max: 100 }))
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 50;
+  limit?: number;
 }

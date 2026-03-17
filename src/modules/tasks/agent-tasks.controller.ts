@@ -1,7 +1,15 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBody,
   ApiConflictResponse,
+  ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -24,6 +32,7 @@ export class AgentTasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Post('pull')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Poll queued tasks for an agent',
     description:
@@ -43,6 +52,7 @@ export class AgentTasksController {
   }
 
   @Post(':id/start')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Mark a queued task as running',
   })
@@ -69,7 +79,7 @@ export class AgentTasksController {
     summary: 'Append a task log entry',
   })
   @ApiBody({ type: AppendTaskLogDto })
-  @ApiOkResponse({
+  @ApiCreatedResponse({
     description: 'Task log entry stored.',
     type: TaskLogEntity,
   })
@@ -90,6 +100,7 @@ export class AgentTasksController {
   }
 
   @Post(':id/complete')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Mark a task as completed, failed, or cancelled',
   })

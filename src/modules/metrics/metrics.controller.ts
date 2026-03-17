@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -21,6 +29,7 @@ export class MetricsController {
 
   @Public()
   @Post('agent/metrics')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Ingest node metrics',
     description:

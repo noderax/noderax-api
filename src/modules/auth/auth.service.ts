@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { JwtPayload } from '../../common/types/jwt-payload.type';
-import { authConfig } from '../../config';
+import { AUTH_CONFIG_KEY, authConfig } from '../../config';
 import { LoginDto } from './dto/login.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { UsersService } from '../users/users.service';
@@ -41,9 +41,10 @@ export class AuthService {
       role: user.role,
       name: user.name,
     });
-    const authSettings = this.configService.getOrThrow<
-      ConfigType<typeof authConfig>
-    >(authConfig.KEY);
+    const authSettings =
+      this.configService.getOrThrow<ConfigType<typeof authConfig>>(
+        AUTH_CONFIG_KEY,
+      );
 
     return {
       accessToken,

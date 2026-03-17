@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEnum,
@@ -9,6 +9,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { clampInteger } from '../../../common/utils/clamp-integer.util';
 import { EventSeverity } from '../entities/event-severity.enum';
 
 export class QueryEventsDto {
@@ -43,9 +44,9 @@ export class QueryEventsDto {
     default: 50,
   })
   @IsOptional()
-  @Type(() => Number)
+  @Transform(({ value }) => clampInteger(value, { min: 1, max: 100 }))
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 50;
+  limit?: number;
 }

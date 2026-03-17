@@ -11,7 +11,7 @@ import { createHash, timingSafeEqual } from 'crypto';
 import { Repository } from 'typeorm';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
-import { agentsConfig } from '../../config';
+import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { RedisService } from '../../redis/redis.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
@@ -174,6 +174,33 @@ export class NodesService {
   }
 
   async touchOnline(nodeId: string): Promise<NodeEntity> {
+    const { node } = await this.markOnline(nodeId);
+    return node;
+  }
+
+  async markOnline(
+    nodeId: string,
+  ): Promise<{ node: NodeEntity; transitionedToOnline: boolean }> {
+    const now = new Date();
+    const updateResult = await this.nodesRepository
+      .createQueryBuilder()
+      .update(NodeEntity)
+      .set({
+        status: NodeStatus.ONLINE,
+        lastSeenAt: now,
+        updatedAt: now,
+      })
+      .where('id = :nodeId', { nodeId })
+      .andWhere('status = :status', { status: NodeStatus.OFFLINE })
+      .execute();
+
+    if (updateResult.affected) {
+      return {
+        node: await this.findOneOrFail(nodeId),
+        transitionedToOnline: true,
+      };
+    }
+
     const node = await this.nodesRepository.findOne({ where: { id: nodeId } });
 
     if (!node) {
@@ -181,9 +208,12 @@ export class NodesService {
     }
 
     node.status = NodeStatus.ONLINE;
-    node.lastSeenAt = new Date();
+    node.lastSeenAt = now;
 
-    return this.nodesRepository.save(node);
+    return {
+      node: await this.nodesRepository.save(node),
+      transitionedToOnline: false,
+    };
   }
 
   async broadcastStatusUpdate(
@@ -204,9 +234,10 @@ export class NodesService {
   }
 
   async markStaleNodesOffline(): Promise<number> {
-    const agents = this.configService.getOrThrow<
-      ConfigType<typeof agentsConfig>
-    >(agentsConfig.KEY);
+    const agents =
+      this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
+        AGENTS_CONFIG_KEY,
+      );
     const cutoff = new Date(Date.now() - agents.heartbeatTimeoutSeconds * 1000);
     const updatedAt = new Date();
 

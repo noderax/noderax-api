@@ -10,7 +10,9 @@ const parsePositiveInteger = (
     : fallback;
 };
 
-export const agentsConfig = registerAs('agents', () => ({
+export const AGENTS_CONFIG_KEY = 'agents';
+
+export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
   heartbeatTimeoutSeconds: parsePositiveInteger(
     process.env.AGENT_HEARTBEAT_TIMEOUT_SECONDS,
     90,
@@ -19,5 +21,6 @@ export const agentsConfig = registerAs('agents', () => ({
     process.env.AGENT_OFFLINE_CHECK_INTERVAL_SECONDS,
     30,
   ),
+  enrollmentToken: process.env.AGENT_ENROLLMENT_TOKEN ?? '',
   highCpuThreshold: parseFloat(process.env.AGENT_HIGH_CPU_THRESHOLD ?? '90'),
 }));

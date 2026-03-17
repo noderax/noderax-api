@@ -8,7 +8,12 @@ import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
-import { authConfig, bootstrapConfig } from '../../config';
+import {
+  AUTH_CONFIG_KEY,
+  BOOTSTRAP_CONFIG_KEY,
+  authConfig,
+  bootstrapConfig,
+} from '../../config';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UserEntity } from './entities/user.entity';
@@ -79,9 +84,10 @@ export class UsersService {
   }
 
   async ensureDefaultAdmin() {
-    const bootstrap = this.configService.getOrThrow<
-      ConfigType<typeof bootstrapConfig>
-    >(bootstrapConfig.KEY);
+    const bootstrap =
+      this.configService.getOrThrow<ConfigType<typeof bootstrapConfig>>(
+        BOOTSTRAP_CONFIG_KEY,
+      );
 
     if (!bootstrap.seedDefaultAdmin) {
       return;
@@ -121,9 +127,10 @@ export class UsersService {
   }
 
   private async hashPassword(password: string) {
-    const auth = this.configService.getOrThrow<ConfigType<typeof authConfig>>(
-      authConfig.KEY,
-    );
+    const auth =
+      this.configService.getOrThrow<ConfigType<typeof authConfig>>(
+        AUTH_CONFIG_KEY,
+      );
     return bcrypt.hash(password, auth.bcryptSaltRounds);
   }
 }

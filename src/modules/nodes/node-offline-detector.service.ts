@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { agentsConfig } from '../../config';
+import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { NodesService } from './nodes.service';
 
 @Injectable()
@@ -24,9 +24,10 @@ export class NodeOfflineDetectorService
   ) {}
 
   onModuleInit(): void {
-    const agents = this.configService.getOrThrow<
-      ConfigType<typeof agentsConfig>
-    >(agentsConfig.KEY);
+    const agents =
+      this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
+        AGENTS_CONFIG_KEY,
+      );
 
     const interval = setInterval(() => {
       void this.runOfflineDetection();

@@ -1,6 +1,8 @@
 import { registerAs } from '@nestjs/config';
 
-export const redisConfig = registerAs('redis', () => ({
+export const REDIS_CONFIG_KEY = 'redis';
+
+export const redisConfig = registerAs(REDIS_CONFIG_KEY, () => ({
   enabled: process.env.REDIS_ENABLED !== 'false',
   url: process.env.REDIS_URL ?? '',
   host: process.env.REDIS_HOST ?? '127.0.0.1',

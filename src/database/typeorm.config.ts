@@ -1,13 +1,14 @@
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { databaseConfig } from '../config';
+import { DATABASE_CONFIG_KEY, databaseConfig } from '../config';
 
 export function getTypeOrmConfig(
   configService: ConfigService,
 ): TypeOrmModuleOptions {
-  const database = configService.getOrThrow<ConfigType<typeof databaseConfig>>(
-    databaseConfig.KEY,
-  );
+  const database =
+    configService.getOrThrow<ConfigType<typeof databaseConfig>>(
+      DATABASE_CONFIG_KEY,
+    );
 
   return {
     type: 'postgres',

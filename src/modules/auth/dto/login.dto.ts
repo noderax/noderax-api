@@ -4,7 +4,7 @@ import { IsEmail, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({
-    example: 'admin@noderax.local',
+    example: 'admin@example.com',
     description: 'User email address.',
   })
   @Transform(({ value }) => value?.trim().toLowerCase())

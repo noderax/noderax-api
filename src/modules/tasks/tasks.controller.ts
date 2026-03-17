@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -9,6 +10,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user-role.enum';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskLogsDto } from './dto/query-task-logs.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
@@ -26,13 +29,18 @@ export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Post()
+  @Roles(UserRole.ADMIN)
   @ApiOperation({
     summary: 'Create a task',
-    description: 'Queues a command or operation for a target node.',
+    description:
+      'Queues a command or operation for a target node. Requires ADMIN role.',
   })
   @ApiCreatedResponse({
     description: 'Task created.',
     type: TaskEntity,
+  })
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions.',
   })
   create(@Body() createTaskDto: CreateTaskDto) {
     return this.tasksService.create(createTaskDto);

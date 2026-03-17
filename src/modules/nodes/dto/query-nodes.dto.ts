@@ -1,6 +1,7 @@
+import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { clampInteger } from '../../../common/utils/clamp-integer.util';
 import { NodeStatus } from '../entities/node-status.enum';
 
 export class QueryNodesDto {
@@ -30,7 +31,7 @@ export class QueryNodesDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  @Type(() => Number)
+  @Transform(({ value }) => clampInteger(value, { min: 1, max: 100 }))
   limit?: number;
 
   @ApiPropertyOptional({

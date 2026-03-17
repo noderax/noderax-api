@@ -9,7 +9,7 @@ export class UserResponseDto {
   id: string;
 
   @ApiProperty({
-    example: 'admin@noderax.local',
+    example: 'admin@example.com',
   })
   email: string;
 

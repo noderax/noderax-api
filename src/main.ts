@@ -12,7 +12,7 @@ import { AppModule } from './app.module';
 import { SWAGGER_BEARER_AUTH_NAME } from './common/constants/swagger.constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
-import { appConfig } from './config';
+import { APP_CONFIG_KEY, appConfig } from './config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -23,9 +23,8 @@ async function bootstrap() {
   app.use(compression());
 
   const configService = app.get(ConfigService);
-  const appSettings = configService.getOrThrow<ConfigType<typeof appConfig>>(
-    appConfig.KEY,
-  );
+  const appSettings =
+    configService.getOrThrow<ConfigType<typeof appConfig>>(APP_CONFIG_KEY);
   const logger = new Logger('Bootstrap');
   const { apiPrefix, corsOrigin, port, swaggerEnabled, swaggerPath } =
     appSettings;

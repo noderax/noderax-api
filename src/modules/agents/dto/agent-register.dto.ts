@@ -29,4 +29,11 @@ export class AgentRegisterDto {
   @IsString()
   @MinLength(2)
   arch: string;
+
+  @ApiProperty({
+    example: 'enrollment-token-123',
+    description: 'Security token required to register new agents.',
+  })
+  @IsString()
+  enrollmentToken: string;
 }

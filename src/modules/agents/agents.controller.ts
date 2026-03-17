@@ -1,7 +1,8 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
   ApiBody,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -31,11 +32,15 @@ export class AgentsController {
     description: 'Agent successfully registered.',
     type: AgentRegisterResponseDto,
   })
+  @ApiForbiddenResponse({
+    description: 'Invalid or missing enrollment token.',
+  })
   register(@Body() agentRegisterDto: AgentRegisterDto) {
     return this.agentsService.register(agentRegisterDto);
   }
 
   @Post('heartbeat')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Send an agent heartbeat',
     description:
