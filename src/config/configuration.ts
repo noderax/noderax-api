@@ -4,6 +4,8 @@ export default () => ({
     port: parseInt(process.env.PORT ?? '3000', 10),
     apiPrefix: process.env.API_PREFIX ?? '',
     corsOrigin: process.env.CORS_ORIGIN ?? '*',
+    swaggerEnabled: process.env.SWAGGER_ENABLED !== 'false',
+    swaggerPath: process.env.SWAGGER_PATH ?? 'docs',
   },
   database: {
     host: process.env.DB_HOST ?? '127.0.0.1',

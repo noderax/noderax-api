@@ -1,21 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID, MinLength } from 'class-validator';
 
-export class AgentHeartbeatDto {
+export class AgentRegisterResponseDto {
   @ApiProperty({
     format: 'uuid',
     example: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
-    description: 'Node identifier returned during registration.',
+    description: 'Registered node identifier.',
   })
-  @IsUUID()
   nodeId: string;
 
   @ApiProperty({
     example: '8eb84760b145bd1805e87ef4c0947b7b142d1bed3428f70f9b5f6f0a11baeb42',
-    minLength: 32,
-    description: 'Agent token returned during registration.',
+    description: 'Agent credential returned at registration time.',
   })
-  @IsString()
-  @MinLength(32)
   agentToken: string;
 }
