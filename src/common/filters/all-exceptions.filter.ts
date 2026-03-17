@@ -28,9 +28,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : { message: 'Internal server error' };
 
     const normalizedResponse =
-      typeof exceptionResponse === 'string'
-        ? { message: exceptionResponse }
-        : exceptionResponse;
+      this.normalizeExceptionResponse(exceptionResponse);
 
     if (!(exception instanceof HttpException) || status >= 500) {
       const error = exception as Error;
@@ -46,5 +44,32 @@ export class AllExceptionsFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       ...normalizedResponse,
     });
+  }
+
+  private normalizeExceptionResponse(
+    exceptionResponse: string | object,
+  ): Record<string, unknown> {
+    if (typeof exceptionResponse === 'string') {
+      return { message: exceptionResponse };
+    }
+
+    const responseBody = {
+      ...(exceptionResponse as Record<string, unknown>),
+    };
+    const rawMessage = responseBody.message;
+
+    if (!Array.isArray(rawMessage)) {
+      return responseBody;
+    }
+
+    const errors = rawMessage.map((entry) =>
+      typeof entry === 'string' ? entry : JSON.stringify(entry),
+    );
+
+    return {
+      ...responseBody,
+      message: errors.join('; '),
+      errors,
+    };
   }
 }

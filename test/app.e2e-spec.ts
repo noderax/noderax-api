@@ -58,4 +58,17 @@ describe('App (e2e)', () => {
         expect(body.status).toBe('ok');
       });
   });
+
+  it('normalizes validation errors to a string message', () => {
+    return request(app.getHttpServer())
+      .post(apiPath('/agent/register'))
+      .send({})
+      .expect(400)
+      .expect(({ body }) => {
+        expect(typeof body.message).toBe('string');
+        expect(body.message.length).toBeGreaterThan(0);
+        expect(body.errors).toEqual(expect.any(Array));
+        expect(body.errors.length).toBeGreaterThan(0);
+      });
+  });
 });
