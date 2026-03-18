@@ -15,10 +15,7 @@ import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodesService } from '../nodes/nodes.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AppendTaskLogDto } from './dto/append-task-log.dto';
-import {
-  AGENT_TASK_TERMINAL_STATUSES,
-  CompleteAgentTaskDto,
-} from './dto/complete-agent-task.dto';
+import { CompleteAgentTaskDto } from './dto/complete-agent-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { PullAgentTasksDto } from './dto/pull-agent-tasks.dto';
 import { QueryTaskLogsDto } from './dto/query-task-logs.dto';
