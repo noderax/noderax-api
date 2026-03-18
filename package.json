@@ -1,7 +1,7 @@
 {
   "name": "noderax-api",
-  "version": "0.0.1",
-  "description": "",
+  "version": "1.0.0",
+  "description": "Noderax API control plane for agent-based infrastructure management",
   "author": "",
   "private": true,
   "license": "UNLICENSED",

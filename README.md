@@ -2,6 +2,8 @@
 
 Noderax is an agent-based infrastructure management platform. This repository contains the monolithic NestJS control plane API used by the web dashboard and remote Go agents.
 
+Current stable release: `1.0.0`
+
 ## Stack
 
 - NestJS 11
