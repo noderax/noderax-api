@@ -48,7 +48,7 @@ export class AgentsController {
   @ApiOperation({
     summary: 'Send an agent heartbeat',
     description:
-      'Authenticates the agent token, updates last seen time, and marks the node online.',
+      'Authenticates the agent token, updates last seen time, and marks the node online. Nodes that stop sending heartbeats are later marked offline by the background offline detector.',
   })
   @ApiBody({ type: AgentHeartbeatDto })
   @ApiOkResponse({

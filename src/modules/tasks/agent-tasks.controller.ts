@@ -37,7 +37,7 @@ export class AgentTasksController {
   @ApiOperation({
     summary: 'Poll queued tasks for an agent',
     description:
-      'Authenticates the agent and returns queued tasks for the specified node.',
+      'Authenticates the agent and returns queued tasks for the specified node. The response body is wrapped as { tasks: [...] } for compatibility with the Go agent.',
   })
   @ApiBody({ type: PullAgentTasksDto })
   @ApiOkResponse({
@@ -57,6 +57,8 @@ export class AgentTasksController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Mark a queued task as running',
+    description:
+      'Authenticates the agent, verifies task ownership, and transitions a queued task to running.',
   })
   @ApiBody({ type: StartAgentTaskDto })
   @ApiOkResponse({
@@ -79,6 +81,8 @@ export class AgentTasksController {
   @Post(':id/logs')
   @ApiOperation({
     summary: 'Append a task log entry',
+    description:
+      'Persists agent output for a running task. Supports either a single message or batched entries from the Go agent.',
   })
   @ApiBody({ type: AppendTaskLogDto })
   @ApiCreatedResponse({
@@ -105,6 +109,8 @@ export class AgentTasksController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Mark a task as completed, failed, or cancelled',
+    description:
+      'Stores terminal task state, optional execution result metadata, and emits realtime task updates.',
   })
   @ApiBody({ type: CompleteAgentTaskDto })
   @ApiOkResponse({

@@ -38,7 +38,7 @@ export class NodesController {
   @ApiOperation({
     summary: 'List nodes',
     description:
-      'Returns all registered nodes, optionally filtered by status or search term.',
+      'Returns all registered nodes, optionally filtered by status or search term. Node status is maintained by heartbeats plus the background offline detector.',
   })
   @ApiOkResponse({
     description: 'List of nodes.',
@@ -52,6 +52,8 @@ export class NodesController {
   @Get(':id')
   @ApiOperation({
     summary: 'Get a node by ID',
+    description:
+      'Returns a single node with its current online or offline status and last heartbeat timestamp.',
   })
   @ApiOkResponse({
     description: 'Node details.',

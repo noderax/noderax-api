@@ -51,6 +51,8 @@ export class NodeEntity {
     enum: NodeStatus,
     enumName: 'NodeStatus',
     example: NodeStatus.ONLINE,
+    description:
+      'Current node status. Background offline detection marks stale nodes offline after the configured heartbeat timeout.',
   })
   @Column({
     type: 'enum',
@@ -64,6 +66,8 @@ export class NodeEntity {
     format: 'date-time',
     example: '2026-03-17T12:32:10.000Z',
     nullable: true,
+    description:
+      'Timestamp of the last successful heartbeat or agent activity seen by the control plane.',
   })
   @Column({ type: 'timestamptz', nullable: true })
   lastSeenAt: Date | null;
