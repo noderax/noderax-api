@@ -4,9 +4,11 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { TaskLogEntity } from './task-log.entity';
 import { TaskStatus } from './task-status.enum';
 
 @Index('IDX_tasks_node_status_created_at', ['nodeId', 'status', 'createdAt'])
@@ -104,4 +106,11 @@ export class TaskEntity {
   })
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
+
+  @ApiPropertyOptional({
+    type: () => TaskLogEntity,
+    isArray: true,
+  })
+  @OneToMany(() => TaskLogEntity, (taskLog) => taskLog.task)
+  logs?: TaskLogEntity[];
 }

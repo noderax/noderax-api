@@ -4,8 +4,11 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { TaskEntity } from './task.entity';
 import { TaskLogLevel } from './task-log-level.enum';
 
 @Index('IDX_task_logs_task_created_at', ['taskId', 'createdAt'])
@@ -26,6 +29,12 @@ export class TaskLogEntity {
   @Column({ type: 'uuid' })
   taskId: string;
 
+  @ManyToOne(() => TaskEntity, (task) => task.logs, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'taskId' })
+  task: TaskEntity;
+
   @ApiProperty({
     enum: TaskLogLevel,
     enumName: 'TaskLogLevel',
@@ -44,6 +53,13 @@ export class TaskLogEntity {
   })
   @Column({ type: 'text' })
   message: string;
+
+  @ApiProperty({
+    format: 'date-time',
+    example: '2026-03-17T12:41:30.000Z',
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  timestamp: Date | null;
 
   @ApiProperty({
     format: 'date-time',

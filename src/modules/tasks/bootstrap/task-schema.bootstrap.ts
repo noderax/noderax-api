@@ -16,6 +16,85 @@ export class TaskSchemaBootstrap implements OnModuleInit {
       ADD COLUMN IF NOT EXISTS "finishedAt" TIMESTAMPTZ NULL
     `);
 
+    if (!(await this.hasTable('task_logs'))) {
+      await this.dataSource.query(`
+        CREATE EXTENSION IF NOT EXISTS pgcrypto
+      `);
+
+      await this.ensureTaskLogLevelEnumExists();
+
+      await this.dataSource.query(`
+        CREATE TABLE IF NOT EXISTS "task_logs" (
+          "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+          "taskId" uuid NOT NULL,
+          "level" "task_log_level_enum" NOT NULL DEFAULT 'info',
+          "message" text NOT NULL,
+          "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "timestamp" TIMESTAMPTZ NULL,
+          CONSTRAINT "PK_task_logs_id" PRIMARY KEY ("id"),
+          CONSTRAINT "FK_task_logs_task" FOREIGN KEY ("taskId") REFERENCES "tasks"("id") ON DELETE CASCADE
+        )
+      `);
+
+      await this.dataSource.query(`
+        CREATE INDEX IF NOT EXISTS "IDX_task_logs_task_created_at"
+        ON "task_logs" ("taskId", "createdAt")
+      `);
+    }
+
+    await this.dataSource.query(`
+      ALTER TABLE "task_logs"
+      ADD COLUMN IF NOT EXISTS "timestamp" TIMESTAMPTZ NULL
+    `);
+
+    await this.dataSource.query(`
+      UPDATE "task_logs"
+      SET "timestamp" = COALESCE("timestamp", "createdAt")
+      WHERE "timestamp" IS NULL
+    `);
+
     this.logger.log('Ensured task schema columns exist');
+  }
+
+  private async hasTable(tableName: string): Promise<boolean> {
+    const result = (await this.dataSource.query(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = $1
+        ) AS "exists"
+      `,
+      [tableName],
+    )) as Array<{ exists: boolean }>;
+
+    return Boolean(result[0]?.exists);
+  }
+
+  private async ensureTaskLogLevelEnumExists(): Promise<void> {
+    try {
+      await this.dataSource.query(`
+        CREATE TYPE "task_log_level_enum" AS ENUM ('info', 'stdout', 'stderr', 'error')
+      `);
+    } catch (error) {
+      if (this.isDuplicateTypeError(error)) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  private isDuplicateTypeError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return (
+      message.includes('already exists') &&
+      message.includes('task_log_level_enum')
+    );
   }
 }

@@ -237,13 +237,19 @@ export class TasksService {
       );
     }
 
-    if (Array.isArray(appendTaskLogDto.entries) && appendTaskLogDto.entries.length > 0) {
+    if (
+      Array.isArray(appendTaskLogDto.entries) &&
+      appendTaskLogDto.entries.length > 0
+    ) {
       const entries = appendTaskLogDto.entries.filter(
-        (entry) => typeof entry.line === 'string' && entry.line.trim().length > 0,
+        (entry) =>
+          typeof entry.line === 'string' && entry.line.trim().length > 0,
       );
 
       if (entries.length === 0) {
-        throw new BadRequestException('entries must contain at least one log line');
+        throw new BadRequestException(
+          'entries must contain at least one log line',
+        );
       }
 
       task.output = entries[entries.length - 1].line;
@@ -254,6 +260,7 @@ export class TasksService {
           taskId: task.id,
           level: this.resolveTaskLogLevel(entry.stream),
           message: entry.line,
+          timestamp: entry.timestamp ? new Date(entry.timestamp) : new Date(),
         }),
       );
 
@@ -271,6 +278,7 @@ export class TasksService {
       taskId: task.id,
       level: appendTaskLogDto.level ?? TaskLogLevel.INFO,
       message: appendTaskLogDto.message,
+      timestamp: new Date(),
     });
 
     return this.taskLogsRepository.save(taskLog);
@@ -384,6 +392,7 @@ export class TasksService {
       taskId,
       level: input.level,
       message: input.message,
+      timestamp: new Date(),
     });
 
     return this.taskLogsRepository.save(taskLog);
@@ -446,7 +455,9 @@ export class TasksService {
     bodyTaskId?: string,
   ): void {
     if (bodyTaskId && bodyTaskId !== routeTaskId) {
-      throw new BadRequestException('taskId in request body must match route parameter');
+      throw new BadRequestException(
+        'taskId in request body must match route parameter',
+      );
     }
   }
 
