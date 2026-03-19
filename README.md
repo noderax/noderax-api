@@ -23,6 +23,7 @@ src/
   modules/
     agents/
     auth/
+    enrollments/
     events/
     metrics/
     nodes/
@@ -47,7 +48,7 @@ src/
 - JWT login flow with optional seeded default admin
 - User roles: `admin`, `user`
 - Node inventory with scheduler-driven online and offline status
-- Agent registration secured with enrollment token
+- Two-step agent enrollment with admin approval plus legacy registration compatibility
 - Metrics ingestion persisted to PostgreSQL
 - Task creation, polling, execution updates, and logs
 - Event persistence with notification stubs
@@ -76,7 +77,7 @@ Set at least these values before real usage:
 - database credentials
 - Redis settings if Redis is enabled
 
-`AGENT_ENROLLMENT_TOKEN` is a shared secret used only for initial agent enrollment. It prevents unauthorized servers from registering themselves with the control plane.
+`AGENT_ENROLLMENT_TOKEN` is the shared secret used only by the legacy `POST /agent/register` flow. The preferred enrollment path is the new two-step `/enrollments/initiate` -> `/enrollments/:token/finalize` -> `/enrollments/:token` flow.
 `AGENT_HEARTBEAT_TIMEOUT_SECONDS` controls how long a node may stay silent before the background scheduler marks it offline.
 `AGENT_OFFLINE_CHECK_INTERVAL_SECONDS` controls how often the scheduler scans for stale online nodes.
 
@@ -96,7 +97,7 @@ The default API base URL is `http://localhost:3000/api/v1`.
 Swagger UI is available at `http://localhost:3000/api/v1/docs`.
 OpenAPI JSON is available at `http://localhost:3000/api/v1/docs-json`.
 
-Swagger groups the new package management routes under the `Packages` tag.
+Swagger groups package management routes under `Packages`, the new two-step enrollment routes under `Enrollments`, and marks the legacy `Agents / register` route as deprecated.
 
 ## Docker
 
@@ -129,7 +130,7 @@ Important agent settings:
 - `AGENT_OFFLINE_CHECK_INTERVAL_SECONDS`
   Background polling interval for stale-node detection.
 - `AGENT_ENROLLMENT_TOKEN`
-  Shared secret for first-time agent registration only.
+  Shared secret for the legacy one-step `/agent/register` path only.
 
 ## Heartbeat Timeout And Offline Detection
 
@@ -148,7 +149,9 @@ All HTTP routes below are relative to `http://localhost:3000/api/v1`.
 
 - `GET /health`
 - `POST /auth/login`
-- `POST /agent/register`
+- `POST /enrollments/initiate`
+- `GET /enrollments/:token`
+- `POST /agent/register` (legacy, deprecated)
 - `POST /agent/heartbeat`
 - `POST /agent/metrics`
 
@@ -283,10 +286,24 @@ Request body:
 
 - `GET /users`
 - `POST /users`
+- `POST /enrollments/:token/finalize`
 - `POST /nodes`
 - `POST /nodes/:id/packages`
 - `DELETE /nodes/:id/packages/:name`
 - `DELETE /nodes/:id`
+
+## Two-Step Enrollment API
+
+The preferred agent bootstrap flow is now enrollment-based. The raw enrollment token is returned only once to the agent, while the API stores a salted `tokenHash` plus a deterministic `tokenLookupHash` for secure lookup and verification.
+
+- `POST /enrollments/initiate`
+  Public. Creates a short-lived pending enrollment for `{ "email": "...", "hostname": "...", "additionalInfo": { ... } }` and returns `{ "token": "...", "expiresAt": "..." }`.
+- `POST /enrollments/:token/finalize`
+  Admin-only. Verifies the token and email, creates the node, issues a fresh `agentToken`, and returns `{ "nodeId": "...", "agentToken": "..." }`.
+- `GET /enrollments/:token`
+  Public. Returns `{ "status": "pending" }`, `{ "status": "revoked" }`, or `{ "status": "approved", "nodeId": "...", "agentToken": "..." }`.
+
+Pending enrollment tokens expire after 15 minutes. Finalization is single-use: approved or revoked tokens can no longer transition state. Swagger documents these routes at `http://localhost:3000/api/v1/docs` under the `Enrollments` tag, including public versus admin access rules and token-expiry behavior.
 
 ## Package Management API
 
@@ -317,20 +334,61 @@ curl -X POST http://localhost:3000/api/v1/auth/login \
   }'
 ```
 
-### 2. Register an Agent
+### 2. Initiate Agent Enrollment
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/agent/register \
+curl -X POST http://localhost:3000/api/v1/enrollments/initiate \
   -H "Content-Type: application/json" \
   -d '{
+    "email": "admin@example.com",
     "hostname": "srv-01",
-    "os": "ubuntu",
-    "arch": "amd64",
-    "enrollmentToken": "your-token"
+    "additionalInfo": {
+      "os": "ubuntu",
+      "arch": "amd64",
+      "agentVersion": "dev"
+    }
   }'
 ```
 
-### 3. Send a Heartbeat
+Response:
+
+```json
+{
+  "token": "short-lived-enrollment-token",
+  "expiresAt": "2026-03-19T14:15:00.000Z"
+}
+```
+
+### 3. Finalize Enrollment In The Web App
+
+```bash
+curl -X POST http://localhost:3000/api/v1/enrollments/short-lived-enrollment-token/finalize \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-jwt>" \
+  -d '{
+    "email": "admin@example.com",
+    "nodeName": "Production Node EU-1",
+    "description": "Primary web node"
+  }'
+```
+
+### 4. Poll Enrollment Status From The Agent
+
+```bash
+curl http://localhost:3000/api/v1/enrollments/short-lived-enrollment-token
+```
+
+Approved response:
+
+```json
+{
+  "status": "approved",
+  "nodeId": "generated-node-id",
+  "agentToken": "generated-agent-token"
+}
+```
+
+### 5. Send a Heartbeat
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/agent/heartbeat \
@@ -341,7 +399,7 @@ curl -X POST http://localhost:3000/api/v1/agent/heartbeat \
   }'
 ```
 
-### 4. Ingest Metrics
+### 6. Ingest Metrics
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/agent/metrics \
@@ -359,7 +417,7 @@ curl -X POST http://localhost:3000/api/v1/agent/metrics \
   }'
 ```
 
-### 5. Create a Task
+### 7. Create a Task
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/tasks \
@@ -374,7 +432,7 @@ curl -X POST http://localhost:3000/api/v1/tasks \
   }'
 ```
 
-### 6. Pull Queued Tasks as an Agent
+### 8. Pull Queued Tasks as an Agent
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/agent/tasks/pull \

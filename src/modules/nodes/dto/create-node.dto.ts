@@ -13,6 +13,16 @@ export class CreateNodeDto {
   @MinLength(2)
   name?: string;
 
+  @ApiPropertyOptional({
+    example: 'Primary web node in eu-central-1',
+    nullable: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value?.trim())
+  @IsString()
+  @MinLength(2)
+  description?: string;
+
   @ApiProperty({
     example: 'srv-01',
     description: 'Unique node hostname.',

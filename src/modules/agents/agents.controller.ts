@@ -23,9 +23,10 @@ export class AgentsController {
 
   @Post('register')
   @ApiOperation({
-    summary: 'Register a new agent',
+    deprecated: true,
+    summary: 'Register a new agent (legacy)',
     description:
-      'Creates or refreshes a node record and returns the node ID with an agent token. Requires the shared enrollment token used to authorize initial agent enrollment.',
+      'Legacy single-step registration path. Creates or refreshes a node record and returns the node ID with an agent token. Prefer the new two-step enrollment flow using /enrollments/initiate, /enrollments/:token/finalize, and /enrollments/:token.',
   })
   @ApiBody({
     type: AgentRegisterDto,

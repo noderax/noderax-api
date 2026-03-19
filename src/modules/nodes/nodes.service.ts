@@ -35,16 +35,11 @@ export class NodesService {
   ) {}
 
   async create(createNodeDto: CreateNodeDto): Promise<NodeEntity> {
-    const existingNode = await this.nodesRepository.findOne({
-      where: { hostname: createNodeDto.hostname },
-    });
-
-    if (existingNode) {
-      throw new ConflictException('A node with this hostname already exists');
-    }
+    await this.assertHostnameAvailable(createNodeDto.hostname);
 
     const node = this.nodesRepository.create({
       name: createNodeDto.name ?? createNodeDto.hostname,
+      description: createNodeDto.description ?? null,
       hostname: createNodeDto.hostname,
       os: createNodeDto.os,
       arch: createNodeDto.arch,
@@ -98,6 +93,30 @@ export class NodesService {
 
   async ensureExists(nodeId: string): Promise<NodeEntity> {
     return this.findOneOrFail(nodeId);
+  }
+
+  async createFromEnrollment(input: {
+    name: string;
+    description: string | null;
+    hostname: string;
+    os: string;
+    arch: string;
+    agentTokenHash: string;
+  }): Promise<NodeEntity> {
+    await this.assertHostnameAvailable(input.hostname);
+
+    const node = this.nodesRepository.create({
+      name: input.name,
+      description: input.description,
+      hostname: input.hostname,
+      os: input.os,
+      arch: input.arch,
+      status: NodeStatus.OFFLINE,
+      lastSeenAt: null,
+      agentTokenHash: input.agentTokenHash,
+    });
+
+    return this.nodesRepository.save(node);
   }
 
   async upsertFromAgentRegistration(input: {
@@ -282,6 +301,16 @@ export class NodesService {
 
   hashAgentToken(agentToken: string): string {
     return createHash('sha256').update(agentToken).digest('hex');
+  }
+
+  private async assertHostnameAvailable(hostname: string): Promise<void> {
+    const existingNode = await this.nodesRepository.findOne({
+      where: { hostname },
+    });
+
+    if (existingNode) {
+      throw new ConflictException('A node with this hostname already exists');
+    }
   }
 
   private getNodeLabel(node: Pick<NodeEntity, 'name' | 'hostname'>): string {

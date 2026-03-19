@@ -28,6 +28,13 @@ export class NodeEntity {
   @Column({ length: 120 })
   name: string;
 
+  @ApiPropertyOptional({
+    example: 'Primary web node in eu-central-1',
+    nullable: true,
+  })
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
+
   @ApiProperty({
     example: 'srv-01',
   })

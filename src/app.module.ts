@@ -13,6 +13,7 @@ import { validationSchema } from './config/env.validation';
 import { getTypeOrmConfig } from './database/typeorm.config';
 import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
 import { EventsModule } from './modules/events/events.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { NodesModule } from './modules/nodes/nodes.module';
@@ -46,6 +47,7 @@ import { RedisModule } from './redis/redis.module';
     NotificationsModule,
     UsersModule,
     AuthModule,
+    EnrollmentsModule,
     NodesModule,
     PackagesModule,
     EventsModule,

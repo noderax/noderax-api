@@ -26,6 +26,8 @@ import { validationSchema } from '../../src/config/env.validation';
 import { APP_CONFIG_KEY, appConfig } from '../../src/config';
 import { AgentsModule } from '../../src/modules/agents/agents.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
+import { EnrollmentEntity } from '../../src/modules/enrollments/entities/enrollment.entity';
+import { EnrollmentsModule } from '../../src/modules/enrollments/enrollments.module';
 import { EventsModule } from '../../src/modules/events/events.module';
 import { EventEntity } from '../../src/modules/events/entities/event.entity';
 import { MetricsModule } from '../../src/modules/metrics/metrics.module';
@@ -44,6 +46,7 @@ import { RedisModule } from '../../src/redis/redis.module';
 
 const TEST_ENTITIES = [
   UserEntity,
+  EnrollmentEntity,
   NodeEntity,
   EventEntity,
   MetricEntity,
@@ -128,6 +131,7 @@ export async function createE2eApp(): Promise<INestApplication> {
       NotificationsModule,
       UsersModule,
       AuthModule,
+      EnrollmentsModule,
       NodesModule,
       PackagesModule,
       EventsModule,

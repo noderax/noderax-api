@@ -10,4 +10,15 @@ export class NotificationsService {
       `Notification stub triggered for ${event.severity} event ${event.type} on node ${event.nodeId ?? 'n/a'}`,
     );
   }
+
+  async notifyEnrollmentInitiated(input: {
+    email: string;
+    hostname: string;
+    expiresAt: Date;
+    hasKnownUser: boolean;
+  }) {
+    this.logger.warn(
+      `Enrollment notification stub for ${input.email} (${input.hostname}) expiring at ${input.expiresAt.toISOString()} - known user: ${input.hasKnownUser}`,
+    );
+  }
 }
