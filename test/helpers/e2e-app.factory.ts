@@ -33,6 +33,7 @@ import { MetricEntity } from '../../src/modules/metrics/entities/metric.entity';
 import { NodesModule } from '../../src/modules/nodes/nodes.module';
 import { NodeEntity } from '../../src/modules/nodes/entities/node.entity';
 import { NotificationsModule } from '../../src/modules/notifications/notifications.module';
+import { PackagesModule } from '../../src/modules/packages/packages.module';
 import { RealtimeModule } from '../../src/modules/realtime/realtime.module';
 import { TaskLogEntity } from '../../src/modules/tasks/entities/task-log.entity';
 import { TaskEntity } from '../../src/modules/tasks/entities/task.entity';
@@ -128,6 +129,7 @@ export async function createE2eApp(): Promise<INestApplication> {
       UsersModule,
       AuthModule,
       NodesModule,
+      PackagesModule,
       EventsModule,
       MetricsModule,
       TasksModule,

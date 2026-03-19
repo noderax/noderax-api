@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { io, Socket } from 'socket.io-client';
+import { TASK_TYPES } from '../src/common/constants/task-types.constants';
 import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
 
@@ -89,9 +90,93 @@ function waitForConnectError(client: Socket): Promise<Error> {
   });
 }
 
+type AgentTaskEnvelope = {
+  id: string;
+  type: string;
+  status: string;
+  payload: Record<string, unknown>;
+};
+
+async function waitForQueuedTask(
+  app: INestApplication,
+  nodeId: string,
+  agentToken: string,
+  taskType: string,
+): Promise<AgentTaskEnvelope> {
+  let matchedTask: AgentTaskEnvelope | null = null;
+
+  await waitFor(
+    async () => {
+      const response = await request(app.getHttpServer())
+        .post(apiPath('/agent/tasks/pull'))
+        .send({
+          nodeId,
+          agentToken,
+          limit: 1000,
+        })
+        .expect(200);
+
+      matchedTask =
+        response.body.tasks.find(
+          (task: AgentTaskEnvelope) => task.type === taskType,
+        ) ?? null;
+
+      return matchedTask !== null;
+    },
+    {
+      timeoutMs: 5000,
+      intervalMs: 100,
+    },
+  );
+
+  if (!matchedTask) {
+    throw new Error(`Task ${taskType} was not queued`);
+  }
+
+  return matchedTask;
+}
+
+async function startTaskAsAgent(
+  app: INestApplication,
+  taskId: string,
+  nodeId: string,
+  agentToken: string,
+) {
+  await request(app.getHttpServer())
+    .post(apiPath(`/agent/tasks/${taskId}/start`))
+    .send({
+      nodeId,
+      agentToken,
+      taskId,
+      startedAt: new Date().toISOString(),
+    })
+    .expect(200);
+}
+
+async function completeTaskAsAgent(
+  app: INestApplication,
+  taskId: string,
+  nodeId: string,
+  agentToken: string,
+  body: Record<string, unknown>,
+) {
+  await request(app.getHttpServer())
+    .post(apiPath(`/agent/tasks/${taskId}/complete`))
+    .send({
+      nodeId,
+      agentToken,
+      taskId,
+      completedAt: new Date().toISOString(),
+      durationMs: 25,
+      ...body,
+    })
+    .expect(200);
+}
+
 describe('Agent Lifecycle (e2e)', () => {
   let app: INestApplication;
   let adminToken: string;
+  let userToken: string;
   let nodeId: string;
   let agentToken: string;
   let secondNodeId: string;
@@ -134,6 +219,30 @@ describe('Agent Lifecycle (e2e)', () => {
         expect(body.email).toBe(process.env.ADMIN_EMAIL);
         expect(body.role).toBe('admin');
       });
+  });
+
+  it('creates and logs in a standard user for read-only package access', async () => {
+    await request(app.getHttpServer())
+      .post(apiPath('/users'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        email: 'user@example.com',
+        name: 'Read Only User',
+        password: 'ChangeMe123!',
+        role: 'user',
+      })
+      .expect(201);
+
+    const response = await request(app.getHttpServer())
+      .post(apiPath('/auth/login'))
+      .send({
+        email: 'user@example.com',
+        password: 'ChangeMe123!',
+      })
+      .expect(200);
+
+    expect(response.body.user.role).toBe('user');
+    userToken = response.body.accessToken;
   });
 
   it('rejects agent registration with an invalid enrollment token', async () => {
@@ -382,6 +491,244 @@ describe('Agent Lifecycle (e2e)', () => {
         expect(body[0].message).toContain('hostname resolved');
       });
   });
+
+  it('lets authenticated users list installed packages through package tasks', async () => {
+    const responsePromise = fetch(
+      `${getBaseUrl(app)}${apiPath(`/nodes/${nodeId}/packages`)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+        },
+      },
+    );
+
+    const packageTask = await waitForQueuedTask(
+      app,
+      nodeId,
+      agentToken,
+      TASK_TYPES.PACKAGE_LIST,
+    );
+
+    await startTaskAsAgent(app, packageTask.id, nodeId, agentToken);
+    await completeTaskAsAgent(app, packageTask.id, nodeId, agentToken, {
+      status: 'success',
+      result: {
+        packages: [
+          {
+            name: 'nginx',
+            version: '1.24.0-2ubuntu7',
+            architecture: 'amd64',
+            description: 'small, powerful, scalable web/proxy server',
+          },
+        ],
+      },
+    });
+
+    const response = await responsePromise;
+    const body = (await response.json()) as {
+      taskId: string;
+      taskStatus: string;
+      packages: Array<{ name: string; version: string | null }>;
+      error: string | null;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.taskId).toBe(packageTask.id);
+    expect(body.taskStatus).toBe('success');
+    expect(body.packages).toHaveLength(1);
+    expect(body.packages[0]).toMatchObject({
+      name: 'nginx',
+      version: '1.24.0-2ubuntu7',
+      architecture: 'amd64',
+      description: 'small, powerful, scalable web/proxy server',
+    });
+    expect(body.error).toBeNull();
+  });
+
+  it('lets authenticated users search packages through package tasks', async () => {
+    const responsePromise = fetch(
+      `${getBaseUrl(app)}${apiPath(
+        `/packages/search?nodeId=${nodeId}&term=nginx`,
+      )}`,
+      {
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+        },
+      },
+    );
+
+    const packageTask = await waitForQueuedTask(
+      app,
+      nodeId,
+      agentToken,
+      TASK_TYPES.PACKAGE_SEARCH,
+    );
+
+    await startTaskAsAgent(app, packageTask.id, nodeId, agentToken);
+    await completeTaskAsAgent(app, packageTask.id, nodeId, agentToken, {
+      status: 'success',
+      result: {
+        results: [
+          {
+            name: 'nginx',
+            version: '1.24.0-2ubuntu7',
+            description: 'small, powerful, scalable web/proxy server',
+          },
+        ],
+      },
+    });
+
+    const response = await responsePromise;
+    const body = (await response.json()) as {
+      taskId: string;
+      taskStatus: string;
+      term: string;
+      results: Array<{ name: string; version: string | null }>;
+      error: string | null;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.taskId).toBe(packageTask.id);
+    expect(body.taskStatus).toBe('success');
+    expect(body.term).toBe('nginx');
+    expect(body.results).toHaveLength(1);
+    expect(body.results[0]).toMatchObject({
+      name: 'nginx',
+      version: '1.24.0-2ubuntu7',
+      description: 'small, powerful, scalable web/proxy server',
+    });
+    expect(body.error).toBeNull();
+  });
+
+  it('returns 403 for non-admin package mutations', async () => {
+    await request(app.getHttpServer())
+      .post(apiPath(`/nodes/${nodeId}/packages`))
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        names: ['nginx'],
+        purge: false,
+      })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .delete(apiPath(`/nodes/${nodeId}/packages/nginx`))
+      .set('Authorization', `Bearer ${userToken}`)
+      .query({
+        purge: true,
+      })
+      .expect(403);
+  });
+
+  it('queues package installation for admins with the exact payload', async () => {
+    const response = await request(app.getHttpServer())
+      .post(apiPath(`/nodes/${nodeId}/packages`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        names: ['nginx', 'curl'],
+        purge: true,
+      })
+      .expect(202);
+
+    expect(response.body.operation).toBe(TASK_TYPES.PACKAGE_INSTALL);
+    expect(response.body.taskStatus).toBe('queued');
+
+    const packageTask = await waitForQueuedTask(
+      app,
+      nodeId,
+      agentToken,
+      TASK_TYPES.PACKAGE_INSTALL,
+    );
+
+    expect(packageTask.id).toBe(response.body.taskId);
+    expect(packageTask.payload).toEqual({
+      names: ['nginx', 'curl'],
+      purge: true,
+    });
+  });
+
+  it(
+    'maps package deletion to remove and purge task types for admins',
+    async () => {
+      const removeResponse = await request(app.getHttpServer())
+        .delete(apiPath(`/nodes/${nodeId}/packages/nginx`))
+        .set('Authorization', `Bearer ${adminToken}`)
+        .query({
+          purge: false,
+        })
+        .expect(202);
+
+      const removeTask = await request(app.getHttpServer())
+        .get(apiPath(`/tasks/${removeResponse.body.taskId}`))
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(removeResponse.body.operation).toBe(TASK_TYPES.PACKAGE_REMOVE);
+      expect(removeTask.body.type).toBe(TASK_TYPES.PACKAGE_REMOVE);
+      expect(removeTask.body.payload).toEqual({
+        names: ['nginx'],
+        purge: false,
+      });
+
+      const purgeResponse = await request(app.getHttpServer())
+        .delete(apiPath(`/nodes/${nodeId}/packages/nginx`))
+        .set('Authorization', `Bearer ${adminToken}`)
+        .query({
+          purge: true,
+        })
+        .expect(202);
+
+      const purgeTask = await request(app.getHttpServer())
+        .get(apiPath(`/tasks/${purgeResponse.body.taskId}`))
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+
+      expect(purgeResponse.body.operation).toBe(TASK_TYPES.PACKAGE_PURGE);
+      expect(purgeTask.body.type).toBe(TASK_TYPES.PACKAGE_PURGE);
+      expect(purgeTask.body.payload).toEqual({
+        names: ['nginx'],
+        purge: true,
+      });
+    },
+    15000,
+  );
+
+  it(
+    'returns 202 with a task id when package search does not finish within the wait window',
+    async () => {
+      const responsePromise = fetch(
+        `${getBaseUrl(app)}${apiPath(
+          `/packages/search?nodeId=${nodeId}&term=redis`,
+        )}`,
+        {
+          headers: {
+            Authorization: `Bearer ${userToken}`,
+          },
+        },
+      );
+
+      const packageTask = await waitForQueuedTask(
+        app,
+        nodeId,
+        agentToken,
+        TASK_TYPES.PACKAGE_SEARCH,
+      );
+
+      const response = await responsePromise;
+      const body = (await response.json()) as {
+        taskId: string;
+        taskStatus: string;
+        operation: string;
+        term: string;
+      };
+
+      expect(response.status).toBe(202);
+      expect(body.taskId).toBe(packageTask.id);
+      expect(body.operation).toBe(TASK_TYPES.PACKAGE_SEARCH);
+      expect(body.taskStatus).toBe('queued');
+      expect(body.term).toBe('redis');
+    },
+    15000,
+  );
 
   it('rejects websocket connections with invalid JWTs', async () => {
     const client = io(`${getBaseUrl(app)}/realtime`, {

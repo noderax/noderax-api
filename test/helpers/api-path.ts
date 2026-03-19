@@ -4,7 +4,7 @@ function normalizePrefix(prefix: string | undefined): string {
 }
 
 export function getApiPrefix(): string {
-  return normalizePrefix(process.env.API_PREFIX);
+  return normalizePrefix('api/v1');
 }
 
 export function apiPath(path: string): string {

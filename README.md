@@ -96,7 +96,7 @@ The default API base URL is `http://localhost:3000/api/v1`.
 Swagger UI is available at `http://localhost:3000/api/v1/docs`.
 OpenAPI JSON is available at `http://localhost:3000/api/v1/docs-json`.
 
-If you want to remove the prefix locally, set `API_PREFIX=` and the API base URL becomes `http://localhost:3000`.
+Swagger groups the new package management routes under the `Packages` tag.
 
 ## Docker
 
@@ -142,7 +142,7 @@ The API runs a background scheduler that checks online nodes at the configured i
 
 ## Main Endpoints
 
-All HTTP routes below are relative to the configured API base URL. With the default `.env`, that base URL is `http://localhost:3000/api/v1`.
+All HTTP routes below are relative to `http://localhost:3000/api/v1`.
 
 ### Public
 
@@ -272,6 +272,8 @@ Request body:
 - `GET /users/me`
 - `GET /nodes`
 - `GET /nodes/:id`
+- `GET /nodes/:id/packages`
+- `GET /packages/search`
 - `GET /metrics`
 - `GET /tasks`
 - `GET /tasks/:id`
@@ -282,7 +284,25 @@ Request body:
 - `GET /users`
 - `POST /users`
 - `POST /nodes`
+- `POST /nodes/:id/packages`
+- `DELETE /nodes/:id/packages/:name`
 - `DELETE /nodes/:id`
+
+## Package Management API
+
+Package management is task-backed so the web UI can reuse the existing task and log streams.
+
+- `GET /nodes/:id/packages`
+  Queues a `packageList` task, waits up to 10 seconds, and returns a structured package list on success. If the task is still `queued` or `running`, the API falls back to `202 Accepted` with a task envelope.
+- `GET /packages/search?nodeId=<node-id>&term=<query>`
+  Queues a `packageSearch` task with `{ "term": "<query>" }`. Debian documents apt search behavior against package names and descriptions in [apt(8)](https://manpages.debian.org/experimental/apt/apt.8.en.html), and related apt-cache output includes package metadata plus a short description in [apt-cache(8)](https://manpages.debian.org/testing/apt/apt-cache.8.en.html).
+- `POST /nodes/:id/packages`
+  Admin-only. Queues a `packageInstall` task with `{ "names": [...], "purge": false }` and immediately returns `202 Accepted`.
+- `DELETE /nodes/:id/packages/:name?purge=true`
+  Admin-only. Queues `packageRemove` or `packagePurge`. Debian documents that `remove` leaves configuration files in place while `purge` removes them too in [apt-get(8)](https://manpages.debian.org/experimental/apt/apt-get.8.en.html).
+
+Read responses include `taskId` and `taskStatus` so the UI can pivot to `GET /tasks/:id` and `GET /tasks/:id/logs` when needed.
+Swagger documents these endpoints at `http://localhost:3000/api/v1/docs` under the `Packages` section, including the admin-only RBAC notes and the `200` versus `202` response behavior for read routes.
 
 ## Example Flow
 
@@ -411,6 +431,112 @@ curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/complete \
     },
     "output": "command completed successfully"
   }'
+```
+
+### 8. List Installed Packages
+
+```bash
+curl -X GET "http://localhost:3000/api/v1/nodes/generated-node-id/packages" \
+  -H "Authorization: Bearer <jwt>"
+```
+
+If the agent finishes the `packageList` task within the wait window, the response body looks like:
+
+```json
+{
+  "taskId": "task-id",
+  "taskStatus": "success",
+  "nodeId": "generated-node-id",
+  "operation": "packageList",
+  "names": [],
+  "purge": null,
+  "term": null,
+  "packages": [
+    {
+      "name": "nginx",
+      "version": "1.24.0-2ubuntu7",
+      "architecture": "amd64",
+      "description": "small, powerful, scalable web/proxy server"
+    }
+  ],
+  "error": null
+}
+```
+
+### 9. Queue a Package Install
+
+```bash
+curl -X POST http://localhost:3000/api/v1/nodes/generated-node-id/packages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <jwt>" \
+  -d '{
+    "names": ["nginx", "curl"],
+    "purge": false
+  }'
+```
+
+Response body:
+
+```json
+{
+  "taskId": "task-id",
+  "taskStatus": "queued",
+  "nodeId": "generated-node-id",
+  "operation": "packageInstall",
+  "names": ["nginx", "curl"],
+  "purge": false,
+  "term": null
+}
+```
+
+### 10. Search Packages
+
+```bash
+curl -X GET "http://localhost:3000/api/v1/packages/search?nodeId=generated-node-id&term=nginx" \
+  -H "Authorization: Bearer <jwt>"
+```
+
+Successful response body:
+
+```json
+{
+  "taskId": "task-id",
+  "taskStatus": "success",
+  "nodeId": "generated-node-id",
+  "operation": "packageSearch",
+  "names": [],
+  "purge": null,
+  "term": "nginx",
+  "results": [
+    {
+      "name": "nginx",
+      "version": "1.24.0-2ubuntu7",
+      "description": "small, powerful, scalable web/proxy server"
+    }
+  ],
+  "error": null
+}
+```
+
+### 11. Remove or Purge a Package
+
+```bash
+curl -X DELETE "http://localhost:3000/api/v1/nodes/generated-node-id/packages/nginx?purge=true" \
+  -H "Authorization: Bearer <jwt>"
+```
+
+Accepted response body:
+
+```json
+{
+  "taskId": "task-id",
+  "taskStatus": "queued",
+  "nodeId": "generated-node-id",
+  "operation": "packagePurge",
+  "names": ["nginx"],
+  "purge": true,
+  "term": null
+}
 ```
 
 ## Realtime

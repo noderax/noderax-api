@@ -6,6 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import {
+  isPackageTaskType,
+  TASK_TYPES,
+} from '../../common/constants/task-types.constants';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RedisService } from '../../redis/redis.service';
@@ -25,6 +29,11 @@ import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskLogLevel } from './entities/task-log-level.enum';
 import { TaskEntity } from './entities/task.entity';
 import { TaskStatus } from './entities/task-status.enum';
+import {
+  NormalizedPackageDto,
+  NormalizedPackageSearchResultDto,
+  NormalizedPackageTaskResult,
+} from './types/package-task-result.type';
 
 const TERMINAL_TASK_STATUSES = new Set<TaskStatus>([
   TaskStatus.SUCCESS,
@@ -110,6 +119,81 @@ export class TasksService {
     }
 
     return task;
+  }
+
+  async waitForTerminalState(
+    taskId: string,
+    timeoutMs = 10000,
+    pollMs = 250,
+  ): Promise<TaskEntity | null> {
+    const deadline = Date.now() + Math.max(timeoutMs, 0);
+    let task = await this.findOneOrFail(taskId);
+
+    if (this.isTerminalStatus(task.status)) {
+      return task;
+    }
+
+    while (Date.now() < deadline) {
+      await this.delay(Math.max(pollMs, 1));
+      task = await this.findOneOrFail(taskId);
+
+      if (this.isTerminalStatus(task.status)) {
+        return task;
+      }
+    }
+
+    return null;
+  }
+
+  handlePackageResult(task: TaskEntity): NormalizedPackageTaskResult | null {
+    if (!isPackageTaskType(task.type)) {
+      return null;
+    }
+
+    switch (task.type) {
+      case TASK_TYPES.PACKAGE_LIST: {
+        const packages = this.readStructuredPackageCollection(
+          task.result,
+          'packages',
+        );
+
+        if (!packages) {
+          return null;
+        }
+
+        return {
+          operation: TASK_TYPES.PACKAGE_LIST,
+          packages,
+        };
+      }
+      case TASK_TYPES.PACKAGE_SEARCH: {
+        const results =
+          this.readStructuredSearchCollection(task.result, 'results') ??
+          this.readStructuredSearchCollection(task.result, 'packages');
+
+        if (!results) {
+          return null;
+        }
+
+        return {
+          operation: TASK_TYPES.PACKAGE_SEARCH,
+          results,
+        };
+      }
+      case TASK_TYPES.PACKAGE_INSTALL:
+      case TASK_TYPES.PACKAGE_REMOVE:
+      case TASK_TYPES.PACKAGE_PURGE:
+        return {
+          operation: task.type,
+          names: this.resolvePackageNames(task),
+          purge: this.resolvePurge(task),
+          output:
+            task.output ??
+            this.readStringFromRecord(task.result, ['output', 'message']),
+        };
+      default:
+        return null;
+    }
   }
 
   async findLogs(
@@ -399,6 +483,10 @@ export class TasksService {
     return TERMINAL_TASK_STATUSES.has(status);
   }
 
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   private getTaskCompletionEventType(status: TaskStatus): string {
     switch (status) {
       case TaskStatus.SUCCESS:
@@ -508,5 +596,169 @@ export class TasksService {
     }
 
     return Object.keys(result).length > 0 ? result : null;
+  }
+
+  private readStructuredPackageCollection(
+    result: Record<string, unknown> | null,
+    key: string,
+  ): NormalizedPackageDto[] | null {
+    if (!result || !Array.isArray(result[key])) {
+      return null;
+    }
+
+    return result[key]
+      .map((entry) => this.normalizePackageRecord(entry))
+      .filter((entry): entry is NormalizedPackageDto => entry !== null);
+  }
+
+  private readStructuredSearchCollection(
+    result: Record<string, unknown> | null,
+    key: string,
+  ): NormalizedPackageSearchResultDto[] | null {
+    if (!result || !Array.isArray(result[key])) {
+      return null;
+    }
+
+    return result[key]
+      .map((entry) => this.normalizeSearchRecord(entry))
+      .filter(
+        (entry): entry is NormalizedPackageSearchResultDto => entry !== null,
+      );
+  }
+
+  private normalizePackageRecord(
+    value: unknown,
+  ): NormalizedPackageDto | null {
+    if (!this.isRecord(value)) {
+      return null;
+    }
+
+    const name = this.readStringFromRecord(value, ['name', 'package']);
+
+    if (!name) {
+      return null;
+    }
+
+    return {
+      name,
+      version: this.readStringFromRecord(value, ['version']),
+      architecture: this.readStringFromRecord(value, [
+        'architecture',
+        'arch',
+      ]),
+      description: this.readStringFromRecord(value, [
+        'description',
+        'summary',
+      ]),
+    };
+  }
+
+  private normalizeSearchRecord(
+    value: unknown,
+  ): NormalizedPackageSearchResultDto | null {
+    if (!this.isRecord(value)) {
+      return null;
+    }
+
+    const name = this.readStringFromRecord(value, ['name', 'package']);
+
+    if (!name) {
+      return null;
+    }
+
+    return {
+      name,
+      version: this.readStringFromRecord(value, ['version']),
+      description: this.readStringFromRecord(value, [
+        'description',
+        'summary',
+      ]),
+    };
+  }
+
+  private resolvePackageNames(task: TaskEntity): string[] {
+    const resultNames = this.readStringArray(task.result, 'names');
+
+    if (resultNames) {
+      return resultNames;
+    }
+
+    const payloadNames = this.readStringArray(task.payload, 'names');
+
+    if (payloadNames) {
+      return payloadNames;
+    }
+
+    const singularName =
+      this.readStringFromRecord(task.result, ['name', 'package']) ??
+      this.readStringFromRecord(task.payload, ['name', 'package']);
+
+    return singularName ? [singularName] : [];
+  }
+
+  private resolvePurge(task: TaskEntity): boolean {
+    if (task.type === TASK_TYPES.PACKAGE_PURGE) {
+      return true;
+    }
+
+    return (
+      this.readBooleanFromRecord(task.result, ['purge']) ??
+      this.readBooleanFromRecord(task.payload, ['purge']) ??
+      false
+    );
+  }
+
+  private readStringArray(
+    record: Record<string, unknown> | null,
+    key: string,
+  ): string[] | null {
+    if (!record || !Array.isArray(record[key])) {
+      return null;
+    }
+
+    return record[key].filter(
+      (entry): entry is string =>
+        typeof entry === 'string' && entry.trim().length > 0,
+    );
+  }
+
+  private readStringFromRecord(
+    record: Record<string, unknown> | null,
+    keys: string[],
+  ): string | null {
+    if (!record) {
+      return null;
+    }
+
+    for (const key of keys) {
+      const value = record[key];
+
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+
+    return null;
+  }
+
+  private readBooleanFromRecord(
+    record: Record<string, unknown> | null,
+    keys: string[],
+  ): boolean | null {
+    if (!record) {
+      return null;
+    }
+
+    for (const key of keys) {
+      if (typeof record[key] === 'boolean') {
+        return record[key] as boolean;
+      }
+    }
+
+    return null;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 }

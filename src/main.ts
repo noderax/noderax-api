@@ -58,7 +58,9 @@ async function bootstrap() {
   if (swaggerEnabled) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Noderax API')
-      .setDescription('Agent-based infrastructure management platform')
+      .setDescription(
+        'Agent-based infrastructure and package management platform. All HTTP endpoints are exposed under /api/v1.',
+      )
       .setVersion('1.0')
       .addBearerAuth(
         {

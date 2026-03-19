@@ -17,6 +17,7 @@ import { EventsModule } from './modules/events/events.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { NodesModule } from './modules/nodes/nodes.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PackagesModule } from './modules/packages/packages.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { UsersModule } from './modules/users/users.module';
@@ -46,6 +47,7 @@ import { RedisModule } from './redis/redis.module';
     UsersModule,
     AuthModule,
     NodesModule,
+    PackagesModule,
     EventsModule,
     MetricsModule,
     TasksModule,
