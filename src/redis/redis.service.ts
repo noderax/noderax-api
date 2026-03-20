@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import Redis from 'ioredis';
 import { REDIS_CONFIG_KEY, redisConfig } from '../config';
 
@@ -8,6 +9,7 @@ type RedisMessageHandler = (payload: Record<string, unknown>) => void;
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
+  private readonly instanceId = `${process.pid}-${randomUUID().slice(0, 8)}`;
   private readonly client: Redis | null;
   private subscriber: Redis | null = null;
   private readonly channelHandlers = new Map<
@@ -160,6 +162,10 @@ export class RedisService implements OnModuleDestroy {
 
   isEnabled() {
     return !!this.client;
+  }
+
+  getInstanceId() {
+    return this.instanceId;
   }
 
   private async ensureConnected() {

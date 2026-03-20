@@ -7,11 +7,13 @@ import { WsNodeSubscriptionGuard } from './guards/ws-node-subscription.guard';
 import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeAuthService } from './services/realtime-auth.service';
 import { RealtimeAuthorizationService } from './services/realtime-authorization.service';
+import { RealtimePubsubBridgeService } from './services/realtime-pubsub-bridge.service';
 
 @Module({
   imports: [AuthModule, TypeOrmModule.forFeature([NodeEntity])],
   providers: [
     RealtimeGateway,
+    RealtimePubsubBridgeService,
     RealtimeAuthService,
     RealtimeAuthorizationService,
     WsJwtAuthGuard,

@@ -284,10 +284,10 @@ export class NodesService {
     };
 
     this.realtimeGateway.emitNodeStatusUpdate(statusPayload);
-    await this.redisService.publish(
-      PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
-      statusPayload,
-    );
+    await this.redisService.publish(PUBSUB_CHANNELS.NODES_STATUS_UPDATED, {
+      ...statusPayload,
+      sourceInstanceId: this.redisService.getInstanceId(),
+    });
   }
 
   async markStaleNodesOffline(): Promise<number> {

@@ -82,9 +82,8 @@ export class MetricsService {
       savedMetric as unknown as Record<string, unknown>,
     );
     await this.redisService.publish(PUBSUB_CHANNELS.METRICS_INGESTED, {
-      metricId: savedMetric.id,
-      nodeId: savedMetric.nodeId,
-      recordedAt: savedMetric.recordedAt.toISOString(),
+      ...(savedMetric as unknown as Record<string, unknown>),
+      sourceInstanceId: this.redisService.getInstanceId(),
     });
 
     return savedMetric;

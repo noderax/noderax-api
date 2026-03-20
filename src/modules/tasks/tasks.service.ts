@@ -93,6 +93,7 @@ export class TasksService {
       taskId: savedTask.id,
       nodeId: savedTask.nodeId,
       status: savedTask.status,
+      sourceInstanceId: this.redisService.getInstanceId(),
     });
 
     return savedTask;
@@ -497,6 +498,7 @@ export class TasksService {
       status: task.status,
       finishedAt: task.finishedAt?.toISOString() ?? null,
       updatedAt: task.updatedAt.toISOString(),
+      sourceInstanceId: this.redisService.getInstanceId(),
     });
   }
 
