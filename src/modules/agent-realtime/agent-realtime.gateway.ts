@@ -33,6 +33,8 @@ import { AgentRealtimeService } from './agent-realtime.service';
 @Public()
 @WebSocketGateway({
   namespace: AGENT_REALTIME_NAMESPACE,
+  transports: ['websocket'],
+  allowUpgrades: false,
   cors: {
     origin: '*',
     credentials: true,
@@ -58,7 +60,7 @@ export class AgentRealtimeGateway
 
   afterInit(): void {
     this.agentRealtimeService.bindSocketEmitter((socketId, event, payload) => {
-      const socket = this.server.sockets.sockets.get(socketId);
+      const socket = this.getSocketById(socketId);
       if (!socket) {
         return false;
       }
@@ -84,7 +86,7 @@ export class AgentRealtimeGateway
     });
 
     this.agentRealtimeService.bindSocketDisconnect((socketId) => {
-      const socket = this.server.sockets.sockets.get(socketId);
+      const socket = this.getSocketById(socketId);
       if (!socket) {
         return false;
       }
@@ -95,8 +97,27 @@ export class AgentRealtimeGateway
   }
 
   handleConnection(client: Socket): void {
-    this.logger.debug(`Agent socket connected: ${client.id}`);
+    this.logger.log(
+      JSON.stringify({
+        msg: 'agent-realtime.connected',
+        socketId: client.id,
+        namespace: AGENT_REALTIME_NAMESPACE,
+        transport: client.conn.transport.name,
+      }),
+    );
     this.agentRealtimeService.incrementCounter('connection.opened');
+
+    client.on('disconnect', (reason) => {
+      this.logger.log(
+        JSON.stringify({
+          msg: 'agent-realtime.disconnected',
+          socketId: client.id,
+          namespace: AGENT_REALTIME_NAMESPACE,
+          transport: client.conn.transport.name,
+          reason,
+        }),
+      );
+    });
 
     client.onAny((eventName: string) => {
       const allowedEvents = new Set<string>([
@@ -146,8 +167,7 @@ export class AgentRealtimeGateway
         });
 
       if (previousSocketId && previousSocketId !== client.id) {
-        const previousSocket =
-          this.server.sockets.sockets.get(previousSocketId);
+        const previousSocket = this.getSocketById(previousSocketId);
         previousSocket?.disconnect(true);
       }
 
@@ -166,7 +186,7 @@ export class AgentRealtimeGateway
       };
     } catch (error) {
       this.agentRealtimeService.incrementCounter('auth.failed');
-      const message = error instanceof Error ? error.message : 'Invalid auth';
+      const message = this.getSafeErrorMessage(error, 'Invalid auth');
       client.emit(AGENT_REALTIME_SERVER_EVENTS.AUTH_ERROR, {
         type: AGENT_REALTIME_SERVER_EVENTS.AUTH_ERROR,
         authenticated: false,
@@ -478,7 +498,7 @@ export class AgentRealtimeGateway
 
   private emitHandlerError(client: Socket, eventType: string, error: unknown) {
     this.agentRealtimeService.incrementCounter('event.rejected.invalid');
-    const message = error instanceof Error ? error.message : 'Invalid payload';
+    const message = this.getSafeErrorMessage(error, 'Invalid payload');
     client.emit(AGENT_REALTIME_SERVER_EVENTS.ERROR, {
       type: AGENT_REALTIME_SERVER_EVENTS.ERROR,
       eventType,
@@ -490,5 +510,44 @@ export class AgentRealtimeGateway
       eventType,
       message,
     };
+  }
+
+  private getSocketById(socketId: string): Socket | null {
+    const namespace = this.getAgentNamespace();
+    if (!namespace) {
+      return null;
+    }
+
+    const socket = namespace.sockets?.get(socketId);
+    return socket ?? null;
+  }
+
+  private getAgentNamespace(): ReturnType<Server['of']> | null {
+    const namespace = this.server?.of?.(AGENT_REALTIME_NAMESPACE);
+    if (!namespace || !namespace.sockets) {
+      this.logger.warn(
+        `Socket namespace unavailable for ${AGENT_REALTIME_NAMESPACE}`,
+      );
+      return null;
+    }
+
+    return namespace;
+  }
+
+  private getSafeErrorMessage(error: unknown, fallback: string): string {
+    if (!(error instanceof Error)) {
+      return fallback;
+    }
+
+    const message = error.message?.trim();
+    if (!message) {
+      return fallback;
+    }
+
+    if (/cannot read properties of undefined/i.test(message)) {
+      return fallback;
+    }
+
+    return message.slice(0, 300);
   }
 }
