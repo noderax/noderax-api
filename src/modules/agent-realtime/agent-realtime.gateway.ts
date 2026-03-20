@@ -468,11 +468,36 @@ export class AgentRealtimeGateway
       return { ok: false, message: 'Socket is not authenticated' };
     }
 
+    const rawPayload = this.asRecord(payload);
+    const normalizedPayload = this.normalizeRealtimeMetricsPayload(rawPayload);
+
+    this.logger.debug(
+      JSON.stringify({
+        msg: 'agent-realtime.metrics.received',
+        socketId: client.id,
+        namespace: AGENT_REALTIME_NAMESPACE,
+        payloadKeys: Object.keys(rawPayload),
+        hasNetworkStats: Object.prototype.hasOwnProperty.call(
+          rawPayload,
+          'networkStats',
+        ),
+        hasNetworks: Object.prototype.hasOwnProperty.call(
+          rawPayload,
+          'networks',
+        ),
+        normalized: normalizedPayload.normalized,
+        normalizationReasons: normalizedPayload.reasons,
+      }),
+    );
+
     try {
-      const body = await this.validationPipe.transform(payload, {
-        type: 'body',
-        metatype: AgentMetricsMessageDto,
-      });
+      const body = await this.validationPipe.transform(
+        normalizedPayload.value,
+        {
+          type: 'body',
+          metatype: AgentMetricsMessageDto,
+        },
+      );
 
       await this.agentRealtimeService.ingestRealtimeMetrics(client.id, {
         ...body,
@@ -488,6 +513,17 @@ export class AgentRealtimeGateway
         nodeId: session.nodeId,
       };
     } catch (error) {
+      await this.agentRealtimeService.registerPing(client.id);
+      this.logger.warn(
+        JSON.stringify({
+          msg: 'agent-realtime.metrics.validation-failed',
+          socketId: client.id,
+          namespace: AGENT_REALTIME_NAMESPACE,
+          reason: this.getSafeErrorMessage(error, 'Invalid payload'),
+          socketKeptOpen: true,
+        }),
+      );
+
       return this.emitHandlerError(
         client,
         AGENT_REALTIME_CLIENT_EVENTS.METRICS,
@@ -549,5 +585,51 @@ export class AgentRealtimeGateway
     }
 
     return message.slice(0, 300);
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return { ...(value as Record<string, unknown>) };
+  }
+
+  private normalizeRealtimeMetricsPayload(payload: Record<string, unknown>): {
+    value: Record<string, unknown>;
+    normalized: boolean;
+    reasons: string[];
+  } {
+    const value = { ...payload };
+    const reasons: string[] = [];
+
+    if (value.networkStats === null) {
+      delete value.networkStats;
+      reasons.push('networkStats:null->omitted');
+    }
+
+    if (Array.isArray(value.networkStats)) {
+      if (!Array.isArray(value.networks)) {
+        value.networks = value.networkStats;
+      }
+      delete value.networkStats;
+      reasons.push('networkStats:array->networks');
+    }
+
+    if (value.networks === null) {
+      value.networks = [];
+      reasons.push('networks:null->[]');
+    }
+
+    if (value.networkStats === undefined && value.networks === undefined) {
+      value.networks = [];
+      reasons.push('missing-network-fields->networks:[]');
+    }
+
+    return {
+      value,
+      normalized: reasons.length > 0,
+      reasons,
+    };
   }
 }

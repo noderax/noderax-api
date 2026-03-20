@@ -136,5 +136,6 @@ export class AgentMetricsDto {
   })
   @IsOptional()
   @IsArray()
+  @IsObject({ each: true })
   networks?: Array<Record<string, unknown>>;
 }

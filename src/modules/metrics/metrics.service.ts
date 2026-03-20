@@ -130,20 +130,10 @@ export class MetricsService {
     }
 
     if (!Array.isArray(agentMetricsDto.networks)) {
-      throw new BadRequestException('networkStats is required');
+      return this.buildDefaultNetworkSummary([]);
     }
 
-    const summary = {
-      rxBytes: 0,
-      txBytes: 0,
-      rxPackets: 0,
-      txPackets: 0,
-      errorsIn: 0,
-      errorsOut: 0,
-      dropIn: 0,
-      dropOut: 0,
-      interfaces: agentMetricsDto.networks,
-    };
+    const summary = this.buildDefaultNetworkSummary(agentMetricsDto.networks);
 
     for (const network of agentMetricsDto.networks) {
       summary.rxBytes += this.readNetworkCounter(network, 'bytesRecv');
@@ -157,6 +147,32 @@ export class MetricsService {
     }
 
     return summary;
+  }
+
+  private buildDefaultNetworkSummary(
+    interfaces: Array<Record<string, unknown>>,
+  ): {
+    rxBytes: number;
+    txBytes: number;
+    rxPackets: number;
+    txPackets: number;
+    errorsIn: number;
+    errorsOut: number;
+    dropIn: number;
+    dropOut: number;
+    interfaces: Array<Record<string, unknown>>;
+  } {
+    return {
+      rxBytes: 0,
+      txBytes: 0,
+      rxPackets: 0,
+      txPackets: 0,
+      errorsIn: 0,
+      errorsOut: 0,
+      dropIn: 0,
+      dropOut: 0,
+      interfaces,
+    };
   }
 
   private readNetworkCounter(
