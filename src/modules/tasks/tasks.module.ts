@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AgentRealtimeModule } from '../agent-realtime/agent-realtime.module';
 import { EventsModule } from '../events/events.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { RealtimeModule } from '../realtime/realtime.module';
@@ -16,6 +17,7 @@ import { TasksService } from './tasks.service';
     NodesModule,
     EventsModule,
     RealtimeModule,
+    forwardRef(() => AgentRealtimeModule),
   ],
   controllers: [TasksController, AgentTasksController],
   providers: [TasksService, TaskSchemaBootstrap],

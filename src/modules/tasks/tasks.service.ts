@@ -13,6 +13,7 @@ import {
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RedisService } from '../../redis/redis.service';
+import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
@@ -52,6 +53,7 @@ export class TasksService {
     private readonly eventsService: EventsService,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
+    private readonly agentRealtimeService: AgentRealtimeService,
   ) {}
 
   async create(createTaskDto: CreateTaskDto): Promise<TaskEntity> {
@@ -84,6 +86,9 @@ export class TasksService {
     this.realtimeGateway.emitTaskCreated(
       savedTask as unknown as Record<string, unknown>,
     );
+
+    await this.agentRealtimeService.dispatchTaskToNode(savedTask);
+
     await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
       taskId: savedTask.id,
       nodeId: savedTask.nodeId,
@@ -227,6 +232,36 @@ export class TasksService {
       },
       take: pullAgentTasksDto.limit ?? 10,
     });
+  }
+
+  async findQueuedForNode(nodeId: string, limit = 50): Promise<TaskEntity[]> {
+    return this.tasksRepository.find({
+      where: {
+        nodeId,
+        status: TaskStatus.QUEUED,
+      },
+      order: {
+        createdAt: 'ASC',
+      },
+      take: Math.max(1, Math.min(limit, 200)),
+    });
+  }
+
+  async acknowledgeForAgent(
+    taskId: string,
+    input: { nodeId: string; agentToken: string; timestamp?: string },
+  ): Promise<TaskLogEntity> {
+    await this.nodesService.authenticateAgent(input.nodeId, input.agentToken);
+    await this.findTaskForNodeOrFail(taskId, input.nodeId);
+
+    const taskLog = this.taskLogsRepository.create({
+      taskId,
+      level: TaskLogLevel.INFO,
+      message: 'Task accepted by agent',
+      timestamp: input.timestamp ? new Date(input.timestamp) : new Date(),
+    });
+
+    return this.taskLogsRepository.save(taskLog);
   }
 
   async startForAgent(
@@ -626,9 +661,7 @@ export class TasksService {
       );
   }
 
-  private normalizePackageRecord(
-    value: unknown,
-  ): NormalizedPackageDto | null {
+  private normalizePackageRecord(value: unknown): NormalizedPackageDto | null {
     if (!this.isRecord(value)) {
       return null;
     }
@@ -642,14 +675,8 @@ export class TasksService {
     return {
       name,
       version: this.readStringFromRecord(value, ['version']),
-      architecture: this.readStringFromRecord(value, [
-        'architecture',
-        'arch',
-      ]),
-      description: this.readStringFromRecord(value, [
-        'description',
-        'summary',
-      ]),
+      architecture: this.readStringFromRecord(value, ['architecture', 'arch']),
+      description: this.readStringFromRecord(value, ['description', 'summary']),
     };
   }
 
@@ -669,10 +696,7 @@ export class TasksService {
     return {
       name,
       version: this.readStringFromRecord(value, ['version']),
-      description: this.readStringFromRecord(value, [
-        'description',
-        'summary',
-      ]),
+      description: this.readStringFromRecord(value, ['description', 'summary']),
     };
   }
 

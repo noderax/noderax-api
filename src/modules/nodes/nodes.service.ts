@@ -235,6 +235,44 @@ export class NodesService {
     };
   }
 
+  async markOffline(
+    nodeId: string,
+  ): Promise<{ node: NodeEntity; transitionedToOffline: boolean }> {
+    const now = new Date();
+    const updateResult = await this.nodesRepository
+      .createQueryBuilder()
+      .update(NodeEntity)
+      .set({
+        status: NodeStatus.OFFLINE,
+        updatedAt: now,
+      })
+      .where('id = :nodeId', { nodeId })
+      .andWhere('status = :status', { status: NodeStatus.ONLINE })
+      .execute();
+
+    if (updateResult.affected) {
+      return {
+        node: await this.findOneOrFail(nodeId),
+        transitionedToOffline: true,
+      };
+    }
+
+    const node = await this.findOneOrFail(nodeId);
+    if (node.status !== NodeStatus.OFFLINE) {
+      node.status = NodeStatus.OFFLINE;
+      node.updatedAt = now;
+      return {
+        node: await this.nodesRepository.save(node),
+        transitionedToOffline: false,
+      };
+    }
+
+    return {
+      node,
+      transitionedToOffline: false,
+    };
+  }
+
   async broadcastStatusUpdate(
     node: Pick<NodeEntity, 'id' | 'hostname' | 'status' | 'lastSeenAt'>,
   ): Promise<void> {

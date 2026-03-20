@@ -1,4 +1,5 @@
 export const PUBSUB_CHANNELS = {
+  AGENT_REALTIME_TASK_DISPATCH: 'agent-realtime.task.dispatch',
   EVENTS_CREATED: 'events.created',
   METRICS_INGESTED: 'metrics.ingested',
   NODES_STATUS_UPDATED: 'nodes.status.updated',

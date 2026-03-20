@@ -11,6 +11,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import configuration from './config/configuration';
 import { validationSchema } from './config/env.validation';
 import { getTypeOrmConfig } from './database/typeorm.config';
+import { AgentRealtimeModule } from './modules/agent-realtime/agent-realtime.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
@@ -44,6 +45,7 @@ import { RedisModule } from './redis/redis.module';
     }),
     RedisModule,
     RealtimeModule,
+    AgentRealtimeModule,
     NotificationsModule,
     UsersModule,
     AuthModule,
