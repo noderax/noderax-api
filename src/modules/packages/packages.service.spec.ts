@@ -92,4 +92,115 @@ describe('PackagesService compatibility hardening', () => {
       status: TaskStatus.QUEUED,
     });
   });
+
+  it('falls back to parsing dpkg -l output when structured package list is missing', async () => {
+    tasksService.waitForTerminalState.mockResolvedValue({
+      id: 'task-list-1',
+      nodeId: 'node-1',
+      type: TASK_TYPES.PACKAGE_LIST,
+      status: TaskStatus.SUCCESS,
+      result: null,
+      output:
+        'ii  adduser 3.137ubuntu1 all add and remove users and groups\n' +
+        'ii  bash 5.2.21-2ubuntu4 amd64 GNU Bourne Again SHell',
+    } as never);
+    tasksService.handlePackageResult.mockReturnValue(null);
+
+    const response = await service.listInstalled('node-1');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      taskId: 'task-list-1',
+      taskStatus: TaskStatus.SUCCESS,
+      packages: [
+        {
+          name: 'adduser',
+          version: '3.137ubuntu1',
+          architecture: 'all',
+        },
+        {
+          name: 'bash',
+          version: '5.2.21-2ubuntu4',
+          architecture: 'amd64',
+        },
+      ],
+      error: null,
+    });
+  });
+
+  it('falls back to parsing apt list --installed output when structured package list is missing', async () => {
+    tasksService.waitForTerminalState.mockResolvedValue({
+      id: 'task-list-2',
+      nodeId: 'node-1',
+      type: TASK_TYPES.PACKAGE_LIST,
+      status: TaskStatus.SUCCESS,
+      result: null,
+      output:
+        'Listing...\n' +
+        'adduser/noble,now 3.137ubuntu1 all [installed,automatic]\n' +
+        'bash/noble-updates,now 5.2.21-2ubuntu4 amd64 [installed]',
+    } as never);
+    tasksService.handlePackageResult.mockReturnValue(null);
+
+    const response = await service.listInstalled('node-1');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      taskId: 'task-list-2',
+      taskStatus: TaskStatus.SUCCESS,
+      packages: [
+        {
+          name: 'adduser',
+          version: '3.137ubuntu1',
+          architecture: 'all',
+          description: null,
+        },
+        {
+          name: 'bash',
+          version: '5.2.21-2ubuntu4',
+          architecture: 'amd64',
+          description: null,
+        },
+      ],
+      error: null,
+    });
+  });
+
+  it('prefers structured package list over output fallback when both are available', async () => {
+    tasksService.waitForTerminalState.mockResolvedValue({
+      id: 'task-list-3',
+      nodeId: 'node-1',
+      type: TASK_TYPES.PACKAGE_LIST,
+      status: TaskStatus.SUCCESS,
+      result: { packages: [{ name: 'curl' }] },
+      output: 'ii  bash 5.2.21-2ubuntu4 amd64 GNU Bourne Again SHell',
+    } as never);
+    tasksService.handlePackageResult.mockReturnValue({
+      operation: TASK_TYPES.PACKAGE_LIST,
+      packages: [
+        {
+          name: 'curl',
+          version: '8.5.0-2ubuntu10',
+          architecture: 'amd64',
+          description:
+            'command line tool for transferring data with URL syntax',
+        },
+      ],
+    });
+
+    const response = await service.listInstalled('node-1');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      taskId: 'task-list-3',
+      taskStatus: TaskStatus.SUCCESS,
+      packages: [
+        {
+          name: 'curl',
+          version: '8.5.0-2ubuntu10',
+        },
+      ],
+      error: null,
+    });
+  });
 });

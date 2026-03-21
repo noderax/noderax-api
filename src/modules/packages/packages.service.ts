@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import {
   PackageMutationTaskType,
   TASK_TYPES,
@@ -29,6 +29,8 @@ export interface PackageHttpResponse<T extends PackageReadResponse> {
 
 @Injectable()
 export class PackagesService {
+  private readonly logger = new Logger(PackagesService.name);
+
   constructor(private readonly tasksService: TasksService) {}
 
   async listInstalled(
@@ -196,6 +198,16 @@ export class PackagesService {
       task.status === TaskStatus.SUCCESS &&
       normalized?.operation === TASK_TYPES.PACKAGE_LIST
     ) {
+      this.logger.debug(
+        JSON.stringify({
+          msg: 'packages.list.structured-result',
+          taskId: task.id,
+          structuredFound: true,
+          fallbackUsed: false,
+          parsedCount: normalized.packages.length,
+        }),
+      );
+
       return {
         ...base,
         packages: normalized.packages,
@@ -204,6 +216,37 @@ export class PackagesService {
     }
 
     if (task.status === TaskStatus.SUCCESS) {
+      const fallbackPackages = this.parseInstalledPackagesFromOutput(
+        task.output,
+      );
+      if (fallbackPackages.length > 0) {
+        this.logger.warn(
+          JSON.stringify({
+            msg: 'packages.list.output-fallback-used',
+            taskId: task.id,
+            structuredFound: false,
+            fallbackUsed: true,
+            parsedCount: fallbackPackages.length,
+          }),
+        );
+
+        return {
+          ...base,
+          packages: fallbackPackages,
+          error: null,
+        };
+      }
+
+      this.logger.warn(
+        JSON.stringify({
+          msg: 'packages.list.no-structured-result',
+          taskId: task.id,
+          structuredFound: false,
+          fallbackUsed: false,
+          parsedCount: 0,
+        }),
+      );
+
       return {
         ...base,
         taskStatus: TaskStatus.FAILED,
@@ -344,5 +387,106 @@ export class PackagesService {
     value: boolean | string | null | undefined,
   ): boolean {
     return value === true || value === 'true';
+  }
+
+  private parseInstalledPackagesFromOutput(output: string | null): Array<{
+    name: string;
+    version: string | null;
+    architecture: string | null;
+    description: string | null;
+  }> {
+    if (!output || output.trim().length === 0) {
+      return [];
+    }
+
+    const dpkgPackages = this.parseDpkgListOutput(output);
+    if (dpkgPackages.length > 0) {
+      return dpkgPackages;
+    }
+
+    return this.parseAptListInstalledOutput(output);
+  }
+
+  private parseDpkgListOutput(output: string): Array<{
+    name: string;
+    version: string | null;
+    architecture: string | null;
+    description: string | null;
+  }> {
+    const results: Array<{
+      name: string;
+      version: string | null;
+      architecture: string | null;
+      description: string | null;
+    }> = [];
+
+    const lines = output.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('ii ')) {
+        continue;
+      }
+
+      const parts = trimmed.split(/\s+/);
+      if (parts.length < 4) {
+        continue;
+      }
+
+      results.push({
+        name: parts[1],
+        version: parts[2] ?? null,
+        architecture: parts[3] ?? null,
+        description: parts.slice(4).join(' ') || null,
+      });
+    }
+
+    return results;
+  }
+
+  private parseAptListInstalledOutput(output: string): Array<{
+    name: string;
+    version: string | null;
+    architecture: string | null;
+    description: string | null;
+  }> {
+    const results: Array<{
+      name: string;
+      version: string | null;
+      architecture: string | null;
+      description: string | null;
+    }> = [];
+
+    const lines = output.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (
+        trimmed.length === 0 ||
+        trimmed.startsWith('Listing...') ||
+        !trimmed.includes('[installed')
+      ) {
+        continue;
+      }
+
+      const match = trimmed.match(
+        /^(\S+)\s+(\S+)\s+(\S+)\s+\[(installed[^\]]*)\]$/i,
+      );
+      if (!match) {
+        continue;
+      }
+
+      const packageRef = match[1];
+      const slashIndex = packageRef.indexOf('/');
+      const name =
+        slashIndex > 0 ? packageRef.slice(0, slashIndex) : packageRef;
+
+      results.push({
+        name,
+        version: match[2] ?? null,
+        architecture: match[3] ?? null,
+        description: null,
+      });
+    }
+
+    return results;
   }
 }
