@@ -216,23 +216,25 @@ export class PackagesService {
     }
 
     if (task.status === TaskStatus.SUCCESS) {
-      const fallbackPackages = this.parseInstalledPackagesFromOutput(
+      const fallback = this.parseInstalledPackagesWithFallbackSources(
         task.output,
+        task.result,
       );
-      if (fallbackPackages.length > 0) {
+      if (fallback.packages.length > 0) {
         this.logger.warn(
           JSON.stringify({
             msg: 'packages.list.output-fallback-used',
             taskId: task.id,
             structuredFound: false,
             fallbackUsed: true,
-            parsedCount: fallbackPackages.length,
+            fallbackSource: fallback.source,
+            parsedCount: fallback.packages.length,
           }),
         );
 
         return {
           ...base,
-          packages: fallbackPackages,
+          packages: fallback.packages,
           error: null,
         };
       }
@@ -407,6 +409,121 @@ export class PackagesService {
     return this.parseAptListInstalledOutput(output);
   }
 
+  private parseInstalledPackagesWithFallbackSources(
+    output: string | null,
+    result: Record<string, unknown> | null,
+  ): {
+    source: string;
+    packages: Array<{
+      name: string;
+      version: string | null;
+      architecture: string | null;
+      description: string | null;
+    }>;
+  } {
+    const directOutputPackages = this.parseInstalledPackagesFromOutput(output);
+    if (directOutputPackages.length > 0) {
+      return {
+        source: 'task.output',
+        packages: directOutputPackages,
+      };
+    }
+
+    const resultPackages =
+      this.readStructuredPackageCollectionFromResult(result);
+    if (resultPackages.length > 0) {
+      return {
+        source: 'task.result.packages',
+        packages: resultPackages,
+      };
+    }
+
+    const resultText = this.readStringFromRecord(result, [
+      'output',
+      'stdout',
+      'message',
+      'rawOutput',
+    ]);
+    const resultTextPackages =
+      this.parseInstalledPackagesFromOutput(resultText);
+    if (resultTextPackages.length > 0) {
+      return {
+        source: 'task.result.output-like',
+        packages: resultTextPackages,
+      };
+    }
+
+    return {
+      source: 'none',
+      packages: [],
+    };
+  }
+
+  private readStructuredPackageCollectionFromResult(
+    result: Record<string, unknown> | null,
+  ): Array<{
+    name: string;
+    version: string | null;
+    architecture: string | null;
+    description: string | null;
+  }> {
+    if (!result) {
+      return [];
+    }
+
+    const candidates = ['packages', 'installedPackages', 'installed'];
+    for (const key of candidates) {
+      if (!Array.isArray(result[key])) {
+        continue;
+      }
+
+      const parsed = result[key]
+        .map((entry) => this.normalizePackageEntry(entry))
+        .filter(
+          (
+            entry,
+          ): entry is {
+            name: string;
+            version: string | null;
+            architecture: string | null;
+            description: string | null;
+          } => entry !== null,
+        );
+
+      if (parsed.length > 0) {
+        return parsed;
+      }
+    }
+
+    return [];
+  }
+
+  private normalizePackageEntry(value: unknown): {
+    name: string;
+    version: string | null;
+    architecture: string | null;
+    description: string | null;
+  } | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const name = this.readStringFromRecord(record, ['name', 'package']);
+    if (!name) {
+      return null;
+    }
+
+    return {
+      name,
+      version: this.readStringFromRecord(record, ['version']) ?? null,
+      architecture:
+        this.readStringFromRecord(record, ['architecture', 'arch']) ?? null,
+      description:
+        this.readStringFromRecord(record, ['description', 'summary']) ?? null,
+    };
+  }
+
   private parseDpkgListOutput(output: string): Array<{
     name: string;
     version: string | null;
@@ -487,6 +604,64 @@ export class PackagesService {
       });
     }
 
+    if (results.length > 0) {
+      return results;
+    }
+
+    return this.parseNameVersionOutput(output);
+  }
+
+  private parseNameVersionOutput(output: string): Array<{
+    name: string;
+    version: string | null;
+    architecture: string | null;
+    description: string | null;
+  }> {
+    const results: Array<{
+      name: string;
+      version: string | null;
+      architecture: string | null;
+      description: string | null;
+    }> = [];
+
+    const lines = output.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+
+      const match = trimmed.match(/^([a-z0-9.+-]+):([^\s]+)$/i);
+      if (!match) {
+        continue;
+      }
+
+      results.push({
+        name: match[1],
+        version: match[2],
+        architecture: null,
+        description: null,
+      });
+    }
+
     return results;
+  }
+
+  private readStringFromRecord(
+    record: Record<string, unknown> | null,
+    keys: string[],
+  ): string | null {
+    if (!record) {
+      return null;
+    }
+
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+
+    return null;
   }
 }

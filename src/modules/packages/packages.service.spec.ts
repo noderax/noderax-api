@@ -203,4 +203,74 @@ describe('PackagesService compatibility hardening', () => {
       error: null,
     });
   });
+
+  it('parses name:version lines when agent emits compact package output', async () => {
+    tasksService.waitForTerminalState.mockResolvedValue({
+      id: 'task-list-4',
+      nodeId: 'node-1',
+      type: TASK_TYPES.PACKAGE_LIST,
+      status: TaskStatus.SUCCESS,
+      result: null,
+      output: 'bash:5.2.21-2ubuntu4\ncurl:8.5.0-2ubuntu10',
+    } as never);
+    tasksService.handlePackageResult.mockReturnValue(null);
+
+    const response = await service.listInstalled('node-1');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      taskId: 'task-list-4',
+      taskStatus: TaskStatus.SUCCESS,
+      packages: [
+        {
+          name: 'bash',
+          version: '5.2.21-2ubuntu4',
+          architecture: null,
+        },
+        {
+          name: 'curl',
+          version: '8.5.0-2ubuntu10',
+          architecture: null,
+        },
+      ],
+      error: null,
+    });
+  });
+
+  it('uses task.result output-like fields when task.output is empty', async () => {
+    tasksService.waitForTerminalState.mockResolvedValue({
+      id: 'task-list-5',
+      nodeId: 'node-1',
+      type: TASK_TYPES.PACKAGE_LIST,
+      status: TaskStatus.SUCCESS,
+      result: {
+        output:
+          'ii  adduser 3.137ubuntu1 all add and remove users and groups\n' +
+          'ii  bash 5.2.21-2ubuntu4 amd64 GNU Bourne Again SHell',
+      },
+      output: null,
+    } as never);
+    tasksService.handlePackageResult.mockReturnValue(null);
+
+    const response = await service.listInstalled('node-1');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      taskId: 'task-list-5',
+      taskStatus: TaskStatus.SUCCESS,
+      packages: [
+        {
+          name: 'adduser',
+          version: '3.137ubuntu1',
+          architecture: 'all',
+        },
+        {
+          name: 'bash',
+          version: '5.2.21-2ubuntu4',
+          architecture: 'amd64',
+        },
+      ],
+      error: null,
+    });
+  });
 });
