@@ -16,6 +16,7 @@ import { SearchPackagesResponseDto } from './dto/search-packages-response.dto';
 
 const PACKAGE_WAIT_TIMEOUT_MS = 10000;
 const PACKAGE_WAIT_POLL_INTERVAL_MS = 250;
+const PACKAGE_RECENT_TASK_SCAN_LIMIT = 50;
 
 type PackageReadResponse =
   | ListPackagesResponseDto
@@ -38,11 +39,7 @@ export class PackagesService {
   ): Promise<
     PackageHttpResponse<ListPackagesResponseDto | PackageTaskAcceptedDto>
   > {
-    const task = await this.tasksService.create({
-      nodeId,
-      type: TASK_TYPES.PACKAGE_LIST,
-      payload: {},
-    });
+    const task = await this.getOrCreatePackageListTask(nodeId);
 
     return this.resolveReadTask(task.id, {
       nodeId,
@@ -153,6 +150,28 @@ export class PackagesService {
     );
 
     if (!completedTask) {
+      if (input.operation === TASK_TYPES.PACKAGE_LIST) {
+        const staleSuccess = await this.findLatestSuccessfulPackageListTask(
+          input.nodeId,
+        );
+        if (staleSuccess) {
+          this.logger.warn(
+            JSON.stringify({
+              msg: 'packages.list.timeout-using-stale-success',
+              requestedTaskId: taskId,
+              staleTaskId: staleSuccess.id,
+            }),
+          );
+
+          const normalized =
+            this.tasksService.handlePackageResult(staleSuccess);
+          return {
+            statusCode: HttpStatus.OK,
+            body: this.buildListResponse(staleSuccess, normalized),
+          };
+        }
+      }
+
       return {
         statusCode: HttpStatus.ACCEPTED,
         body: await this.buildAcceptedResponse(taskId, {
@@ -389,6 +408,64 @@ export class PackagesService {
     value: boolean | string | null | undefined,
   ): boolean {
     return value === true || value === 'true';
+  }
+
+  private async getOrCreatePackageListTask(
+    nodeId: string,
+  ): Promise<TaskEntity> {
+    const inFlightTask = await this.findInFlightPackageListTask(nodeId);
+    if (inFlightTask) {
+      this.logger.warn(
+        JSON.stringify({
+          msg: 'packages.list.reusing-inflight-task',
+          nodeId,
+          taskId: inFlightTask.id,
+          status: inFlightTask.status,
+        }),
+      );
+      return inFlightTask;
+    }
+
+    return this.tasksService.create({
+      nodeId,
+      type: TASK_TYPES.PACKAGE_LIST,
+      payload: {},
+    });
+  }
+
+  private async findInFlightPackageListTask(
+    nodeId: string,
+  ): Promise<TaskEntity | null> {
+    const tasks = await this.tasksService.findAll({
+      nodeId,
+      limit: PACKAGE_RECENT_TASK_SCAN_LIMIT,
+    });
+
+    const task = tasks.find(
+      (candidate) =>
+        candidate.type === TASK_TYPES.PACKAGE_LIST &&
+        (candidate.status === TaskStatus.QUEUED ||
+          candidate.status === TaskStatus.RUNNING),
+    );
+
+    return task ?? null;
+  }
+
+  private async findLatestSuccessfulPackageListTask(
+    nodeId: string,
+  ): Promise<TaskEntity | null> {
+    const tasks = await this.tasksService.findAll({
+      nodeId,
+      limit: PACKAGE_RECENT_TASK_SCAN_LIMIT,
+    });
+
+    const task = tasks.find(
+      (candidate) =>
+        candidate.type === TASK_TYPES.PACKAGE_LIST &&
+        candidate.status === TaskStatus.SUCCESS,
+    );
+
+    return task ?? null;
   }
 
   private parseInstalledPackagesFromOutput(output: string | null): Array<{

@@ -14,6 +14,7 @@ describe('PackagesService compatibility hardening', () => {
         status: TaskStatus.QUEUED,
         nodeId: 'node-1',
       }),
+      findAll: jest.fn().mockResolvedValue([]),
       findOneOrFail: jest.fn().mockResolvedValue({
         id: 'task-1',
         status: TaskStatus.QUEUED,
@@ -94,6 +95,7 @@ describe('PackagesService compatibility hardening', () => {
   });
 
   it('falls back to parsing dpkg -l output when structured package list is missing', async () => {
+    tasksService.findAll.mockResolvedValue([]);
     tasksService.waitForTerminalState.mockResolvedValue({
       id: 'task-list-1',
       nodeId: 'node-1',
@@ -129,6 +131,7 @@ describe('PackagesService compatibility hardening', () => {
   });
 
   it('falls back to parsing apt list --installed output when structured package list is missing', async () => {
+    tasksService.findAll.mockResolvedValue([]);
     tasksService.waitForTerminalState.mockResolvedValue({
       id: 'task-list-2',
       nodeId: 'node-1',
@@ -167,6 +170,7 @@ describe('PackagesService compatibility hardening', () => {
   });
 
   it('prefers structured package list over output fallback when both are available', async () => {
+    tasksService.findAll.mockResolvedValue([]);
     tasksService.waitForTerminalState.mockResolvedValue({
       id: 'task-list-3',
       nodeId: 'node-1',
@@ -205,6 +209,7 @@ describe('PackagesService compatibility hardening', () => {
   });
 
   it('parses name:version lines when agent emits compact package output', async () => {
+    tasksService.findAll.mockResolvedValue([]);
     tasksService.waitForTerminalState.mockResolvedValue({
       id: 'task-list-4',
       nodeId: 'node-1',
@@ -238,6 +243,7 @@ describe('PackagesService compatibility hardening', () => {
   });
 
   it('uses task.result output-like fields when task.output is empty', async () => {
+    tasksService.findAll.mockResolvedValue([]);
     tasksService.waitForTerminalState.mockResolvedValue({
       id: 'task-list-5',
       nodeId: 'node-1',
@@ -268,6 +274,91 @@ describe('PackagesService compatibility hardening', () => {
           name: 'bash',
           version: '5.2.21-2ubuntu4',
           architecture: 'amd64',
+        },
+      ],
+      error: null,
+    });
+  });
+
+  it('reuses in-flight packageList task instead of enqueuing a new one', async () => {
+    tasksService.findAll.mockResolvedValue([
+      {
+        id: 'task-inflight',
+        nodeId: 'node-1',
+        type: TASK_TYPES.PACKAGE_LIST,
+        status: TaskStatus.QUEUED,
+      },
+    ] as never);
+    tasksService.waitForTerminalState.mockResolvedValue(null);
+    tasksService.findOneOrFail.mockResolvedValue({
+      id: 'task-inflight',
+      nodeId: 'node-1',
+      type: TASK_TYPES.PACKAGE_LIST,
+      status: TaskStatus.QUEUED,
+    } as never);
+
+    const response = await service.listInstalled('node-1');
+
+    expect(tasksService.create).not.toHaveBeenCalledWith({
+      nodeId: 'node-1',
+      type: TASK_TYPES.PACKAGE_LIST,
+      payload: {},
+    });
+    expect(response.statusCode).toBe(202);
+    expect(response.body).toMatchObject({
+      taskId: 'task-inflight',
+      taskStatus: TaskStatus.QUEUED,
+    });
+  });
+
+  it('returns latest successful package list on timeout when current task does not finish', async () => {
+    tasksService.findAll.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: 'task-old-success',
+        nodeId: 'node-1',
+        type: TASK_TYPES.PACKAGE_LIST,
+        status: TaskStatus.SUCCESS,
+        result: {
+          packages: [
+            {
+              name: 'bash',
+              version: '5.2.21-2ubuntu4',
+              architecture: 'amd64',
+            },
+          ],
+        },
+        output: null,
+      },
+    ] as never);
+    tasksService.create.mockResolvedValue({
+      id: 'task-new',
+      nodeId: 'node-1',
+      type: TASK_TYPES.PACKAGE_LIST,
+      status: TaskStatus.QUEUED,
+    } as never);
+    tasksService.waitForTerminalState.mockResolvedValue(null);
+    tasksService.handlePackageResult.mockReturnValue({
+      operation: TASK_TYPES.PACKAGE_LIST,
+      packages: [
+        {
+          name: 'bash',
+          version: '5.2.21-2ubuntu4',
+          architecture: 'amd64',
+          description: null,
+        },
+      ],
+    });
+
+    const response = await service.listInstalled('node-1');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      taskId: 'task-old-success',
+      taskStatus: TaskStatus.SUCCESS,
+      packages: [
+        {
+          name: 'bash',
+          version: '5.2.21-2ubuntu4',
         },
       ],
       error: null,
