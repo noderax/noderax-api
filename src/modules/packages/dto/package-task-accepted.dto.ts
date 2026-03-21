@@ -12,12 +12,27 @@ export class PackageTaskAcceptedDto {
   })
   taskId: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    example: 'ec9f97f2-7b56-4a7e-a7cb-5c957e9d32d8',
+    description: 'Backward-compatible alias of taskId.',
+  })
+  id?: string;
+
   @ApiProperty({
     enum: TaskStatus,
     enumName: 'TaskStatus',
     example: TaskStatus.QUEUED,
   })
   taskStatus: TaskStatus;
+
+  @ApiPropertyOptional({
+    enum: TaskStatus,
+    enumName: 'TaskStatus',
+    example: TaskStatus.QUEUED,
+    description: 'Backward-compatible alias of taskStatus.',
+  })
+  status?: TaskStatus;
 
   @ApiProperty({
     format: 'uuid',

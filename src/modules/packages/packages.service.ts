@@ -33,7 +33,9 @@ export class PackagesService {
 
   async listInstalled(
     nodeId: string,
-  ): Promise<PackageHttpResponse<ListPackagesResponseDto | PackageTaskAcceptedDto>> {
+  ): Promise<
+    PackageHttpResponse<ListPackagesResponseDto | PackageTaskAcceptedDto>
+  > {
     const task = await this.tasksService.create({
       nodeId,
       type: TASK_TYPES.PACKAGE_LIST,
@@ -57,6 +59,7 @@ export class PackagesService {
       type: TASK_TYPES.PACKAGE_SEARCH,
       payload: {
         term: query.term,
+        query: query.term,
       },
     });
 
@@ -78,6 +81,8 @@ export class PackagesService {
       type: TASK_TYPES.PACKAGE_INSTALL,
       payload: {
         names,
+        packages: names,
+        package: names.length === 1 ? names[0] : undefined,
         purge,
       },
     });
@@ -102,11 +107,14 @@ export class PackagesService {
     const operation = purge
       ? TASK_TYPES.PACKAGE_PURGE
       : TASK_TYPES.PACKAGE_REMOVE;
+    const queuedTaskType = TASK_TYPES.PACKAGE_REMOVE;
     const task = await this.tasksService.create({
       nodeId,
-      type: operation,
+      type: queuedTaskType,
       payload: {
         names: [name],
+        packages: [name],
+        package: name,
         purge,
       },
     });
@@ -124,10 +132,18 @@ export class PackagesService {
     taskId: string,
     input: {
       nodeId: string;
-      operation: typeof TASK_TYPES.PACKAGE_LIST | typeof TASK_TYPES.PACKAGE_SEARCH;
+      operation:
+        | typeof TASK_TYPES.PACKAGE_LIST
+        | typeof TASK_TYPES.PACKAGE_SEARCH;
       term: string | null;
     },
-  ): Promise<PackageHttpResponse<ListPackagesResponseDto | SearchPackagesResponseDto | PackageTaskAcceptedDto>> {
+  ): Promise<
+    PackageHttpResponse<
+      | ListPackagesResponseDto
+      | SearchPackagesResponseDto
+      | PackageTaskAcceptedDto
+    >
+  > {
     const completedTask = await this.tasksService.waitForTerminalState(
       taskId,
       PACKAGE_WAIT_TIMEOUT_MS,
@@ -158,11 +174,7 @@ export class PackagesService {
 
     return {
       statusCode: HttpStatus.OK,
-      body: this.buildSearchResponse(
-        completedTask,
-        input.term,
-        normalized,
-      ),
+      body: this.buildSearchResponse(completedTask, input.term, normalized),
     };
   }
 
@@ -290,6 +302,8 @@ export class PackagesService {
     return {
       taskId: input.taskId,
       taskStatus: input.taskStatus,
+      id: input.taskId,
+      status: input.taskStatus,
       nodeId: input.nodeId,
       operation: input.operation,
       names: input.names,
