@@ -19,6 +19,25 @@ const parsePositiveIntegerWithMin = (
   return Math.max(parsedValue, min);
 };
 
+const parseBoolean = (
+  value: string | undefined,
+  fallback: boolean,
+): boolean => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+};
+
 export const AGENTS_CONFIG_KEY = 'agents';
 
 export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
@@ -39,6 +58,15 @@ export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
     process.env.AGENT_REALTIME_PING_CHECK_INTERVAL_SECONDS,
     5,
     1,
+  ),
+  taskClaimLeaseSeconds: parsePositiveIntegerWithMin(
+    process.env.AGENT_TASK_CLAIM_LEASE_SECONDS,
+    60,
+    15,
+  ),
+  enableRealtimeTaskDispatch: parseBoolean(
+    process.env.ENABLE_REALTIME_TASK_DISPATCH,
+    false,
   ),
   staleTaskCheckIntervalSeconds: parsePositiveInteger(
     process.env.AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS,

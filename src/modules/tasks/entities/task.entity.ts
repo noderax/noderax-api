@@ -78,6 +78,42 @@ export class TaskEntity {
   output: string | null;
 
   @ApiPropertyOptional({
+    example: false,
+    nullable: true,
+    description: 'True when task output was truncated to satisfy API limits.',
+  })
+  @Column({ type: 'boolean', nullable: true, default: false })
+  outputTruncated: boolean | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    example: '2026-03-22T16:47:40.000Z',
+    nullable: true,
+    description:
+      'Lease expiry used by polling agents to avoid duplicate claims.',
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  leaseUntil: Date | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    example: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
+    nullable: true,
+    description: 'Node ID that currently holds the lease for this task.',
+  })
+  @Column({ type: 'uuid', nullable: true })
+  claimedBy: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    example: '71cb6cc7-2cc9-4235-a8ef-b6c2d8d92d23',
+    nullable: true,
+    description: 'Opaque claim token for optimistic ownership checks.',
+  })
+  @Column({ type: 'uuid', nullable: true })
+  claimToken: string | null;
+
+  @ApiPropertyOptional({
     format: 'date-time',
     example: '2026-03-17T12:41:00.000Z',
     nullable: true,

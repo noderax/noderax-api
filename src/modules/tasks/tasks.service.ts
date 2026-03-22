@@ -2,9 +2,12 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import {
   isPackageTaskType,
@@ -12,14 +15,25 @@ import {
 } from '../../common/constants/task-types.constants';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
+import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { RedisService } from '../../redis/redis.service';
+import { AuthenticatedAgent } from '../../common/types/authenticated-agent.type';
 import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodesService } from '../nodes/nodes.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { AgentTaskAcceptedHttpDto } from './dto/agent-task-accepted-http.dto';
+import {
+  AgentTaskCompletedHttpDto,
+  HTTP_TASK_OUTPUT_MAX_LENGTH,
+} from './dto/agent-task-completed-http.dto';
+import { AgentTaskLogHttpDto } from './dto/agent-task-log-http.dto';
+import { AgentTaskStartedHttpDto } from './dto/agent-task-started-http.dto';
 import { AppendTaskLogDto } from './dto/append-task-log.dto';
+import { ClaimAgentTaskResponseDto } from './dto/claim-agent-task-response.dto';
+import { ClaimAgentTasksDto } from './dto/claim-agent-tasks.dto';
 import { CompleteAgentTaskDto } from './dto/complete-agent-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { PullAgentTasksDto } from './dto/pull-agent-tasks.dto';
@@ -42,8 +56,13 @@ const TERMINAL_TASK_STATUSES = new Set<TaskStatus>([
   TaskStatus.CANCELLED,
 ]);
 
+const CLAIM_POLL_INTERVAL_MS = 500;
+
 @Injectable()
 export class TasksService {
+  private readonly logger = new Logger(TasksService.name);
+  private readonly counters = new Map<string, number>();
+
   constructor(
     @InjectRepository(TaskEntity)
     private readonly tasksRepository: Repository<TaskEntity>,
@@ -54,6 +73,7 @@ export class TasksService {
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
     private readonly agentRealtimeService: AgentRealtimeService,
+    private readonly configService: ConfigService,
   ) {}
 
   async create(createTaskDto: CreateTaskDto): Promise<TaskEntity> {
@@ -66,8 +86,12 @@ export class TasksService {
       status: TaskStatus.QUEUED,
       result: null,
       output: null,
+      outputTruncated: false,
       startedAt: null,
       finishedAt: null,
+      leaseUntil: null,
+      claimedBy: null,
+      claimToken: null,
     });
 
     const savedTask = await this.tasksRepository.save(task);
@@ -87,7 +111,9 @@ export class TasksService {
       savedTask as unknown as Record<string, unknown>,
     );
 
-    await this.agentRealtimeService.dispatchTaskToNode(savedTask);
+    if (this.isRealtimeTaskDispatchEnabled()) {
+      await this.agentRealtimeService.dispatchTaskToNode(savedTask);
+    }
 
     await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
       taskId: savedTask.id,
@@ -122,6 +148,7 @@ export class TasksService {
     runningTimeoutSeconds: number;
   }): Promise<number> {
     const now = new Date();
+    const requeuedClaimedCount = await this.requeueExpiredLeases(now);
     const queuedDeadline = new Date(
       now.getTime() - Math.max(input.queuedTimeoutSeconds, 5) * 1000,
     );
@@ -147,13 +174,16 @@ export class TasksService {
       .getMany();
 
     if (staleTasks.length === 0) {
-      return 0;
+      return requeuedClaimedCount;
     }
 
     for (const task of staleTasks) {
       const previousStatus = task.status;
       task.status = TaskStatus.FAILED;
       task.finishedAt = now;
+      task.leaseUntil = null;
+      task.claimedBy = null;
+      task.claimToken = null;
       task.result = {
         ...(task.result ?? {}),
         reason: 'stale-timeout',
@@ -171,7 +201,7 @@ export class TasksService {
       await this.publishTaskUpdated(savedTask);
     }
 
-    return staleTasks.length;
+    return staleTasks.length + requeuedClaimedCount;
   }
 
   async findOneOrFail(id: string): Promise<TaskEntity> {
@@ -303,6 +333,528 @@ export class TasksService {
       },
       take: Math.max(1, Math.min(limit, 200)),
     });
+  }
+
+  async claimForAgent(
+    agent: AuthenticatedAgent,
+    claimDto: ClaimAgentTasksDto,
+  ): Promise<ClaimAgentTaskResponseDto> {
+    const startedAt = Date.now();
+    const waitMs = Math.max(claimDto.waitMs ?? 15000, 0);
+    const deadline = Date.now() + waitMs;
+    this.incrementCounter('claim_request_total');
+
+    this.logger.log(
+      JSON.stringify({
+        msg: 'task.claim.request',
+        nodeId: agent.nodeId,
+        taskId: null,
+        transition: 'queued->accepted',
+        status: 'pending',
+        result: {
+          maxTasks: claimDto.maxTasks ?? 1,
+          waitMs,
+          capabilities: claimDto.capabilities ?? [],
+        },
+        latency: 0,
+      }),
+    );
+
+    try {
+      while (true) {
+        const task = await this.claimNextTaskOnce(
+          agent.nodeId,
+          claimDto.capabilities,
+        );
+        if (task) {
+          this.incrementCounter('claim_success_total');
+          this.logger.log(
+            JSON.stringify({
+              msg: 'task.claim.response',
+              taskId: task.id,
+              nodeId: agent.nodeId,
+              transition: 'queued->accepted',
+              status: 'success',
+              result: 'task-assigned',
+              latency: Date.now() - startedAt,
+            }),
+          );
+          return {
+            task,
+            outputTruncated: Boolean(task.outputTruncated),
+          };
+        }
+
+        if (Date.now() >= deadline) {
+          this.incrementCounter('claim_empty_total');
+          this.logger.log(
+            JSON.stringify({
+              msg: 'task.claim.response',
+              taskId: null,
+              nodeId: agent.nodeId,
+              transition: 'none',
+              status: 'empty',
+              result: 'no-task',
+              latency: Date.now() - startedAt,
+            }),
+          );
+          return {
+            task: null,
+            outputTruncated: false,
+          };
+        }
+
+        await this.delay(CLAIM_POLL_INTERVAL_MS);
+      }
+    } catch (error) {
+      this.incrementCounter('claim_error_total');
+      this.logger.error(
+        JSON.stringify({
+          msg: 'task.claim.response',
+          taskId: null,
+          nodeId: agent.nodeId,
+          transition: 'none',
+          status: 'error',
+          result: error instanceof Error ? error.message : String(error),
+          latency: Date.now() - startedAt,
+        }),
+      );
+      throw error;
+    }
+  }
+
+  recordClaimUnauthorizedAttempt(input: {
+    path: string;
+    method: string;
+    reason: string;
+  }): void {
+    if (!this.isAgentClaimPath(input.path, input.method)) {
+      return;
+    }
+
+    this.incrementCounter('claim_unauthorized_total');
+  }
+
+  getClaimStatsSnapshot(): Record<string, number> {
+    return {
+      claim_request_total: this.counters.get('claim_request_total') ?? 0,
+      claim_success_total: this.counters.get('claim_success_total') ?? 0,
+      claim_empty_total: this.counters.get('claim_empty_total') ?? 0,
+      claim_unauthorized_total:
+        this.counters.get('claim_unauthorized_total') ?? 0,
+      claim_error_total: this.counters.get('claim_error_total') ?? 0,
+    };
+  }
+
+  async acceptClaimedTaskForAgent(
+    taskId: string,
+    agent: AuthenticatedAgent,
+    dto: AgentTaskAcceptedHttpDto,
+  ): Promise<TaskLogEntity | { ok: true; duplicate: true; taskId: string }> {
+    const startedAt = Date.now();
+    this.assertTaskIdMatchesRoute(taskId, dto.taskId);
+
+    this.logger.log(
+      JSON.stringify({
+        msg: 'task.lifecycle.accepted',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: 'accepted',
+        status: 'received',
+        result: 'request',
+        latency: 0,
+      }),
+    );
+
+    const task = await this.findTaskForNodeOrFail(taskId, agent.nodeId);
+    if (this.isTerminalStatus(task.status)) {
+      this.incrementCounter('duplicate_transition_total');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.accepted',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: `${task.status}->accepted`,
+        status: 'duplicate',
+        result: 'duplicate-noop',
+        latency: Date.now() - startedAt,
+      });
+      return { ok: true, duplicate: true, taskId };
+    }
+
+    if (
+      task.status !== TaskStatus.ACCEPTED &&
+      task.status !== TaskStatus.CLAIMED &&
+      task.status !== TaskStatus.RUNNING
+    ) {
+      this.incrementCounter('lifecycle_rejected_total.invalid-transition');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.accepted',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: `${task.status}->accepted`,
+        status: 'rejected',
+        result: 'invalid-transition',
+        latency: Date.now() - startedAt,
+        validationErrorDetail: `Task ${task.id} is in ${task.status} state and cannot be accepted`,
+      });
+      throw new ConflictException(
+        `Task ${task.id} is in ${task.status} state and cannot be accepted`,
+      );
+    }
+
+    if (task.status === TaskStatus.ACCEPTED) {
+      this.incrementCounter('duplicate_transition_total');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.accepted',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: 'accepted->accepted',
+        status: 'duplicate',
+        result: 'duplicate-noop',
+        latency: Date.now() - startedAt,
+      });
+      return { ok: true, duplicate: true, taskId };
+    }
+
+    if (task.status === TaskStatus.RUNNING) {
+      this.incrementCounter('duplicate_transition_total');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.accepted',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: 'running->accepted',
+        status: 'duplicate',
+        result: 'duplicate-noop',
+        latency: Date.now() - startedAt,
+      });
+      return { ok: true, duplicate: true, taskId };
+    }
+
+    this.assertClaimOwnership(task, agent.nodeId, 'accepted');
+
+    const taskLog = this.taskLogsRepository.create({
+      taskId,
+      level: TaskLogLevel.INFO,
+      message: 'Task accepted by agent',
+      timestamp: dto.timestamp ? new Date(dto.timestamp) : new Date(),
+    });
+
+    const saved = await this.taskLogsRepository.save(taskLog);
+    this.logLifecycleTransition({
+      msg: 'task.lifecycle.accepted',
+      taskId,
+      nodeId: agent.nodeId,
+      transition: `${task.status}->accepted`,
+      status: 'success',
+      result: 'ok',
+      latency: Date.now() - startedAt,
+    });
+    return saved;
+  }
+
+  async startClaimedTaskForAgent(
+    taskId: string,
+    agent: AuthenticatedAgent,
+    dto: AgentTaskStartedHttpDto,
+  ): Promise<TaskEntity> {
+    const startedAt = Date.now();
+    this.assertTaskIdMatchesRoute(taskId, dto.taskId);
+
+    this.logger.log(
+      JSON.stringify({
+        msg: 'task.lifecycle.started',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: 'started',
+        status: 'received',
+        result: 'request',
+        latency: 0,
+      }),
+    );
+
+    const task = await this.findTaskForNodeOrFail(taskId, agent.nodeId);
+    if (task.status === TaskStatus.RUNNING) {
+      this.incrementCounter('duplicate_transition_total');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.started',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: 'running->started',
+        status: 'duplicate',
+        result: 'duplicate-noop',
+        latency: Date.now() - startedAt,
+      });
+      return task;
+    }
+
+    if (this.isTerminalStatus(task.status)) {
+      this.incrementCounter('lifecycle_rejected_total.invalid-transition');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.started',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: `${task.status}->started`,
+        status: 'rejected',
+        result: 'invalid-transition',
+        latency: Date.now() - startedAt,
+        validationErrorDetail: `Task ${task.id} is already ${task.status} and cannot be started`,
+      });
+      throw new ConflictException(
+        `Task ${task.id} is already ${task.status} and cannot be started`,
+      );
+    }
+
+    if (
+      task.status !== TaskStatus.ACCEPTED &&
+      task.status !== TaskStatus.CLAIMED
+    ) {
+      this.incrementCounter('lifecycle_rejected_total.invalid-transition');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.started',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: `${task.status}->started`,
+        status: 'rejected',
+        result: 'invalid-transition',
+        latency: Date.now() - startedAt,
+        validationErrorDetail: `Task ${task.id} must be accepted before it can be started`,
+      });
+      throw new ConflictException(
+        `Task ${task.id} must be accepted before it can be started`,
+      );
+    }
+
+    this.assertClaimOwnership(task, agent.nodeId, 'started');
+
+    const updateResult = await this.tasksRepository
+      .createQueryBuilder()
+      .update(TaskEntity)
+      .set({
+        status: TaskStatus.RUNNING,
+        startedAt: dto.timestamp ? new Date(dto.timestamp) : new Date(),
+        leaseUntil: null,
+        claimToken: null,
+        claimedBy: null,
+        updatedAt: new Date(),
+      })
+      .where('id = :id', { id: taskId })
+      .andWhere('nodeId = :nodeId', { nodeId: agent.nodeId })
+      .andWhere('status IN (:...statuses)', {
+        statuses: [TaskStatus.ACCEPTED, TaskStatus.CLAIMED],
+      })
+      .andWhere('claimedBy = :claimedBy', { claimedBy: agent.nodeId })
+      .execute();
+
+    if (updateResult.affected === 0) {
+      this.incrementCounter('lifecycle_rejected_total.claim-lost');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.started',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: 'accepted->started',
+        status: 'rejected',
+        result: 'claim-lost',
+        latency: Date.now() - startedAt,
+        validationErrorDetail: `Task ${task.id} lease ownership was lost before start`,
+      });
+      throw new ConflictException(
+        `Task ${task.id} claim ownership was lost before start`,
+      );
+    }
+
+    const savedTask = await this.tasksRepository.findOneOrFail({
+      where: { id: taskId },
+    });
+
+    await this.publishTaskUpdated(savedTask);
+    this.logLifecycleTransition({
+      msg: 'task.lifecycle.started',
+      taskId,
+      nodeId: agent.nodeId,
+      transition: `${task.status}->started`,
+      status: 'success',
+      result: 'ok',
+      latency: Date.now() - startedAt,
+    });
+
+    return savedTask;
+  }
+
+  async appendClaimedTaskLogForAgent(
+    taskId: string,
+    agent: AuthenticatedAgent,
+    dto: AgentTaskLogHttpDto,
+  ): Promise<TaskLogEntity> {
+    const startedAt = Date.now();
+    this.assertTaskIdMatchesRoute(taskId, dto.taskId);
+
+    this.logger.log(
+      JSON.stringify({
+        msg: 'task.lifecycle.log',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: 'log',
+        status: 'received',
+        result: dto.stream,
+        latency: 0,
+      }),
+    );
+
+    const task = await this.findTaskForNodeOrFail(taskId, agent.nodeId);
+
+    if (task.status !== TaskStatus.RUNNING) {
+      this.incrementCounter('lifecycle_rejected_total.invalid-transition');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.log',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: `${task.status}->log`,
+        status: 'rejected',
+        result: 'invalid-transition',
+        latency: Date.now() - startedAt,
+        validationErrorDetail: `Task ${task.id} is in ${task.status} state and cannot accept logs`,
+      });
+      throw new ConflictException(
+        `Task ${task.id} is in ${task.status} state and cannot accept logs`,
+      );
+    }
+
+    const taskLog = this.taskLogsRepository.create({
+      taskId,
+      level: this.resolveTaskLogLevel(dto.stream),
+      message: dto.line,
+      timestamp: dto.timestamp ? new Date(dto.timestamp) : new Date(),
+    });
+
+    task.output = dto.line;
+    await this.tasksRepository.save(task);
+
+    const savedLog = await this.taskLogsRepository.save(taskLog);
+    this.logLifecycleTransition({
+      msg: 'task.lifecycle.log',
+      taskId,
+      nodeId: agent.nodeId,
+      transition: 'running->log',
+      status: 'success',
+      result: 'ok',
+      latency: Date.now() - startedAt,
+    });
+    return savedLog;
+  }
+
+  async completeClaimedTaskForAgent(
+    taskId: string,
+    agent: AuthenticatedAgent,
+    dto: AgentTaskCompletedHttpDto,
+  ): Promise<TaskEntity> {
+    const startedAt = Date.now();
+    this.assertTaskIdMatchesRoute(taskId, dto.taskId);
+    const normalizedStatus = this.normalizeCompletionStatus(dto.status);
+
+    this.logger.log(
+      JSON.stringify({
+        msg: 'task.lifecycle.completed',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: 'completed',
+        status: 'received',
+        result: dto.status,
+        latency: 0,
+      }),
+    );
+
+    const task = await this.findTaskForNodeOrFail(taskId, agent.nodeId);
+
+    if (this.isTerminalStatus(task.status)) {
+      if (task.status === normalizedStatus) {
+        this.incrementCounter('duplicate_transition_total');
+        this.logLifecycleTransition({
+          msg: 'task.lifecycle.completed',
+          taskId,
+          nodeId: agent.nodeId,
+          transition: `${task.status}->${dto.status}`,
+          status: 'duplicate',
+          result: 'duplicate-noop',
+          latency: Date.now() - startedAt,
+        });
+        return task;
+      }
+
+      this.incrementCounter('lifecycle_rejected_total.invalid-transition');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.completed',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: `${task.status}->${dto.status}`,
+        status: 'rejected',
+        result: 'invalid-transition',
+        latency: Date.now() - startedAt,
+        validationErrorDetail: `Task ${task.id} is already ${task.status} and cannot transition to ${dto.status}`,
+      });
+      throw new ConflictException(
+        `Task ${task.id} is already ${task.status} and cannot transition to ${dto.status}`,
+      );
+    }
+
+    if (
+      task.status !== TaskStatus.CLAIMED &&
+      task.status !== TaskStatus.RUNNING
+    ) {
+      this.incrementCounter('lifecycle_rejected_total.invalid-transition');
+      this.logLifecycleTransition({
+        msg: 'task.lifecycle.completed',
+        taskId,
+        nodeId: agent.nodeId,
+        transition: `${task.status}->${dto.status}`,
+        status: 'rejected',
+        result: 'invalid-transition',
+        latency: Date.now() - startedAt,
+        validationErrorDetail: `Task ${task.id} is in ${task.status} state and cannot be completed`,
+      });
+      throw new ConflictException(
+        `Task ${task.id} is in ${task.status} state and cannot be completed`,
+      );
+    }
+
+    if (task.status === TaskStatus.CLAIMED) {
+      this.assertClaimOwnership(task, agent.nodeId, 'completed');
+    }
+
+    const completionOutput = dto.output ?? dto.error;
+    const { output: normalizedOutput, outputTruncated } =
+      this.normalizeCompletionOutput(completionOutput);
+
+    const now = new Date();
+    const previousStatus = task.status;
+    task.status = normalizedStatus;
+    task.startedAt = task.startedAt ?? now;
+    task.finishedAt = dto.timestamp ? new Date(dto.timestamp) : now;
+    task.result =
+      dto.result ??
+      this.buildCompletionResult({
+        ...dto,
+        completedAt: dto.timestamp,
+      });
+    task.output = normalizedOutput ?? task.output;
+    task.outputTruncated = outputTruncated;
+    task.leaseUntil = null;
+    task.claimedBy = null;
+    task.claimToken = null;
+
+    const savedTask = await this.tasksRepository.save(task);
+    await this.publishTaskUpdated(savedTask);
+
+    this.logLifecycleTransition({
+      msg: 'task.lifecycle.completed',
+      taskId,
+      nodeId: agent.nodeId,
+      transition: `${previousStatus}->${normalizedStatus}`,
+      status: 'success',
+      result: outputTruncated ? 'ok-truncated' : 'ok',
+      latency: Date.now() - startedAt,
+    });
+
+    return savedTask;
   }
 
   async acknowledgeForAgent(
@@ -669,7 +1221,10 @@ export class TasksService {
   }
 
   private buildCompletionResult(
-    completeAgentTaskDto: CompleteAgentTaskDto,
+    completeAgentTaskDto: Pick<
+      CompleteAgentTaskDto,
+      'exitCode' | 'durationMs' | 'completedAt' | 'error' | 'status'
+    >,
   ): Record<string, unknown> | null {
     const result: Record<string, unknown> = {};
 
@@ -690,6 +1245,187 @@ export class TasksService {
     }
 
     return Object.keys(result).length > 0 ? result : null;
+  }
+
+  private async claimNextTaskOnce(
+    nodeId: string,
+    _capabilities?: string[],
+  ): Promise<TaskEntity | null> {
+    const now = new Date();
+    const leaseUntil = new Date(
+      now.getTime() + this.getClaimLeaseSeconds() * 1000,
+    );
+    const claimToken = randomUUID();
+
+    const updateResult = await this.tasksRepository
+      .createQueryBuilder()
+      .update(TaskEntity)
+      .set({
+        status: TaskStatus.ACCEPTED,
+        claimedBy: nodeId,
+        claimToken,
+        leaseUntil,
+        updatedAt: now,
+      })
+      .where(
+        `id = (
+          SELECT t.id
+          FROM tasks t
+          WHERE t."nodeId" = :nodeId
+            AND (
+              t.status = :queuedStatus
+              OR (
+                t.status IN (:...leasedStatuses)
+                AND t."leaseUntil" IS NOT NULL
+                AND t."leaseUntil" <= :now
+              )
+            )
+          ORDER BY t."createdAt" ASC
+          LIMIT 1
+        )`,
+      )
+      .setParameters({
+        nodeId,
+        queuedStatus: TaskStatus.QUEUED,
+        leasedStatuses: [TaskStatus.ACCEPTED, TaskStatus.CLAIMED],
+        now,
+      })
+      .returning('*')
+      .execute();
+
+    if (updateResult.affected === 0) {
+      return null;
+    }
+
+    const row = updateResult.raw?.[0] as TaskEntity | undefined;
+    if (row?.id) {
+      return row;
+    }
+
+    return this.tasksRepository.findOne({
+      where: {
+        claimToken,
+      },
+    });
+  }
+
+  private async requeueExpiredLeases(now: Date): Promise<number> {
+    const updateResult = await this.tasksRepository
+      .createQueryBuilder()
+      .update(TaskEntity)
+      .set({
+        status: TaskStatus.QUEUED,
+        leaseUntil: null,
+        claimToken: null,
+        claimedBy: null,
+        updatedAt: now,
+      })
+      .where('status IN (:...statuses)', {
+        statuses: [TaskStatus.ACCEPTED, TaskStatus.CLAIMED],
+      })
+      .andWhere('leaseUntil IS NOT NULL')
+      .andWhere('leaseUntil <= :now', { now })
+      .execute();
+
+    const requeuedCount = updateResult.affected ?? 0;
+    if (requeuedCount > 0) {
+      this.incrementCounter('task_stale_requeue_total', requeuedCount);
+    }
+
+    return requeuedCount;
+  }
+
+  private assertClaimOwnership(
+    task: TaskEntity,
+    nodeId: string,
+    transition: string,
+  ): void {
+    if (task.claimedBy !== nodeId) {
+      this.incrementCounter('lifecycle_rejected_total.claim-owner-mismatch');
+      throw new ConflictException(
+        `Task ${task.id} is claimed by a different node and cannot transition to ${transition}`,
+      );
+    }
+
+    if (!task.leaseUntil || task.leaseUntil.getTime() <= Date.now()) {
+      this.incrementCounter('lifecycle_rejected_total.lease-expired');
+      throw new ConflictException(
+        `Task ${task.id} lease expired before ${transition} transition`,
+      );
+    }
+  }
+
+  private normalizeCompletionOutput(output: string | undefined): {
+    output?: string;
+    outputTruncated: boolean;
+  } {
+    if (output === undefined) {
+      return {
+        output: undefined,
+        outputTruncated: false,
+      };
+    }
+
+    if (output.length <= HTTP_TASK_OUTPUT_MAX_LENGTH) {
+      return {
+        output,
+        outputTruncated: false,
+      };
+    }
+
+    return {
+      output: output.slice(0, HTTP_TASK_OUTPUT_MAX_LENGTH),
+      outputTruncated: true,
+    };
+  }
+
+  private getClaimLeaseSeconds(): number {
+    const config =
+      this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
+        AGENTS_CONFIG_KEY,
+      );
+
+    return Math.max(config.taskClaimLeaseSeconds, 15);
+  }
+
+  private isRealtimeTaskDispatchEnabled(): boolean {
+    const config =
+      this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
+        AGENTS_CONFIG_KEY,
+      );
+
+    return Boolean(config.enableRealtimeTaskDispatch);
+  }
+
+  private incrementCounter(counterName: string, count = 1): void {
+    this.counters.set(
+      counterName,
+      (this.counters.get(counterName) ?? 0) + count,
+    );
+  }
+
+  private logLifecycleTransition(input: {
+    msg: string;
+    taskId: string;
+    nodeId: string;
+    transition: string;
+    status: string;
+    result: string;
+    latency: number;
+    validationErrorDetail?: string;
+  }): void {
+    this.logger.log(
+      JSON.stringify({
+        msg: input.msg,
+        taskId: input.taskId,
+        nodeId: input.nodeId,
+        transition: input.transition,
+        status: input.status,
+        result: input.result,
+        latency: input.latency,
+        validationErrorDetail: input.validationErrorDetail,
+      }),
+    );
   }
 
   private readStructuredPackageCollection(
@@ -839,6 +1575,19 @@ export class TasksService {
     }
 
     return null;
+  }
+
+  private isAgentClaimPath(path: string, method: string): boolean {
+    const normalizedMethod = method.trim().toUpperCase();
+    if (normalizedMethod !== 'POST') {
+      return false;
+    }
+
+    const normalizedPath = path.trim().toLowerCase();
+    return (
+      normalizedPath === '/agent/tasks/claim' ||
+      normalizedPath.endsWith('/agent/tasks/claim')
+    );
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

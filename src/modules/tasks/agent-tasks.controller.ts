@@ -5,92 +5,152 @@ import {
   HttpStatus,
   Param,
   Post,
+  Res,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBody,
+  ApiBearerAuth,
   ApiConflictResponse,
-  ApiCreatedResponse,
+  ApiHeader,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { Public } from '../../common/decorators/public.decorator';
-import { AppendTaskLogDto } from './dto/append-task-log.dto';
-import { CompleteAgentTaskDto } from './dto/complete-agent-task.dto';
-import { PullAgentTasksDto } from './dto/pull-agent-tasks.dto';
-import { PullAgentTasksResponseDto } from './dto/pull-agent-tasks-response.dto';
-import { StartAgentTaskDto } from './dto/start-agent-task.dto';
+import { Response } from 'express';
+import { CurrentAgent } from '../../common/decorators/current-agent.decorator';
+import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
+import { AgentAuthGuard } from '../../common/guards/agent-auth.guard';
+import { AuthenticatedAgent } from '../../common/types/authenticated-agent.type';
+import { AgentTaskAcceptedHttpDto } from './dto/agent-task-accepted-http.dto';
+import {
+  AgentTaskCompletedHttpDto,
+  HTTP_TASK_OUTPUT_MAX_LENGTH,
+} from './dto/agent-task-completed-http.dto';
+import { AgentTaskLogHttpDto } from './dto/agent-task-log-http.dto';
+import { AgentTaskStartedHttpDto } from './dto/agent-task-started-http.dto';
+import { ClaimAgentTaskResponseDto } from './dto/claim-agent-task-response.dto';
+import { ClaimAgentTasksDto } from './dto/claim-agent-tasks.dto';
 import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskEntity } from './entities/task.entity';
 import { TasksService } from './tasks.service';
 
 @ApiTags('Agent Tasks')
-@Public()
+@ApiBearerAuth(SWAGGER_BEARER_AUTH_NAME)
+@ApiHeader({
+  name: 'x-agent-node-id',
+  required: true,
+  description: 'Authenticated node id paired with bearer agent token.',
+})
+@UseGuards(AgentAuthGuard)
 @Controller('agent/tasks')
 export class AgentTasksController {
   constructor(private readonly tasksService: TasksService) {}
 
-  @Post('pull')
+  @Post('claim')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Poll queued tasks for an agent',
+    summary: 'Claim next task for an agent',
     description:
-      'Authenticates the agent and returns queued tasks for the specified node. The response body is wrapped as { tasks: [...] } for compatibility with the Go agent.',
+      'Long-polls for the next claimable task and returns it with lease ownership metadata.',
   })
-  @ApiBody({ type: PullAgentTasksDto })
+  @ApiBody({ type: ClaimAgentTasksDto })
   @ApiOkResponse({
-    description: 'Queued tasks for the node.',
-    type: PullAgentTasksResponseDto,
+    description: 'Task claimed.',
+    type: ClaimAgentTaskResponseDto,
+  })
+  @ApiNoContentResponse({
+    description: 'No task available in the requested polling window.',
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid node ID or agent token.',
+    description: 'Invalid agent authentication headers.',
   })
-  async pull(@Body() pullAgentTasksDto: PullAgentTasksDto) {
-    return {
-      tasks: await this.tasksService.pullQueuedForAgent(pullAgentTasksDto),
-    };
+  async claim(
+    @CurrentAgent() agent: AuthenticatedAgent,
+    @Body() claimDto: ClaimAgentTasksDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<ClaimAgentTaskResponseDto | void> {
+    const claim = await this.tasksService.claimForAgent(agent, claimDto);
+    if (!claim.task) {
+      response.status(HttpStatus.NO_CONTENT);
+      return;
+    }
+
+    return claim;
   }
 
-  @Post(':id/start')
+  @Post(':taskId/accepted')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Mark a queued task as running',
-    description:
-      'Authenticates the agent, verifies task ownership, and transitions a queued task to running.',
+    summary: 'Accept claimed task',
+    description: 'Idempotently records accepted transition for a claimed task.',
   })
-  @ApiBody({ type: StartAgentTaskDto })
+  @ApiBody({ type: AgentTaskAcceptedHttpDto })
   @ApiOkResponse({
-    description: 'Task marked as running.',
-    type: TaskEntity,
+    description: 'Accepted transition recorded or treated as duplicate no-op.',
+    type: TaskLogEntity,
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid node ID or agent token.',
+    description: 'Invalid agent authentication headers.',
   })
   @ApiNotFoundResponse({
     description: 'Task not found for this node.',
   })
   @ApiConflictResponse({
-    description: 'Task is already completed or cancelled.',
+    description: 'Invalid state transition.',
   })
-  start(@Param('id') id: string, @Body() startAgentTaskDto: StartAgentTaskDto) {
-    return this.tasksService.startForAgent(id, startAgentTaskDto);
+  accepted(
+    @CurrentAgent() agent: AuthenticatedAgent,
+    @Param('taskId') taskId: string,
+    @Body() dto: AgentTaskAcceptedHttpDto,
+  ) {
+    return this.tasksService.acceptClaimedTaskForAgent(taskId, agent, dto);
   }
 
-  @Post(':id/logs')
+  @Post(':taskId/started')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Start claimed task',
+    description: 'Transitions claimed task to running state idempotently.',
+  })
+  @ApiBody({ type: AgentTaskStartedHttpDto })
+  @ApiOkResponse({
+    description: 'Task running transition accepted.',
+    type: TaskEntity,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Invalid agent authentication headers.',
+  })
+  @ApiNotFoundResponse({
+    description: 'Task not found for this node.',
+  })
+  @ApiConflictResponse({
+    description: 'Invalid state transition.',
+  })
+  started(
+    @CurrentAgent() agent: AuthenticatedAgent,
+    @Param('taskId') taskId: string,
+    @Body() dto: AgentTaskStartedHttpDto,
+  ) {
+    return this.tasksService.startClaimedTaskForAgent(taskId, agent, dto);
+  }
+
+  @Post(':taskId/logs')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Append a task log entry',
-    description:
-      'Persists agent output for a running task. Supports either a single message or batched entries from the Go agent.',
+    description: 'Persists streamed task output for a running task.',
   })
-  @ApiBody({ type: AppendTaskLogDto })
-  @ApiCreatedResponse({
+  @ApiBody({ type: AgentTaskLogHttpDto })
+  @ApiOkResponse({
     description: 'Task log entry stored.',
     type: TaskLogEntity,
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid node ID or agent token.',
+    description: 'Invalid agent authentication headers.',
   })
   @ApiNotFoundResponse({
     description: 'Task not found for this node.',
@@ -98,38 +158,39 @@ export class AgentTasksController {
   @ApiConflictResponse({
     description: 'Task is not in a loggable state.',
   })
-  appendLog(
-    @Param('id') id: string,
-    @Body() appendTaskLogDto: AppendTaskLogDto,
+  logs(
+    @CurrentAgent() agent: AuthenticatedAgent,
+    @Param('taskId') taskId: string,
+    @Body() dto: AgentTaskLogHttpDto,
   ) {
-    return this.tasksService.appendLogForAgent(id, appendTaskLogDto);
+    return this.tasksService.appendClaimedTaskLogForAgent(taskId, agent, dto);
   }
 
-  @Post(':id/complete')
+  @Post(':taskId/completed')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Mark a task as completed, failed, or cancelled',
-    description:
-      'Stores terminal task state, optional execution result metadata, and emits realtime task updates.',
+    description: `Stores terminal task state idempotently. output is truncated to ${HTTP_TASK_OUTPUT_MAX_LENGTH} characters when required.`,
   })
-  @ApiBody({ type: CompleteAgentTaskDto })
+  @ApiBody({ type: AgentTaskCompletedHttpDto })
   @ApiOkResponse({
     description: 'Task updated with a terminal status.',
     type: TaskEntity,
   })
   @ApiUnauthorizedResponse({
-    description: 'Invalid node ID or agent token.',
+    description: 'Invalid agent authentication headers.',
   })
   @ApiNotFoundResponse({
     description: 'Task not found for this node.',
   })
   @ApiConflictResponse({
-    description: 'Task is already in a terminal state.',
+    description: 'Invalid state transition.',
   })
-  complete(
-    @Param('id') id: string,
-    @Body() completeAgentTaskDto: CompleteAgentTaskDto,
+  completed(
+    @CurrentAgent() agent: AuthenticatedAgent,
+    @Param('taskId') taskId: string,
+    @Body() dto: AgentTaskCompletedHttpDto,
   ) {
-    return this.tasksService.completeForAgent(id, completeAgentTaskDto);
+    return this.tasksService.completeClaimedTaskForAgent(taskId, agent, dto);
   }
 }

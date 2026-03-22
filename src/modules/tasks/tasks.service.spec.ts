@@ -11,6 +11,12 @@ function createService(): TasksService {
     {} as never,
     {} as never,
     {} as never,
+    {
+      getOrThrow: jest.fn().mockReturnValue({
+        enableRealtimeTaskDispatch: false,
+        taskClaimLeaseSeconds: 60,
+      }),
+    } as never,
   );
 }
 
@@ -23,6 +29,10 @@ function buildTask(partial: Partial<TaskEntity>): TaskEntity {
     status: TaskStatus.SUCCESS,
     result: null,
     output: null,
+    outputTruncated: false,
+    leaseUntil: null,
+    claimedBy: null,
+    claimToken: null,
     startedAt: null,
     finishedAt: null,
     createdAt: new Date('2026-03-18T10:18:00.000Z'),

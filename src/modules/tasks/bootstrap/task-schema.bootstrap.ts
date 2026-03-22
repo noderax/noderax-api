@@ -8,12 +8,19 @@ export class TaskSchemaBootstrap implements OnModuleInit {
   constructor(private readonly dataSource: DataSource) {}
 
   async onModuleInit(): Promise<void> {
+    await this.ensureTaskStatusEnumValueExists('accepted');
+    await this.ensureTaskStatusEnumValueExists('claimed');
+
     await this.dataSource.query(`
       ALTER TABLE "tasks"
       ADD COLUMN IF NOT EXISTS "result" jsonb NULL,
       ADD COLUMN IF NOT EXISTS "output" text NULL,
+      ADD COLUMN IF NOT EXISTS "outputTruncated" boolean NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS "startedAt" TIMESTAMPTZ NULL,
-      ADD COLUMN IF NOT EXISTS "finishedAt" TIMESTAMPTZ NULL
+      ADD COLUMN IF NOT EXISTS "finishedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "leaseUntil" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "claimedBy" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "claimToken" uuid NULL
     `);
 
     if (!(await this.hasTable('task_logs'))) {
@@ -84,6 +91,24 @@ export class TaskSchemaBootstrap implements OnModuleInit {
 
       throw error;
     }
+  }
+
+  private async ensureTaskStatusEnumValueExists(value: string): Promise<void> {
+    await this.dataSource.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_enum e
+          JOIN pg_type t ON t.oid = e.enumtypid
+          WHERE t.typname = 'task_status_enum'
+            AND e.enumlabel = '${value}'
+        ) THEN
+          ALTER TYPE "task_status_enum" ADD VALUE '${value}';
+        END IF;
+      END
+      $$;
+    `);
   }
 
   private isDuplicateTypeError(error: unknown): boolean {

@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AgentAuthGuard } from '../../common/guards/agent-auth.guard';
 import { AgentRealtimeModule } from '../agent-realtime/agent-realtime.module';
 import { EventsModule } from '../events/events.module';
 import { NodesModule } from '../nodes/nodes.module';
@@ -21,7 +22,12 @@ import { TasksService } from './tasks.service';
     forwardRef(() => AgentRealtimeModule),
   ],
   controllers: [TasksController, AgentTasksController],
-  providers: [TasksService, TaskSchemaBootstrap, TaskStaleDetectorService],
+  providers: [
+    TasksService,
+    TaskSchemaBootstrap,
+    TaskStaleDetectorService,
+    AgentAuthGuard,
+  ],
   exports: [TasksService],
 })
 export class TasksModule {}

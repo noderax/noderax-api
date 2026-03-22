@@ -92,7 +92,7 @@ export class AgentRealtimeGateway
         return false;
       }
 
-      socket.disconnect(true);
+      this.disconnectWithReason(socket, 'heartbeat-timeout');
       return true;
     });
   }
@@ -169,7 +169,12 @@ export class AgentRealtimeGateway
 
       if (previousSocketId && previousSocketId !== client.id) {
         const previousSocket = this.getSocketById(previousSocketId);
-        previousSocket?.disconnect(true);
+        if (previousSocket) {
+          this.disconnectWithReason(
+            previousSocket,
+            'socket-replaced-after-auth-reconnect',
+          );
+        }
       }
 
       client.emit(AGENT_REALTIME_SERVER_EVENTS.AUTH_ACK, {
@@ -193,7 +198,7 @@ export class AgentRealtimeGateway
         authenticated: false,
         message,
       });
-      client.disconnect(true);
+      this.disconnectWithReason(client, 'auth-failed');
       return {
         authenticated: false,
         message,
@@ -208,7 +213,7 @@ export class AgentRealtimeGateway
   ) {
     const session = this.agentRealtimeService.getSessionForSocket(client.id);
     if (!session) {
-      client.disconnect(true);
+      this.disconnectWithReason(client, 'ping-before-auth');
       return { ok: false, message: 'Socket is not authenticated' };
     }
 
@@ -242,7 +247,7 @@ export class AgentRealtimeGateway
   ) {
     const session = this.agentRealtimeService.getSessionForSocket(client.id);
     if (!session) {
-      client.disconnect(true);
+      this.disconnectWithReason(client, 'task.accepted-before-auth');
       return { ok: false, message: 'Socket is not authenticated' };
     }
 
@@ -293,7 +298,7 @@ export class AgentRealtimeGateway
   ) {
     const session = this.agentRealtimeService.getSessionForSocket(client.id);
     if (!session) {
-      client.disconnect(true);
+      this.disconnectWithReason(client, 'task.started-before-auth');
       return { ok: false, message: 'Socket is not authenticated' };
     }
 
@@ -348,7 +353,7 @@ export class AgentRealtimeGateway
   ) {
     const session = this.agentRealtimeService.getSessionForSocket(client.id);
     if (!session) {
-      client.disconnect(true);
+      this.disconnectWithReason(client, 'task.log-before-auth');
       return { ok: false, message: 'Socket is not authenticated' };
     }
 
@@ -408,7 +413,7 @@ export class AgentRealtimeGateway
   ) {
     const session = this.agentRealtimeService.getSessionForSocket(client.id);
     if (!session) {
-      client.disconnect(true);
+      this.disconnectWithReason(client, 'task.completed-before-auth');
       return { ok: false, message: 'Socket is not authenticated' };
     }
 
@@ -469,7 +474,7 @@ export class AgentRealtimeGateway
   ) {
     const session = this.agentRealtimeService.getSessionForSocket(client.id);
     if (!session) {
-      client.disconnect(true);
+      this.disconnectWithReason(client, 'metrics-before-auth');
       return { ok: false, message: 'Socket is not authenticated' };
     }
 
@@ -715,6 +720,20 @@ export class AgentRealtimeGateway
     }
 
     return { ...(value as Record<string, unknown>) };
+  }
+
+  private disconnectWithReason(client: Socket, reason: string): void {
+    this.logger.warn(
+      JSON.stringify({
+        msg: 'agent-realtime.server-forced-disconnect',
+        socketId: client.id,
+        namespace: AGENT_REALTIME_NAMESPACE,
+        reason,
+        socketConnectedBeforeDisconnect: client.connected,
+      }),
+    );
+
+    client.disconnect(true);
   }
 
   private normalizeRealtimeMetricsPayload(payload: Record<string, unknown>): {

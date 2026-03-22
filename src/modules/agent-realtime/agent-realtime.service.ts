@@ -66,6 +66,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
   private socketDisconnect: ((socketId: string) => boolean) | null = null;
   private realtimePingTimeoutSeconds = 45;
   private realtimePingCheckIntervalSeconds = 5;
+  private enableRealtimeTaskDispatch = false;
   private socketEmitter:
     | ((socketId: string, event: string, payload: unknown) => boolean)
     | null = null;
@@ -106,6 +107,9 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       agents.realtimePingCheckIntervalSeconds,
       1,
     );
+    this.enableRealtimeTaskDispatch = Boolean(
+      agents.enableRealtimeTaskDispatch,
+    );
 
     this.logger.log(
       JSON.stringify({
@@ -116,8 +120,26 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
           agents.realtimePingCheckIntervalSeconds,
         realtimePingCheckIntervalSecondsEffective:
           this.realtimePingCheckIntervalSeconds,
+        enableRealtimeTaskDispatch: this.enableRealtimeTaskDispatch,
       }),
     );
+
+    if (this.enableRealtimeTaskDispatch) {
+      this.logger.warn(
+        JSON.stringify({
+          msg: 'agent-realtime.task-dispatch.enabled',
+          reason:
+            'ENABLE_REALTIME_TASK_DISPATCH=true; realtime task dispatch is deprecated and should be enabled only explicitly',
+        }),
+      );
+    } else {
+      this.logger.log(
+        JSON.stringify({
+          msg: 'agent-realtime.task-dispatch.disabled',
+          reason: 'HTTP polling flow is the active task delivery path',
+        }),
+      );
+    }
 
     this.heartbeatInterval = setInterval(() => {
       void this.enforceHeartbeatTimeouts();
@@ -128,6 +150,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
         JSON.stringify({
           msg: 'agent-realtime.stats',
           counters: Object.fromEntries(this.counters.entries()),
+          claimStats: this.tasksService.getClaimStatsSnapshot(),
           activeConnections: this.nodeToSocketId.size,
         }),
       );
@@ -243,6 +266,10 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   async dispatchQueuedTasks(nodeId: string): Promise<number> {
+    if (!this.enableRealtimeTaskDispatch) {
+      return 0;
+    }
+
     const tasks = await this.tasksService.findQueuedForNode(nodeId, 50);
     let dispatched = 0;
     for (const task of tasks) {
@@ -316,6 +343,10 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
   }
 
   async dispatchTaskToNode(task: TaskEntity): Promise<boolean> {
+    if (!this.enableRealtimeTaskDispatch) {
+      return false;
+    }
+
     const localSocketId = this.nodeToSocketId.get(task.nodeId);
     if (localSocketId && this.emitTaskDispatch(localSocketId, task)) {
       this.incrementCounter('dispatch.local.success');

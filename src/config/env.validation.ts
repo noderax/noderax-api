@@ -47,6 +47,8 @@ export const validationSchema = Joi.object({
     .integer()
     .min(1)
     .default(5),
+  AGENT_TASK_CLAIM_LEASE_SECONDS: Joi.number().integer().min(15).default(60),
+  ENABLE_REALTIME_TASK_DISPATCH: Joi.boolean().default(false),
   AGENT_ENROLLMENT_TOKEN: Joi.string().required(),
   AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS: Joi.number()
     .integer()
