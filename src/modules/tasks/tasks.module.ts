@@ -8,6 +8,7 @@ import { AgentTasksController } from './agent-tasks.controller';
 import { TaskSchemaBootstrap } from './bootstrap/task-schema.bootstrap';
 import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskEntity } from './entities/task.entity';
+import { TaskStaleDetectorService } from './task-stale-detector.service';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
 
@@ -20,7 +21,7 @@ import { TasksService } from './tasks.service';
     forwardRef(() => AgentRealtimeModule),
   ],
   controllers: [TasksController, AgentTasksController],
-  providers: [TasksService, TaskSchemaBootstrap],
+  providers: [TasksService, TaskSchemaBootstrap, TaskStaleDetectorService],
   exports: [TasksService],
 })
 export class TasksModule {}

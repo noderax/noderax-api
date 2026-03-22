@@ -117,6 +117,63 @@ export class TasksService {
     return tasksQuery.getMany();
   }
 
+  async failStaleTasks(input: {
+    queuedTimeoutSeconds: number;
+    runningTimeoutSeconds: number;
+  }): Promise<number> {
+    const now = new Date();
+    const queuedDeadline = new Date(
+      now.getTime() - Math.max(input.queuedTimeoutSeconds, 5) * 1000,
+    );
+    const runningDeadline = new Date(
+      now.getTime() - Math.max(input.runningTimeoutSeconds, 10) * 1000,
+    );
+
+    const staleTasks = await this.tasksRepository
+      .createQueryBuilder('task')
+      .where('task.status = :queuedStatus', {
+        queuedStatus: TaskStatus.QUEUED,
+      })
+      .andWhere('task.createdAt <= :queuedDeadline', {
+        queuedDeadline,
+      })
+      .orWhere(
+        'task.status = :runningStatus AND task.startedAt IS NOT NULL AND task.startedAt <= :runningDeadline',
+        {
+          runningStatus: TaskStatus.RUNNING,
+          runningDeadline,
+        },
+      )
+      .getMany();
+
+    if (staleTasks.length === 0) {
+      return 0;
+    }
+
+    for (const task of staleTasks) {
+      const previousStatus = task.status;
+      task.status = TaskStatus.FAILED;
+      task.finishedAt = now;
+      task.result = {
+        ...(task.result ?? {}),
+        reason: 'stale-timeout',
+        previousStatus,
+      };
+
+      if (!task.output?.trim()) {
+        task.output =
+          previousStatus === TaskStatus.QUEUED
+            ? 'Task timed out in queue before being started by an agent.'
+            : 'Task timed out while running on agent.';
+      }
+
+      const savedTask = await this.tasksRepository.save(task);
+      await this.publishTaskUpdated(savedTask);
+    }
+
+    return staleTasks.length;
+  }
+
   async findOneOrFail(id: string): Promise<TaskEntity> {
     const task = await this.tasksRepository.findOne({ where: { id } });
 

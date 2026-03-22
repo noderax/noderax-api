@@ -29,6 +29,18 @@ export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
     process.env.AGENT_REALTIME_PING_CHECK_INTERVAL_SECONDS,
     5,
   ),
+  staleTaskCheckIntervalSeconds: parsePositiveInteger(
+    process.env.AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS,
+    15,
+  ),
+  staleQueuedTaskTimeoutSeconds: parsePositiveInteger(
+    process.env.AGENT_STALE_QUEUED_TASK_TIMEOUT_SECONDS,
+    120,
+  ),
+  staleRunningTaskTimeoutSeconds: parsePositiveInteger(
+    process.env.AGENT_STALE_RUNNING_TASK_TIMEOUT_SECONDS,
+    1800,
+  ),
   enrollmentToken: process.env.AGENT_ENROLLMENT_TOKEN ?? '',
   highCpuThreshold: parseFloat(process.env.AGENT_HIGH_CPU_THRESHOLD ?? '90'),
 }));

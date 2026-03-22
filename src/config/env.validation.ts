@@ -40,6 +40,18 @@ export const validationSchema = Joi.object({
     .min(1)
     .default(30),
   AGENT_ENROLLMENT_TOKEN: Joi.string().required(),
+  AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(15),
+  AGENT_STALE_QUEUED_TASK_TIMEOUT_SECONDS: Joi.number()
+    .integer()
+    .min(5)
+    .default(120),
+  AGENT_STALE_RUNNING_TASK_TIMEOUT_SECONDS: Joi.number()
+    .integer()
+    .min(10)
+    .default(1800),
   AGENT_HIGH_CPU_THRESHOLD: Joi.number().min(0).max(100).default(90),
 
   // Bootstrap
