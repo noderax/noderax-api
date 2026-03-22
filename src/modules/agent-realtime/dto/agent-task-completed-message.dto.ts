@@ -12,6 +12,7 @@ import {
 import {
   AGENT_TASK_TERMINAL_STATUSES,
   CompleteAgentTaskDto,
+  TASK_OUTPUT_MAX_LENGTH,
 } from '../../tasks/dto/complete-agent-task.dto';
 
 export class AgentTaskCompletedMessageDto {
@@ -53,7 +54,7 @@ export class AgentTaskCompletedMessageDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(10000)
+  @MaxLength(TASK_OUTPUT_MAX_LENGTH)
   output?: string;
 
   @ApiPropertyOptional({

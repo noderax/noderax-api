@@ -8,7 +8,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { HttpException, Logger, ValidationPipe } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import {
   AGENT_REALTIME_SLOW_CLIENT_BUFFER_LIMIT,
@@ -276,9 +276,10 @@ export class AgentRealtimeGateway
         taskId: body.taskId,
       };
     } catch (error) {
-      return this.emitHandlerError(
+      return this.emitLifecycleValidationError(
         client,
         AGENT_REALTIME_CLIENT_EVENTS.TASK_ACCEPTED,
+        payload,
         error,
       );
     }
@@ -330,9 +331,10 @@ export class AgentRealtimeGateway
         status: task.status,
       };
     } catch (error) {
-      return this.emitHandlerError(
+      return this.emitLifecycleValidationError(
         client,
         AGENT_REALTIME_CLIENT_EVENTS.TASK_STARTED,
+        payload,
         error,
       );
     }
@@ -389,9 +391,10 @@ export class AgentRealtimeGateway
         taskId: body.taskId,
       };
     } catch (error) {
-      return this.emitHandlerError(
+      return this.emitLifecycleValidationError(
         client,
         AGENT_REALTIME_CLIENT_EVENTS.TASK_LOG,
+        payload,
         error,
       );
     }
@@ -449,9 +452,10 @@ export class AgentRealtimeGateway
         status: task.status,
       };
     } catch (error) {
-      return this.emitHandlerError(
+      return this.emitLifecycleValidationError(
         client,
         AGENT_REALTIME_CLIENT_EVENTS.TASK_COMPLETED,
+        payload,
         error,
       );
     }
@@ -548,6 +552,30 @@ export class AgentRealtimeGateway
     };
   }
 
+  private emitLifecycleValidationError(
+    client: Socket,
+    eventType: string,
+    payload: unknown,
+    error: unknown,
+  ) {
+    const payloadKeys = Object.keys(this.asRecord(payload));
+    const reason = this.getValidationErrorMessage(error, 'Invalid payload');
+
+    this.logger.warn(
+      JSON.stringify({
+        msg: 'agent-realtime.lifecycle.validation-failed',
+        eventType,
+        socketId: client.id,
+        namespace: AGENT_REALTIME_NAMESPACE,
+        payloadKeys,
+        reason,
+        socketKeptOpen: true,
+      }),
+    );
+
+    return this.emitHandlerError(client, eventType, error);
+  }
+
   private getSocketById(socketId: string): Socket | null {
     const namespace = this.getAgentNamespace();
     if (!namespace) {
@@ -585,6 +613,31 @@ export class AgentRealtimeGateway
     }
 
     return message.slice(0, 300);
+  }
+
+  private getValidationErrorMessage(error: unknown, fallback: string): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      if (typeof response === 'object' && response) {
+        const message = (response as Record<string, unknown>).message;
+        if (Array.isArray(message)) {
+          const normalized = message
+            .map((entry) =>
+              typeof entry === 'string' ? entry.trim() : String(entry),
+            )
+            .filter((entry) => entry.length > 0);
+          if (normalized.length > 0) {
+            return normalized.join('; ').slice(0, 600);
+          }
+        }
+
+        if (typeof message === 'string' && message.trim().length > 0) {
+          return message.trim().slice(0, 600);
+        }
+      }
+    }
+
+    return this.getSafeErrorMessage(error, fallback);
   }
 
   private asRecord(value: unknown): Record<string, unknown> {

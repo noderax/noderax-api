@@ -12,6 +12,8 @@ import {
 import { TaskStatus } from '../entities/task-status.enum';
 import { AgentTaskAuthDto } from './agent-task-auth.dto';
 
+export const TASK_OUTPUT_MAX_LENGTH = 200000;
+
 export const AGENT_TASK_TERMINAL_STATUSES = [
   TaskStatus.SUCCESS,
   TaskStatus.FAILED,
@@ -45,7 +47,7 @@ export class CompleteAgentTaskDto extends AgentTaskAuthDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(10000)
+  @MaxLength(TASK_OUTPUT_MAX_LENGTH)
   output?: string;
 
   @ApiPropertyOptional({
