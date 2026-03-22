@@ -119,12 +119,9 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       }),
     );
 
-    this.heartbeatInterval = setInterval(
-      () => {
-        void this.enforceHeartbeatTimeouts();
-      },
-      this.realtimePingCheckIntervalSeconds * 1000,
-    );
+    this.heartbeatInterval = setInterval(() => {
+      void this.enforceHeartbeatTimeouts();
+    }, this.realtimePingCheckIntervalSeconds * 1000);
 
     this.counterLogInterval = setInterval(() => {
       this.logger.log(
@@ -420,7 +417,8 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
           socketId: session.socketId,
           nodeId: session.nodeId,
           realtimePingTimeoutSeconds: this.realtimePingTimeoutSeconds,
-          realtimePingCheckIntervalSeconds: this.realtimePingCheckIntervalSeconds,
+          realtimePingCheckIntervalSeconds:
+            this.realtimePingCheckIntervalSeconds,
           lastPingAt: session.lastPingAt.toISOString(),
           lastAgentReportedPingAt:
             session.lastAgentReportedPingAt?.toISOString() ?? null,
