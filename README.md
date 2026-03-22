@@ -84,6 +84,7 @@ Set at least these values before real usage:
 If you want the API to create a first admin user automatically, set:
 
 - `SEED_DEFAULT_ADMIN=true`
+- `ADMIN_NAME`
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
 
@@ -129,6 +130,18 @@ Important agent settings:
   Nodes that do not send a heartbeat within this window are marked `offline`.
 - `AGENT_OFFLINE_CHECK_INTERVAL_SECONDS`
   Background polling interval for stale-node detection.
+- `AGENT_REALTIME_PING_TIMEOUT_SECONDS`
+  Realtime socket ping timeout before force-disconnect.
+- `AGENT_REALTIME_PING_CHECK_INTERVAL_SECONDS`
+  How often realtime ping timeout checks run.
+- `AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS`
+  How often stale task detector checks for stuck queued/running tasks.
+- `AGENT_STALE_QUEUED_TASK_TIMEOUT_SECONDS`
+  Mark queued tasks as failed after this many seconds.
+- `AGENT_STALE_RUNNING_TASK_TIMEOUT_SECONDS`
+  Mark running tasks as failed after this many seconds.
+- `AGENT_HIGH_CPU_THRESHOLD`
+  Threshold above which CPU usage is considered high.
 - `AGENT_ENROLLMENT_TOKEN`
   Shared secret for the legacy one-step `/agent/register` path only.
 
@@ -159,10 +172,12 @@ All HTTP routes below are relative to `http://localhost:3000/api/v1`.
 
 These endpoints are intended for registered agents and require `nodeId` plus `agentToken` in the request body.
 
-- `POST /agent/tasks/pull`
-- `POST /agent/tasks/:id/start`
-- `POST /agent/tasks/:id/logs`
-- `POST /agent/tasks/:id/complete`
+- `POST /agent/tasks/claim`
+- `POST /agent/tasks/:taskId/accepted`
+- `GET /agent/tasks/:taskId/control`
+- `POST /agent/tasks/:taskId/started`
+- `POST /agent/tasks/:taskId/logs`
+- `POST /agent/tasks/:taskId/completed`
 
 ### Diagnostics (Admin JWT)
 
@@ -209,9 +224,9 @@ Claim counter semantics:
 
 All agent task routes authenticate with `nodeId` and `agentToken` in the JSON body.
 
-### Pull queued tasks
+### Claim queued tasks
 
-`POST /agent/tasks/pull`
+`POST /agent/tasks/claim`
 
 Request body:
 
@@ -243,7 +258,7 @@ Response body:
 
 ### Start a task
 
-`POST /agent/tasks/:id/start`
+`POST /agent/tasks/:taskId/started`
 
 Request body:
 
@@ -258,7 +273,7 @@ Request body:
 
 ### Append task logs
 
-`POST /agent/tasks/:id/logs`
+`POST /agent/tasks/:taskId/logs`
 
 Supported request bodies:
 
@@ -291,7 +306,7 @@ Go-agent batched payload:
 
 ### Complete a task
 
-`POST /agent/tasks/:id/complete`
+`POST /agent/tasks/:taskId/completed`
 
 Request body:
 
@@ -332,6 +347,8 @@ Request body:
 - `POST /nodes/:id/packages`
 - `DELETE /nodes/:id/packages/:name`
 - `DELETE /nodes/:id`
+- `POST /tasks`
+- `POST /tasks/:id/cancel`
 
 ## Two-Step Enrollment API
 
@@ -473,10 +490,10 @@ curl -X POST http://localhost:3000/api/v1/tasks \
   }'
 ```
 
-### 8. Pull Queued Tasks as an Agent
+### 8. Claim Queued Tasks as an Agent
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/agent/tasks/pull \
+curl -X POST http://localhost:3000/api/v1/agent/tasks/claim \
   -H "Content-Type: application/json" \
   -d '{
     "nodeId": "generated-node-id",
@@ -485,10 +502,10 @@ curl -X POST http://localhost:3000/api/v1/agent/tasks/pull \
   }'
 ```
 
-### 7. Start and Complete a Task as an Agent
+### 9. Start and Complete a Task as an Agent
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/start \
+curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/started \
   -H "Content-Type: application/json" \
   -d '{
     "nodeId": "generated-node-id",
@@ -515,7 +532,7 @@ curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/logs \
 ```
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/complete \
+curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/completed \
   -H "Content-Type: application/json" \
   -d '{
     "nodeId": "generated-node-id",
