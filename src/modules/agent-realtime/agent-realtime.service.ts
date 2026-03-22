@@ -35,6 +35,7 @@ type AgentSocketSession = {
   agentToken: string;
   authenticatedAt: Date;
   lastPingAt: Date;
+  lastAgentReportedPingAt?: Date;
 };
 
 type AgentNodeRoute = {
@@ -63,6 +64,8 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private counterLogInterval: NodeJS.Timeout | null = null;
   private socketDisconnect: ((socketId: string) => boolean) | null = null;
+  private realtimePingTimeoutSeconds = 45;
+  private realtimePingCheckIntervalSeconds = 5;
   private socketEmitter:
     | ((socketId: string, event: string, payload: unknown) => boolean)
     | null = null;
@@ -95,11 +98,32 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
         AGENTS_CONFIG_KEY,
       );
 
+    this.realtimePingTimeoutSeconds = Math.max(
+      agents.realtimePingTimeoutSeconds,
+      15,
+    );
+    this.realtimePingCheckIntervalSeconds = Math.max(
+      agents.realtimePingCheckIntervalSeconds,
+      1,
+    );
+
+    this.logger.log(
+      JSON.stringify({
+        msg: 'agent-realtime.heartbeat.config',
+        realtimePingTimeoutSecondsConfigured: agents.realtimePingTimeoutSeconds,
+        realtimePingTimeoutSecondsEffective: this.realtimePingTimeoutSeconds,
+        realtimePingCheckIntervalSecondsConfigured:
+          agents.realtimePingCheckIntervalSeconds,
+        realtimePingCheckIntervalSecondsEffective:
+          this.realtimePingCheckIntervalSeconds,
+      }),
+    );
+
     this.heartbeatInterval = setInterval(
       () => {
-        void this.enforceHeartbeatTimeouts(agents.realtimePingTimeoutSeconds);
+        void this.enforceHeartbeatTimeouts();
       },
-      Math.max(agents.realtimePingCheckIntervalSeconds, 1) * 1000,
+      this.realtimePingCheckIntervalSeconds * 1000,
     );
 
     this.counterLogInterval = setInterval(() => {
@@ -189,7 +213,16 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    session.lastPingAt = timestamp ? new Date(timestamp) : new Date();
+    const receivedAt = new Date();
+    session.lastPingAt = receivedAt;
+
+    if (timestamp) {
+      const parsedTimestamp = new Date(timestamp);
+      if (!Number.isNaN(parsedTimestamp.getTime())) {
+        session.lastAgentReportedPingAt = parsedTimestamp;
+      }
+    }
+
     await this.upsertNodeRoute(session.nodeId, session.socketId);
     this.incrementCounter('ping.received');
   }
@@ -368,20 +401,44 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async enforceHeartbeatTimeouts(
-    timeoutSeconds: number,
-  ): Promise<void> {
-    const timeoutMs = Math.max(timeoutSeconds, 5) * 1000;
+  private async enforceHeartbeatTimeouts(): Promise<void> {
+    const timeoutMs = this.realtimePingTimeoutSeconds * 1000;
     const now = Date.now();
 
     for (const session of this.socketToSession.values()) {
-      if (now - session.lastPingAt.getTime() <= timeoutMs) {
+      const lastPingAtMs = session.lastPingAt.getTime();
+      const ageMs = now - lastPingAtMs;
+      if (ageMs <= timeoutMs) {
         continue;
       }
 
       this.incrementCounter('ping.timeout');
+      this.logger.warn(
+        JSON.stringify({
+          msg: 'agent-realtime.heartbeat.timeout',
+          reason: 'ping-timeout',
+          socketId: session.socketId,
+          nodeId: session.nodeId,
+          realtimePingTimeoutSeconds: this.realtimePingTimeoutSeconds,
+          realtimePingCheckIntervalSeconds: this.realtimePingCheckIntervalSeconds,
+          lastPingAt: session.lastPingAt.toISOString(),
+          lastAgentReportedPingAt:
+            session.lastAgentReportedPingAt?.toISOString() ?? null,
+          ageMs,
+          timeoutMs,
+        }),
+      );
+
       const disconnected = this.socketDisconnect?.(session.socketId) ?? false;
       if (!disconnected) {
+        this.logger.warn(
+          JSON.stringify({
+            msg: 'agent-realtime.heartbeat.timeout.disconnect-fallback',
+            reason: 'socket-disconnect-handler-unavailable',
+            socketId: session.socketId,
+            nodeId: session.nodeId,
+          }),
+        );
         await this.handleSocketDisconnect(session.socketId);
       }
     }

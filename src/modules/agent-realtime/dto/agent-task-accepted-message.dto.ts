@@ -11,9 +11,27 @@ export class AgentTaskAcceptedMessageDto {
   @ApiPropertyOptional({
     example: 'task.accepted',
   })
+  @IsOptional()
   @IsString()
   @IsIn(['task.accepted'])
-  type: 'task.accepted';
+  type?: 'task.accepted';
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Optional transport metadata from agents. Not used for auth in lifecycle handlers.',
+  })
+  @IsOptional()
+  @IsUUID()
+  nodeId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional transport metadata from agents. Not used for auth in lifecycle handlers.',
+  })
+  @IsOptional()
+  @IsString()
+  agentToken?: string;
 
   @ApiProperty({
     format: 'uuid',

@@ -19,9 +19,27 @@ export class AgentTaskCompletedMessageDto {
   @ApiPropertyOptional({
     example: 'task.completed',
   })
+  @IsOptional()
   @IsString()
   @IsIn(['task.completed'])
-  type: 'task.completed';
+  type?: 'task.completed';
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Optional transport metadata from agents. Not used for auth in lifecycle handlers.',
+  })
+  @IsOptional()
+  @IsUUID()
+  nodeId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional transport metadata from agents. Not used for auth in lifecycle handlers.',
+  })
+  @IsOptional()
+  @IsString()
+  agentToken?: string;
 
   @ApiProperty({
     format: 'uuid',

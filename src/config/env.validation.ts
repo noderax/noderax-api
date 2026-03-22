@@ -39,6 +39,14 @@ export const validationSchema = Joi.object({
     .integer()
     .min(1)
     .default(30),
+  AGENT_REALTIME_PING_TIMEOUT_SECONDS: Joi.number()
+    .integer()
+    .min(15)
+    .default(45),
+  AGENT_REALTIME_PING_CHECK_INTERVAL_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(5),
   AGENT_ENROLLMENT_TOKEN: Joi.string().required(),
   AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS: Joi.number()
     .integer()

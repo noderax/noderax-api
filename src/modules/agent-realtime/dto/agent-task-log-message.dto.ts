@@ -13,9 +13,27 @@ export class AgentTaskLogMessageDto {
   @ApiPropertyOptional({
     example: 'task.log',
   })
+  @IsOptional()
   @IsString()
   @IsIn(['task.log'])
-  type: 'task.log';
+  type?: 'task.log';
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Optional transport metadata from agents. Not used for auth in lifecycle handlers.',
+  })
+  @IsOptional()
+  @IsUUID()
+  nodeId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional transport metadata from agents. Not used for auth in lifecycle handlers.',
+  })
+  @IsOptional()
+  @IsString()
+  agentToken?: string;
 
   @ApiProperty({
     format: 'uuid',

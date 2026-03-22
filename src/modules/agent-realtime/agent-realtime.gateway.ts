@@ -29,6 +29,7 @@ import { AgentTaskCompletedMessageDto } from './dto/agent-task-completed-message
 import { AgentTaskLogMessageDto } from './dto/agent-task-log-message.dto';
 import { AgentTaskStartedMessageDto } from './dto/agent-task-started-message.dto';
 import { AgentRealtimeService } from './agent-realtime.service';
+import { TASK_OUTPUT_MAX_LENGTH } from '../tasks/dto/complete-agent-task.dto';
 
 @Public()
 @WebSocketGateway({
@@ -558,8 +559,18 @@ export class AgentRealtimeGateway
     payload: unknown,
     error: unknown,
   ) {
-    const payloadKeys = Object.keys(this.asRecord(payload));
+    const payloadRecord = this.asRecord(payload);
+    const payloadKeys = Object.keys(payloadRecord);
+    const validationMessages = this.extractValidationMessages(error);
     const reason = this.getValidationErrorMessage(error, 'Invalid payload');
+    const rejectedPayloadKeys = this.extractRejectedPayloadKeys(
+      payloadRecord,
+      validationMessages,
+    );
+    const outputLength =
+      typeof payloadRecord.output === 'string'
+        ? payloadRecord.output.length
+        : 0;
 
     this.logger.warn(
       JSON.stringify({
@@ -568,8 +579,15 @@ export class AgentRealtimeGateway
         socketId: client.id,
         namespace: AGENT_REALTIME_NAMESPACE,
         payloadKeys,
+        rejectedPayloadKeys,
+        validationMessages,
+        outputLength: outputLength > 0 ? outputLength : undefined,
+        outputMaxLength:
+          eventType === AGENT_REALTIME_CLIENT_EVENTS.TASK_COMPLETED
+            ? TASK_OUTPUT_MAX_LENGTH
+            : undefined,
         reason,
-        socketKeptOpen: true,
+        socketStillConnected: client.connected,
       }),
     );
 
@@ -638,6 +656,57 @@ export class AgentRealtimeGateway
     }
 
     return this.getSafeErrorMessage(error, fallback);
+  }
+
+  private extractValidationMessages(error: unknown): string[] {
+    if (!(error instanceof HttpException)) {
+      return [];
+    }
+
+    const response = error.getResponse();
+    if (!response || typeof response !== 'object') {
+      return [];
+    }
+
+    const message = (response as Record<string, unknown>).message;
+    if (Array.isArray(message)) {
+      return message
+        .map((entry) =>
+          typeof entry === 'string' ? entry.trim() : String(entry),
+        )
+        .filter((entry) => entry.length > 0)
+        .slice(0, 20);
+    }
+
+    if (typeof message === 'string' && message.trim().length > 0) {
+      return [message.trim()];
+    }
+
+    return [];
+  }
+
+  private extractRejectedPayloadKeys(
+    payload: Record<string, unknown>,
+    validationMessages: string[],
+  ): string[] {
+    const rejected = new Set<string>();
+
+    for (const message of validationMessages) {
+      const nonWhitelistedMatch = message.match(
+        /^property\s+([^\s]+)\s+should not exist$/i,
+      );
+      if (nonWhitelistedMatch?.[1]) {
+        rejected.add(nonWhitelistedMatch[1]);
+      }
+    }
+
+    for (const key of rejected) {
+      if (!(key in payload)) {
+        rejected.delete(key);
+      }
+    }
+
+    return Array.from(rejected.values()).sort((a, b) => a.localeCompare(b));
   }
 
   private asRecord(value: unknown): Record<string, unknown> {

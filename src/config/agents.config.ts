@@ -10,6 +10,15 @@ const parsePositiveInteger = (
     : fallback;
 };
 
+const parsePositiveIntegerWithMin = (
+  value: string | undefined,
+  fallback: number,
+  min: number,
+): number => {
+  const parsedValue = parsePositiveInteger(value, fallback);
+  return Math.max(parsedValue, min);
+};
+
 export const AGENTS_CONFIG_KEY = 'agents';
 
 export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
@@ -21,13 +30,15 @@ export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
     process.env.AGENT_OFFLINE_CHECK_INTERVAL_SECONDS,
     30,
   ),
-  realtimePingTimeoutSeconds: parsePositiveInteger(
+  realtimePingTimeoutSeconds: parsePositiveIntegerWithMin(
     process.env.AGENT_REALTIME_PING_TIMEOUT_SECONDS,
     45,
+    15,
   ),
-  realtimePingCheckIntervalSeconds: parsePositiveInteger(
+  realtimePingCheckIntervalSeconds: parsePositiveIntegerWithMin(
     process.env.AGENT_REALTIME_PING_CHECK_INTERVAL_SECONDS,
     5,
+    1,
   ),
   staleTaskCheckIntervalSeconds: parsePositiveInteger(
     process.env.AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS,
