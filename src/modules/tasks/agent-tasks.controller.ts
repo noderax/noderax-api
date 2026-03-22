@@ -9,6 +9,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import {
   ApiBody,
   ApiBearerAuth,
@@ -50,6 +51,7 @@ import { TasksService } from './tasks.service';
 })
 @Public()
 @UseGuards(AgentAuthGuard)
+@SkipThrottle()
 @Controller('agent/tasks')
 export class AgentTasksController {
   constructor(private readonly tasksService: TasksService) {}
