@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   Logger,
+  NotFoundException,
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -29,11 +30,31 @@ export class AgentAuthGuard implements CanActivate {
     }>();
     const path = request.originalUrl ?? request.url ?? 'unknown';
     const method = request.method ?? 'UNKNOWN';
+    const headerKeys = Object.keys(request.headers ?? {});
 
-    const authorization = request.headers.authorization;
-    const authorizationHeader = this.extractHeader(authorization);
-    const bearer = this.extractBearerToken(authorization);
-    const nodeId = this.extractHeader(request.headers['x-agent-node-id']);
+    const authorizationHeader = this.getHeaderValue(
+      request.headers,
+      'authorization',
+    );
+    const bearer = this.extractBearerToken(authorizationHeader);
+    const nodeId = this.getHeaderValue(request.headers, 'x-agent-node-id');
+
+    this.logger.debug(
+      JSON.stringify({
+        msg: 'agent-http.auth.check',
+        path,
+        method,
+        hasAuthorizationHeader: Boolean(authorizationHeader),
+        hasNodeIdHeader: Boolean(nodeId),
+        authorizationScheme: authorizationHeader
+          ? (authorizationHeader.split(' ')[0] ?? null)
+          : null,
+        tokenPresent: Boolean(bearer),
+        tokenPreview: bearer ? this.maskToken(bearer) : null,
+        nodeIdPreview: nodeId ? this.maskNodeId(nodeId) : null,
+        headerKeys,
+      }),
+    );
 
     if (!bearer || !nodeId) {
       const missingHeaders: string[] = [];
@@ -58,9 +79,8 @@ export class AgentAuthGuard implements CanActivate {
             xAgentNodeId: nodeId ?? null,
           },
           hasAuthorizationHeader: Boolean(authorizationHeader),
-          hasNodeIdHeader: Boolean(
-            this.extractHeader(request.headers['x-agent-node-id']),
-          ),
+          hasNodeIdHeader: Boolean(nodeId),
+          headerKeys,
         }),
       );
 
@@ -78,13 +98,14 @@ export class AgentAuthGuard implements CanActivate {
     try {
       await this.nodesService.authenticateAgent(nodeId, bearer);
     } catch (error) {
+      const reason = this.resolveAuthFailureReason(error);
       this.logger.warn(
         JSON.stringify({
           msg: 'agent-http.auth.failed',
           path,
           method,
-          reason: 'invalid-agent-credentials',
-          nodeId,
+          reason,
+          nodeId: this.maskNodeId(nodeId),
           providedHeaders: {
             authorization: authorizationHeader
               ? this.maskAuthorizationHeader(authorizationHeader)
@@ -93,14 +114,15 @@ export class AgentAuthGuard implements CanActivate {
           },
           hasAuthorizationHeader: true,
           hasNodeIdHeader: true,
+          headerKeys,
         }),
       );
       this.tasksService?.recordClaimUnauthorizedAttempt({
         path,
         method,
-        reason: 'invalid-agent-credentials',
+        reason,
       });
-      throw error;
+      throw new UnauthorizedException('Invalid agent credentials');
     }
 
     request.agent = {
@@ -121,7 +143,7 @@ export class AgentAuthGuard implements CanActivate {
   }
 
   private extractBearerToken(
-    authorization: string | string[] | undefined,
+    authorization: string | string[] | null,
   ): string | null {
     const value = this.extractHeader(authorization);
     if (!value) {
@@ -151,6 +173,56 @@ export class AgentAuthGuard implements CanActivate {
     return normalized.length > 0 ? normalized : null;
   }
 
+  private getHeaderValue(
+    headers: Record<string, string | string[] | undefined>,
+    name: string,
+  ): string | null {
+    const direct = this.extractHeader(headers[name]);
+    if (direct) {
+      return direct;
+    }
+
+    const lowerName = name.toLowerCase();
+    for (const [key, value] of Object.entries(headers)) {
+      if (key.toLowerCase() === lowerName) {
+        return this.extractHeader(value);
+      }
+    }
+
+    return null;
+  }
+
+  private resolveAuthFailureReason(error: unknown): string {
+    if (error instanceof NotFoundException) {
+      return 'node-not-found-or-revoked';
+    }
+
+    if (error instanceof UnauthorizedException) {
+      const response = error.getResponse();
+      const message =
+        typeof response === 'string'
+          ? response
+          : Array.isArray((response as { message?: unknown }).message)
+            ? (response as { message?: string[] }).message?.join(' ')
+            : ((response as { message?: string }).message ?? '');
+
+      const normalized = message.toLowerCase();
+      if (normalized.includes('not configured')) {
+        return 'token-missing-on-node';
+      }
+      if (normalized.includes('invalid agent token')) {
+        return 'node-token-mismatch';
+      }
+      if (normalized.includes('inactive') || normalized.includes('revoked')) {
+        return 'node-inactive-or-revoked';
+      }
+
+      return 'invalid-agent-credentials';
+    }
+
+    return 'auth-validation-error';
+  }
+
   private maskAuthorizationHeader(value: string): string {
     const [scheme] = value.split(' ');
     const normalizedScheme = scheme?.trim();
@@ -159,5 +231,21 @@ export class AgentAuthGuard implements CanActivate {
     }
 
     return `${normalizedScheme} ***`;
+  }
+
+  private maskToken(token: string): string {
+    if (token.length <= 8) {
+      return '***';
+    }
+
+    return `${token.slice(0, 4)}...${token.slice(-4)}`;
+  }
+
+  private maskNodeId(nodeId: string): string {
+    if (nodeId.length <= 8) {
+      return '***';
+    }
+
+    return `${nodeId.slice(0, 8)}...`;
   }
 }

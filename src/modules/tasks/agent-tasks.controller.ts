@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 import { CurrentAgent } from '../../common/decorators/current-agent.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { AgentAuthGuard } from '../../common/guards/agent-auth.guard';
 import { AuthenticatedAgent } from '../../common/types/authenticated-agent.type';
@@ -45,6 +46,7 @@ import { TasksService } from './tasks.service';
   required: true,
   description: 'Authenticated node id paired with bearer agent token.',
 })
+@Public()
 @UseGuards(AgentAuthGuard)
 @Controller('agent/tasks')
 export class AgentTasksController {

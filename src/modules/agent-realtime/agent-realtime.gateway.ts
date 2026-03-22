@@ -600,25 +600,40 @@ export class AgentRealtimeGateway
   }
 
   private getSocketById(socketId: string): Socket | null {
-    const namespace = this.getAgentNamespace();
-    if (!namespace) {
+    const sockets = this.getAgentSockets();
+    if (!sockets) {
       return null;
     }
 
-    const socket = namespace.sockets?.get(socketId);
+    const socket = sockets.get(socketId);
     return socket ?? null;
   }
 
-  private getAgentNamespace(): ReturnType<Server['of']> | null {
-    const namespace = this.server?.of?.(AGENT_REALTIME_NAMESPACE);
-    if (!namespace || !namespace.sockets) {
+  private getAgentSockets(): Map<string, Socket> | null {
+    const serverLike = this.server as unknown as {
+      sockets?: Map<string, Socket>;
+      of?: (namespace: string) => { sockets?: Map<string, Socket> };
+    };
+
+    // In a namespaced gateway, Nest can provide a namespace-like object directly.
+    if (serverLike?.sockets instanceof Map) {
+      return serverLike.sockets;
+    }
+
+    const namespaceSockets = serverLike?.of?.(
+      AGENT_REALTIME_NAMESPACE,
+    )?.sockets;
+    if (namespaceSockets instanceof Map) {
+      return namespaceSockets;
+    }
+
+    if (!this.server) {
       this.logger.warn(
         `Socket namespace unavailable for ${AGENT_REALTIME_NAMESPACE}`,
       );
-      return null;
     }
 
-    return namespace;
+    return null;
   }
 
   private getSafeErrorMessage(error: unknown, fallback: string): string {
