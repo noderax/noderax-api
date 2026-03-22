@@ -18,6 +18,8 @@ export class TaskSchemaBootstrap implements OnModuleInit {
       ADD COLUMN IF NOT EXISTS "outputTruncated" boolean NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS "startedAt" TIMESTAMPTZ NULL,
       ADD COLUMN IF NOT EXISTS "finishedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "cancelRequestedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "cancelReason" text NULL,
       ADD COLUMN IF NOT EXISTS "leaseUntil" TIMESTAMPTZ NULL,
       ADD COLUMN IF NOT EXISTS "claimedBy" uuid NULL,
       ADD COLUMN IF NOT EXISTS "claimToken" uuid NULL
@@ -94,21 +96,34 @@ export class TaskSchemaBootstrap implements OnModuleInit {
   }
 
   private async ensureTaskStatusEnumValueExists(value: string): Promise<void> {
-    await this.dataSource.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
+    const existsResult = (await this.dataSource.query(
+      `
+        SELECT EXISTS (
           SELECT 1
           FROM pg_enum e
           JOIN pg_type t ON t.oid = e.enumtypid
           WHERE t.typname = 'task_status_enum'
-            AND e.enumlabel = '${value}'
-        ) THEN
-          ALTER TYPE "task_status_enum" ADD VALUE '${value}';
-        END IF;
-      END
-      $$;
-    `);
+            AND e.enumlabel = $1
+        ) AS "exists"
+      `,
+      [value],
+    )) as Array<{ exists: boolean }>;
+
+    if (existsResult[0]?.exists) {
+      return;
+    }
+
+    try {
+      await this.dataSource.query(
+        `ALTER TYPE "task_status_enum" ADD VALUE '${value}'`,
+      );
+    } catch (error) {
+      if (this.isDuplicateEnumValueError(error)) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private isDuplicateTypeError(error: unknown): boolean {
@@ -120,6 +135,17 @@ export class TaskSchemaBootstrap implements OnModuleInit {
     return (
       message.includes('already exists') &&
       message.includes('task_log_level_enum')
+    );
+  }
+
+  private isDuplicateEnumValueError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return (
+      message.includes('already exists') && message.includes('task_status_enum')
     );
   }
 }

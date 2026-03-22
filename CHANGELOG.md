@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added stable diagnostics endpoint `GET /api/v1/diagnostics/task-flow` for frontend task-flow panel observability.
+- Added typed diagnostics response contract with default-safe counters and health timestamps.
+- Added e2e coverage for auth behavior, response schema/defaults, numeric counter typing, and smoke performance.
+
 ## 1.0.0 - Stable
 
 Initial stable release of the Noderax control plane API.

@@ -14,6 +14,7 @@ import { getTypeOrmConfig } from './database/typeorm.config';
 import { AgentRealtimeModule } from './modules/agent-realtime/agent-realtime.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { DiagnosticsModule } from './modules/diagnostics/diagnostics.module';
 import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
 import { EventsModule } from './modules/events/events.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
@@ -49,6 +50,7 @@ import { RedisModule } from './redis/redis.module';
     NotificationsModule,
     UsersModule,
     AuthModule,
+    DiagnosticsModule,
     EnrollmentsModule,
     NodesModule,
     PackagesModule,

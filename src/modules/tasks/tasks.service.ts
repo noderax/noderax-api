@@ -39,6 +39,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { PullAgentTasksDto } from './dto/pull-agent-tasks.dto';
 import { QueryTaskLogsDto } from './dto/query-task-logs.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
+import { RequestTaskCancelDto } from './dto/request-task-cancel.dto';
 import { StartAgentTaskDto } from './dto/start-agent-task.dto';
 import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskLogLevel } from './entities/task-log-level.enum';
@@ -62,6 +63,7 @@ const CLAIM_POLL_INTERVAL_MS = 500;
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
   private readonly counters = new Map<string, number>();
+  private lastClaimAt: Date | null = null;
 
   constructor(
     @InjectRepository(TaskEntity)
@@ -89,6 +91,8 @@ export class TasksService {
       outputTruncated: false,
       startedAt: null,
       finishedAt: null,
+      cancelRequestedAt: null,
+      cancelReason: null,
       leaseUntil: null,
       claimedBy: null,
       claimToken: null,
@@ -238,6 +242,112 @@ export class TasksService {
     return null;
   }
 
+  async requestTaskCancellation(
+    taskId: string,
+    dto: RequestTaskCancelDto,
+  ): Promise<TaskEntity> {
+    const task = await this.findOneOrFail(taskId);
+    const previousStatus = task.status;
+    const now = new Date();
+    const normalizedReason =
+      dto.reason && dto.reason.trim().length > 0 ? dto.reason.trim() : null;
+
+    if (this.isTerminalStatus(task.status)) {
+      return task;
+    }
+
+    task.cancelRequestedAt = now;
+    task.cancelReason = normalizedReason;
+
+    if (
+      task.status === TaskStatus.QUEUED ||
+      task.status === TaskStatus.ACCEPTED ||
+      task.status === TaskStatus.CLAIMED
+    ) {
+      task.status = TaskStatus.CANCELLED;
+      task.finishedAt = now;
+      task.leaseUntil = null;
+      task.claimToken = null;
+      task.claimedBy = null;
+      task.result = {
+        ...(task.result ?? {}),
+        reason: 'cancel-requested-before-run',
+        cancelledAt: now.toISOString(),
+        cancelReason: normalizedReason,
+      };
+      if (!task.output) {
+        task.output = normalizedReason
+          ? `Task cancelled before running: ${normalizedReason}`
+          : 'Task cancelled before running by operator';
+      }
+    }
+
+    const savedTask = await this.tasksRepository.save(task);
+    await this.publishTaskUpdated(savedTask);
+
+    if (
+      savedTask.status === TaskStatus.CANCELLED ||
+      savedTask.status === TaskStatus.RUNNING
+    ) {
+      await this.createTaskLog(savedTask.id, {
+        level: TaskLogLevel.INFO,
+        message: normalizedReason
+          ? `Cancellation requested: ${normalizedReason}`
+          : 'Cancellation requested by operator',
+      });
+    }
+
+    if (savedTask.status === TaskStatus.CANCELLED) {
+      const node = await this.nodesService.findOneOrFail(savedTask.nodeId);
+      await this.eventsService.record({
+        nodeId: savedTask.nodeId,
+        type: SYSTEM_EVENT_TYPES.TASK_CANCELLED,
+        severity: EventSeverity.WARNING,
+        message: this.getTaskCompletionMessage(savedTask, node),
+        metadata: {
+          ...this.buildTaskEventMetadata(savedTask),
+          result: savedTask.result,
+        },
+      });
+    }
+
+    this.logger.log(
+      JSON.stringify({
+        msg: 'task.cancel.requested',
+        taskId: savedTask.id,
+        nodeId: savedTask.nodeId,
+        previousStatus,
+        status: savedTask.status,
+        cancelRequestedAt: savedTask.cancelRequestedAt?.toISOString() ?? null,
+      }),
+    );
+
+    return savedTask;
+  }
+
+  async getTaskControlForAgent(
+    taskId: string,
+    agent: AuthenticatedAgent,
+  ): Promise<{
+    taskId: string;
+    status: TaskStatus;
+    cancelRequested: boolean;
+    cancelRequestedAt: string | null;
+    cancelReason: string | null;
+  }> {
+    const task = await this.findTaskForNodeOrFail(taskId, agent.nodeId);
+    const cancelRequested =
+      task.status === TaskStatus.RUNNING && Boolean(task.cancelRequestedAt);
+
+    return {
+      taskId: task.id,
+      status: task.status,
+      cancelRequested,
+      cancelRequestedAt: task.cancelRequestedAt?.toISOString() ?? null,
+      cancelReason: task.cancelReason,
+    };
+  }
+
   handlePackageResult(task: TaskEntity): NormalizedPackageTaskResult | null {
     if (!isPackageTaskType(task.type)) {
       return null;
@@ -339,6 +449,7 @@ export class TasksService {
     agent: AuthenticatedAgent,
     claimDto: ClaimAgentTasksDto,
   ): Promise<ClaimAgentTaskResponseDto> {
+    this.lastClaimAt = new Date();
     const startedAt = Date.now();
     const waitMs = Math.max(claimDto.waitMs ?? 15000, 0);
     const deadline = Date.now() + waitMs;
@@ -443,6 +554,43 @@ export class TasksService {
       claim_unauthorized_total:
         this.counters.get('claim_unauthorized_total') ?? 0,
       claim_error_total: this.counters.get('claim_error_total') ?? 0,
+    };
+  }
+
+  getLastClaimAtIso(): string | null {
+    return this.lastClaimAt ? this.lastClaimAt.toISOString() : null;
+  }
+
+  async getQueueSnapshot(): Promise<{ queued: number; running: number }> {
+    const rows = await this.tasksRepository
+      .createQueryBuilder('task')
+      .select('task.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('task.status IN (:...statuses)', {
+        statuses: [TaskStatus.QUEUED, TaskStatus.RUNNING],
+      })
+      .groupBy('task.status')
+      .getRawMany<{ status: TaskStatus; count: string | number }>();
+
+    let queued = 0;
+    let running = 0;
+
+    for (const row of rows) {
+      const count =
+        typeof row.count === 'number'
+          ? row.count
+          : Number.parseInt(row.count, 10) || 0;
+
+      if (row.status === TaskStatus.QUEUED) {
+        queued = count;
+      } else if (row.status === TaskStatus.RUNNING) {
+        running = count;
+      }
+    }
+
+    return {
+      queued,
+      running,
     };
   }
 
@@ -1272,6 +1420,7 @@ export class TasksService {
           SELECT t.id
           FROM tasks t
           WHERE t."nodeId" = :nodeId
+            AND t."cancelRequestedAt" IS NULL
             AND (
               t.status = :queuedStatus
               OR (

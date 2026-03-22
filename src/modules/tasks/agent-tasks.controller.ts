@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -31,6 +32,7 @@ import {
   AgentTaskCompletedHttpDto,
   HTTP_TASK_OUTPUT_MAX_LENGTH,
 } from './dto/agent-task-completed-http.dto';
+import { AgentTaskControlResponseDto } from './dto/agent-task-control-response.dto';
 import { AgentTaskLogHttpDto } from './dto/agent-task-log-http.dto';
 import { AgentTaskStartedHttpDto } from './dto/agent-task-started-http.dto';
 import { ClaimAgentTaskResponseDto } from './dto/claim-agent-task-response.dto';
@@ -110,6 +112,29 @@ export class AgentTasksController {
     @Body() dto: AgentTaskAcceptedHttpDto,
   ) {
     return this.tasksService.acceptClaimedTaskForAgent(taskId, agent, dto);
+  }
+
+  @Get(':taskId/control')
+  @ApiOperation({
+    summary: 'Get control state for a running task',
+    description:
+      'Agent polls this endpoint while executing to detect operator requested cancellation.',
+  })
+  @ApiOkResponse({
+    description: 'Current control state for this task.',
+    type: AgentTaskControlResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Invalid agent authentication headers.',
+  })
+  @ApiNotFoundResponse({
+    description: 'Task not found for this node.',
+  })
+  control(
+    @CurrentAgent() agent: AuthenticatedAgent,
+    @Param('taskId') taskId: string,
+  ) {
+    return this.tasksService.getTaskControlForAgent(taskId, agent);
   }
 
   @Post(':taskId/started')

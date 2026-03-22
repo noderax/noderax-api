@@ -26,6 +26,7 @@ import { validationSchema } from '../../src/config/env.validation';
 import { APP_CONFIG_KEY, appConfig } from '../../src/config';
 import { AgentsModule } from '../../src/modules/agents/agents.module';
 import { AuthModule } from '../../src/modules/auth/auth.module';
+import { DiagnosticsModule } from '../../src/modules/diagnostics/diagnostics.module';
 import { EnrollmentEntity } from '../../src/modules/enrollments/entities/enrollment.entity';
 import { EnrollmentsModule } from '../../src/modules/enrollments/enrollments.module';
 import { EventsModule } from '../../src/modules/events/events.module';
@@ -131,6 +132,7 @@ export async function createE2eApp(): Promise<INestApplication> {
       NotificationsModule,
       UsersModule,
       AuthModule,
+      DiagnosticsModule,
       EnrollmentsModule,
       NodesModule,
       PackagesModule,

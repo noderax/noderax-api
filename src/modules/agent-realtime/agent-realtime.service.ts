@@ -190,6 +190,28 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  getCountersSnapshot(): Record<string, number> {
+    return Object.fromEntries(this.counters.entries());
+  }
+
+  getRealtimeHealthSnapshot(): {
+    realtimeConnected: boolean;
+    lastAgentSeenAt: string | null;
+  } {
+    let latestSeen: Date | null = null;
+
+    for (const session of this.socketToSession.values()) {
+      if (!latestSeen || session.lastPingAt.getTime() > latestSeen.getTime()) {
+        latestSeen = session.lastPingAt;
+      }
+    }
+
+    return {
+      realtimeConnected: this.nodeToSocketId.size > 0,
+      lastAgentSeenAt: latestSeen ? latestSeen.toISOString() : null,
+    };
+  }
+
   getSessionForSocket(socketId: string): AgentSocketSession | null {
     return this.socketToSession.get(socketId) ?? null;
   }

@@ -129,6 +129,23 @@ export class TaskEntity {
   @Column({ type: 'timestamptz', nullable: true })
   finishedAt: Date | null;
 
+  @ApiPropertyOptional({
+    format: 'date-time',
+    example: '2026-03-17T12:41:30.000Z',
+    nullable: true,
+    description:
+      'Operator requested cancellation timestamp. Running agents should stop gracefully when this is set.',
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  cancelRequestedAt: Date | null;
+
+  @ApiPropertyOptional({
+    example: 'Stopped by operator from dashboard',
+    nullable: true,
+  })
+  @Column({ type: 'text', nullable: true })
+  cancelReason: string | null;
+
   @ApiProperty({
     format: 'date-time',
     example: '2026-03-17T12:40:00.000Z',

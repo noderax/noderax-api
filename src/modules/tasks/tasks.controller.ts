@@ -15,6 +15,7 @@ import { UserRole } from '../users/entities/user-role.enum';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskLogsDto } from './dto/query-task-logs.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
+import { RequestTaskCancelDto } from './dto/request-task-cancel.dto';
 import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskEntity } from './entities/task.entity';
 import { TasksService } from './tasks.service';
@@ -88,5 +89,26 @@ export class TasksController {
   })
   findLogs(@Param('id') id: string, @Query() query: QueryTaskLogsDto) {
     return this.tasksService.findLogs(id, query);
+  }
+
+  @Post(':id/cancel')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Request task cancellation',
+    description:
+      'Requests cancellation for an in-flight task. Running agents observe this via agent control polling.',
+  })
+  @ApiOkResponse({
+    description: 'Task cancellation requested or already terminal.',
+    type: TaskEntity,
+  })
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions.',
+  })
+  @ApiNotFoundResponse({
+    description: 'Task not found.',
+  })
+  cancel(@Param('id') id: string, @Body() dto: RequestTaskCancelDto) {
+    return this.tasksService.requestTaskCancellation(id, dto);
   }
 }

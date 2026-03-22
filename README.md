@@ -164,6 +164,47 @@ These endpoints are intended for registered agents and require `nodeId` plus `ag
 - `POST /agent/tasks/:id/logs`
 - `POST /agent/tasks/:id/complete`
 
+### Diagnostics (Admin JWT)
+
+- `GET /diagnostics/task-flow`
+
+Returns a stable diagnostics snapshot for the frontend task-flow panel.
+
+Example response:
+
+```json
+{
+  "fetchedAt": "2026-03-23T12:34:56.000Z",
+  "source": "agent-task-flow",
+  "agentCounters": {
+    "metrics.ingested": 12345,
+    "connection.opened": 87
+  },
+  "claimCounters": {
+    "task.claim.attempted": 340,
+    "task.claim.succeeded": 320,
+    "task.claim.failed": 20,
+    "task.claim.emptyPoll": 140
+  },
+  "queue": {
+    "queued": 12,
+    "running": 5
+  },
+  "health": {
+    "realtimeConnected": true,
+    "lastAgentSeenAt": "2026-03-23T12:34:50.000Z",
+    "lastClaimAt": "2026-03-23T12:34:49.000Z"
+  }
+}
+```
+
+Claim counter semantics:
+
+- `task.claim.attempted`: Claim poll requests received.
+- `task.claim.succeeded`: Claim requests that returned a task.
+- `task.claim.failed`: Claim failures (authorization + internal errors).
+- `task.claim.emptyPoll`: Claim requests that returned no task.
+
 ## Agent Task API Contract
 
 All agent task routes authenticate with `nodeId` and `agentToken` in the JSON body.
