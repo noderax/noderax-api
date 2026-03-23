@@ -6,8 +6,8 @@ import {
   SwaggerCustomOptions,
   SwaggerModule,
 } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import * as compression from 'compression';
-import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { SWAGGER_BEARER_AUTH_NAME } from './common/constants/swagger.constants';
@@ -16,14 +16,14 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { APP_CONFIG_KEY, appConfig } from './config';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
 
   app.use(helmet());
   app.use(compression());
-  app.use(json({ limit: '50mb' }));
-  app.use(urlencoded({ extended: true, limit: '50mb' }));
+  app.useBodyParser('json', { limit: '50mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '50mb' });
 
   const configService = app.get(ConfigService);
   const appSettings =
