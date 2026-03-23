@@ -7,6 +7,7 @@ import {
   SwaggerModule,
 } from '@nestjs/swagger';
 import * as compression from 'compression';
+import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { SWAGGER_BEARER_AUTH_NAME } from './common/constants/swagger.constants';
@@ -21,6 +22,8 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(compression());
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   const configService = app.get(ConfigService);
   const appSettings =
