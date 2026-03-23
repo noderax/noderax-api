@@ -1397,6 +1397,7 @@ export class TasksService {
 
   private async claimNextTaskOnce(
     nodeId: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _capabilities?: string[],
   ): Promise<TaskEntity | null> {
     const now = new Date();

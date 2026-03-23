@@ -646,89 +646,81 @@ describe('Agent Lifecycle (e2e)', () => {
     });
   });
 
-  it(
-    'maps package deletion to remove and purge task types for admins',
-    async () => {
-      const removeResponse = await request(app.getHttpServer())
-        .delete(apiPath(`/nodes/${nodeId}/packages/nginx`))
-        .set('Authorization', `Bearer ${adminToken}`)
-        .query({
-          purge: false,
-        })
-        .expect(202);
-
-      const removeTask = await request(app.getHttpServer())
-        .get(apiPath(`/tasks/${removeResponse.body.taskId}`))
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200);
-
-      expect(removeResponse.body.operation).toBe(TASK_TYPES.PACKAGE_REMOVE);
-      expect(removeTask.body.type).toBe(TASK_TYPES.PACKAGE_REMOVE);
-      expect(removeTask.body.payload).toEqual({
-        names: ['nginx'],
+  it('maps package deletion to remove and purge task types for admins', async () => {
+    const removeResponse = await request(app.getHttpServer())
+      .delete(apiPath(`/nodes/${nodeId}/packages/nginx`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
         purge: false,
-      });
+      })
+      .expect(202);
 
-      const purgeResponse = await request(app.getHttpServer())
-        .delete(apiPath(`/nodes/${nodeId}/packages/nginx`))
-        .set('Authorization', `Bearer ${adminToken}`)
-        .query({
-          purge: true,
-        })
-        .expect(202);
+    const removeTask = await request(app.getHttpServer())
+      .get(apiPath(`/tasks/${removeResponse.body.taskId}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
 
-      const purgeTask = await request(app.getHttpServer())
-        .get(apiPath(`/tasks/${purgeResponse.body.taskId}`))
-        .set('Authorization', `Bearer ${adminToken}`)
-        .expect(200);
+    expect(removeResponse.body.operation).toBe(TASK_TYPES.PACKAGE_REMOVE);
+    expect(removeTask.body.type).toBe(TASK_TYPES.PACKAGE_REMOVE);
+    expect(removeTask.body.payload).toEqual({
+      names: ['nginx'],
+      purge: false,
+    });
 
-      expect(purgeResponse.body.operation).toBe(TASK_TYPES.PACKAGE_PURGE);
-      expect(purgeTask.body.type).toBe(TASK_TYPES.PACKAGE_PURGE);
-      expect(purgeTask.body.payload).toEqual({
-        names: ['nginx'],
+    const purgeResponse = await request(app.getHttpServer())
+      .delete(apiPath(`/nodes/${nodeId}/packages/nginx`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .query({
         purge: true,
-      });
-    },
-    15000,
-  );
+      })
+      .expect(202);
 
-  it(
-    'returns 202 with a task id when package search does not finish within the wait window',
-    async () => {
-      const responsePromise = fetch(
-        `${getBaseUrl(app)}${apiPath(
-          `/packages/search?nodeId=${nodeId}&term=redis`,
-        )}`,
-        {
-          headers: {
-            Authorization: `Bearer ${userToken}`,
-          },
+    const purgeTask = await request(app.getHttpServer())
+      .get(apiPath(`/tasks/${purgeResponse.body.taskId}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(purgeResponse.body.operation).toBe(TASK_TYPES.PACKAGE_PURGE);
+    expect(purgeTask.body.type).toBe(TASK_TYPES.PACKAGE_PURGE);
+    expect(purgeTask.body.payload).toEqual({
+      names: ['nginx'],
+      purge: true,
+    });
+  }, 15000);
+
+  it('returns 202 with a task id when package search does not finish within the wait window', async () => {
+    const responsePromise = fetch(
+      `${getBaseUrl(app)}${apiPath(
+        `/packages/search?nodeId=${nodeId}&term=redis`,
+      )}`,
+      {
+        headers: {
+          Authorization: `Bearer ${userToken}`,
         },
-      );
+      },
+    );
 
-      const packageTask = await waitForQueuedTask(
-        app,
-        nodeId,
-        agentToken,
-        TASK_TYPES.PACKAGE_SEARCH,
-      );
+    const packageTask = await waitForQueuedTask(
+      app,
+      nodeId,
+      agentToken,
+      TASK_TYPES.PACKAGE_SEARCH,
+    );
 
-      const response = await responsePromise;
-      const body = (await response.json()) as {
-        taskId: string;
-        taskStatus: string;
-        operation: string;
-        term: string;
-      };
+    const response = await responsePromise;
+    const body = (await response.json()) as {
+      taskId: string;
+      taskStatus: string;
+      operation: string;
+      term: string;
+    };
 
-      expect(response.status).toBe(202);
-      expect(body.taskId).toBe(packageTask.id);
-      expect(body.operation).toBe(TASK_TYPES.PACKAGE_SEARCH);
-      expect(body.taskStatus).toBe('queued');
-      expect(body.term).toBe('redis');
-    },
-    15000,
-  );
+    expect(response.status).toBe(202);
+    expect(body.taskId).toBe(packageTask.id);
+    expect(body.operation).toBe(TASK_TYPES.PACKAGE_SEARCH);
+    expect(body.taskStatus).toBe('queued');
+    expect(body.term).toBe('redis');
+  }, 15000);
 
   it('rejects websocket connections with invalid JWTs', async () => {
     const client = io(`${getBaseUrl(app)}/realtime`, {

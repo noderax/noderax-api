@@ -105,7 +105,8 @@ export class PackagesController {
       'Queues a packageSearch task for the target node. Debian APT documents search behavior against package names and descriptions, and related apt-style output includes package metadata plus a short description. References: https://manpages.debian.org/experimental/apt/apt.8.en.html and https://manpages.debian.org/testing/apt/apt-cache.8.en.html',
   })
   @ApiOkResponse({
-    description: 'Structured package search results or a terminal task error payload.',
+    description:
+      'Structured package search results or a terminal task error payload.',
     type: SearchPackagesResponseDto,
   })
   @ApiAcceptedResponse({

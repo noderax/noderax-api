@@ -19,9 +19,7 @@ export class InstallPackagesDto {
   })
   @Transform(({ value }) =>
     Array.isArray(value)
-      ? value.map((entry) =>
-          typeof entry === 'string' ? entry.trim() : entry,
-        )
+      ? value.map((entry) => (typeof entry === 'string' ? entry.trim() : entry))
       : value,
   )
   @IsArray()
