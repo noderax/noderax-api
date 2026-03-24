@@ -50,6 +50,11 @@ export class AgentMetricsDto {
   @Max(100)
   memoryUsage?: number;
 
+  @ApiPropertyOptional({
+    example: 58.4,
+    minimum: 0,
+    maximum: 100,
+  })
   @IsOptional()
   @IsNumber()
   @Min(0)

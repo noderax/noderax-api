@@ -35,6 +35,8 @@ export class MetricsService {
 
     await this.nodesService.markOnline(node.id);
 
+    // console.log('[DEBUG] Ingesting metrics:', JSON.stringify(agentMetricsDto, null, 2));
+
     const metric = this.metricsRepository.create({
       nodeId: agentMetricsDto.nodeId,
       cpuUsage: this.resolvePercentageMetric(
