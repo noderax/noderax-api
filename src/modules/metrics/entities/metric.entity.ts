@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -41,6 +41,13 @@ export class MetricEntity {
   })
   @Column({ type: 'real' })
   diskUsage: number;
+
+  @ApiPropertyOptional({
+    example: 45.2,
+    description: 'Maximum core temperature in Celsius',
+  })
+  @Column({ type: 'real', nullable: true })
+  temperature: number | null;
 
   @ApiProperty({
     example: {

@@ -50,16 +50,19 @@ export class AgentMetricsDto {
   @Max(100)
   memoryUsage?: number;
 
-  @ApiProperty({
-    example: 58.4,
-    minimum: 0,
-    maximum: 100,
-  })
   @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
   diskUsage?: number;
+
+  @ApiPropertyOptional({
+    example: 45.2,
+    description: 'Maximum core temperature in Celsius',
+  })
+  @IsOptional()
+  @IsNumber()
+  temperature?: number;
 
   @ApiProperty({
     example: {
