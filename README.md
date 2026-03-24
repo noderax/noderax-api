@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Noderax API</h1>
 
-Noderax is an agent-based infrastructure management platform. This repository contains the monolithic NestJS control plane API used by the web dashboard and remote Go agents.
+Noderax is an agent-based infrastructure management platform. This repository contains the monolithic NestJS control plane API used by the web dashboard and remote Go agents. It provides the REST and realtime communication layer for the entire platform.
 
 Current stable release: `1.0.0`
 
@@ -51,6 +51,7 @@ src/
 - Two-step agent enrollment with admin approval plus legacy registration compatibility
 - Metrics ingestion persisted to PostgreSQL
 - Task creation, polling, execution updates, and logs
+- **Realtime node management:** Reboot and Noderax Agent restart actions
 - Event persistence with notification stubs
 - Realtime broadcasts for node, metric, task, and event updates
 
@@ -98,7 +99,7 @@ The default API base URL is `http://localhost:3000/api/v1`.
 Swagger UI is available at `http://localhost:3000/api/v1/docs`.
 OpenAPI JSON is available at `http://localhost:3000/api/v1/docs-json`.
 
-Swagger groups package management routes under `Packages`, the new two-step enrollment routes under `Enrollments`, and marks the legacy `Agents / register` route as deprecated.
+Swagger groups package management routes under `Packages` (now using optimized `dpkg -l` parsing for Debian/Ubuntu), the new two-step enrollment routes under `Enrollments`, and marks the legacy `Agents / register` route as deprecated.
 
 ## Docker
 
@@ -113,12 +114,19 @@ Services:
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
-## Production Build
+## Production Build & Deployment
 
 ```bash
 pnpm build
 pnpm start:prod
 ```
+
+### Railway Deployment
+
+For Railway or similar PaaS environments:
+- The API is configured to bind to `0.0.0.0` natively via `NEST_BIND_ALL=true`.
+- Healthchecks are supported via `GET /health`.
+- Explicit `express` dependency has been removed to reduce bundle size and improve startup performance.
 
 ## Environment
 
