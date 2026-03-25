@@ -1,0 +1,279 @@
+import { INestApplication } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+import * as request from 'supertest';
+import { ScheduledTaskEntity } from '../src/modules/tasks/entities/scheduled-task.entity';
+import { apiPath } from './helpers/api-path';
+import { createE2eApp } from './helpers/e2e-app.factory';
+
+jest.setTimeout(90_000);
+
+function configureTestEnv() {
+  process.env.NODE_ENV = 'test';
+  process.env.PORT = '0';
+  process.env.API_PREFIX = 'api/v1';
+  process.env.CORS_ORIGIN = '*';
+  process.env.SWAGGER_ENABLED = 'false';
+  process.env.SWAGGER_PATH = 'docs';
+
+  process.env.DB_HOST = '127.0.0.1';
+  process.env.DB_PORT = '5432';
+  process.env.DB_USERNAME = 'postgres';
+  process.env.DB_PASSWORD = 'postgres';
+  process.env.DB_NAME = 'noderax_test';
+  process.env.DB_SYNCHRONIZE = 'true';
+  process.env.DB_LOGGING = 'false';
+  process.env.DB_SSL = 'false';
+
+  process.env.REDIS_ENABLED = 'false';
+  process.env.REDIS_URL = '';
+  process.env.REDIS_HOST = '127.0.0.1';
+  process.env.REDIS_PORT = '6379';
+  process.env.REDIS_PASSWORD = '';
+  process.env.REDIS_DB = '0';
+  process.env.REDIS_KEY_PREFIX = 'noderax-test:';
+
+  process.env.JWT_SECRET = 'test-secret';
+  process.env.JWT_EXPIRES_IN = '1d';
+  process.env.BCRYPT_SALT_ROUNDS = '10';
+
+  process.env.AGENT_HEARTBEAT_TIMEOUT_SECONDS = '1';
+  process.env.AGENT_OFFLINE_CHECK_INTERVAL_SECONDS = '1';
+  process.env.AGENT_ENROLLMENT_TOKEN = 'secret-enrollment-token';
+  process.env.AGENT_HIGH_CPU_THRESHOLD = '90';
+
+  process.env.SEED_DEFAULT_ADMIN = 'true';
+  process.env.ADMIN_NAME = 'E2E Admin';
+  process.env.ADMIN_EMAIL = 'admin@example.com';
+  process.env.ADMIN_PASSWORD = 'ChangeMe123!';
+}
+
+describe('Scheduled Tasks (e2e)', () => {
+  let app: INestApplication;
+  let dataSource: DataSource;
+  let adminToken: string;
+  let userToken: string;
+  let nodeId: string;
+
+  beforeAll(async () => {
+    configureTestEnv();
+    app = await createE2eApp();
+    dataSource = app.get(DataSource);
+
+    const adminLogin = await request(app.getHttpServer())
+      .post(apiPath('/auth/login'))
+      .send({
+        email: process.env.ADMIN_EMAIL,
+        password: process.env.ADMIN_PASSWORD,
+      })
+      .expect(200);
+
+    adminToken = adminLogin.body.accessToken;
+
+    await request(app.getHttpServer())
+      .post(apiPath('/users'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        email: 'user@example.com',
+        name: 'Standard User',
+        password: 'ChangeMe123!',
+        role: 'user',
+      })
+      .expect(201);
+
+    const userLogin = await request(app.getHttpServer())
+      .post(apiPath('/auth/login'))
+      .send({
+        email: 'user@example.com',
+        password: 'ChangeMe123!',
+      })
+      .expect(200);
+
+    userToken = userLogin.body.accessToken;
+
+    const nodeResponse = await request(app.getHttpServer())
+      .post(apiPath('/nodes'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Schedule Node',
+        hostname: 'schedule-node-01',
+        os: 'ubuntu',
+        arch: 'amd64',
+      })
+      .expect(201);
+
+    nodeId = nodeResponse.body.id;
+  });
+
+  afterAll(async () => {
+    if (app) {
+      await app.close();
+    }
+  });
+
+  it('allows only admins to manage scheduled tasks', async () => {
+    await request(app.getHttpServer())
+      .get(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${userToken}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        nodeId,
+        name: 'Forbidden schedule',
+        command: 'hostname',
+        cadence: 'hourly',
+        minute: 5,
+        timezone: 'UTC',
+      })
+      .expect(403);
+  });
+
+  it('creates, lists, disables, and deletes scheduled tasks', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        nodeId,
+        name: 'Daily hostname check',
+        command: 'hostname',
+        cadence: 'daily',
+        minute: 15,
+        hour: 3,
+        timezone: 'UTC',
+      })
+      .expect(201);
+
+    expect(createResponse.body.name).toBe('Daily hostname check');
+    expect(createResponse.body.enabled).toBe(true);
+
+    await request(app.getHttpServer())
+      .get(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: createResponse.body.id,
+              name: 'Daily hostname check',
+            }),
+          ]),
+        );
+      });
+
+    await request(app.getHttpServer())
+      .patch(apiPath(`/scheduled-tasks/${createResponse.body.id}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ enabled: false })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.enabled).toBe(false);
+        expect(body.nextRunAt).toBeNull();
+      });
+
+    await request(app.getHttpServer())
+      .delete(apiPath(`/scheduled-tasks/${createResponse.body.id}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual({
+          deleted: true,
+          id: createResponse.body.id,
+        });
+      });
+  });
+
+  it('queues a real task when a due schedule is detected and skips disabled schedules', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        nodeId,
+        name: 'Hourly hostname check',
+        command: 'hostname',
+        cadence: 'hourly',
+        minute: 10,
+        timezone: 'UTC',
+      })
+      .expect(201);
+
+    const scheduledTaskRepo = dataSource.getRepository(ScheduledTaskEntity);
+    await scheduledTaskRepo.update(
+      { id: createResponse.body.id },
+      {
+        nextRunAt: new Date(Date.now() - 2_000),
+      },
+    );
+
+    const queuedTask = await waitForTaskFromSchedule(
+      app,
+      adminToken,
+      createResponse.body.id,
+    );
+
+    expect(queuedTask.type).toBe('shell.exec');
+    expect(queuedTask.payload.scheduleId).toBe(createResponse.body.id);
+    expect(queuedTask.payload.scheduleName).toBe('Hourly hostname check');
+
+    await request(app.getHttpServer())
+      .patch(apiPath(`/scheduled-tasks/${createResponse.body.id}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ enabled: false })
+      .expect(200);
+
+    await scheduledTaskRepo.update(
+      { id: createResponse.body.id },
+      {
+        nextRunAt: new Date(Date.now() - 2_000),
+      },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    const tasksResponse = await request(app.getHttpServer())
+      .get(apiPath('/tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const matchingTasks = tasksResponse.body.filter(
+      (task: { payload: { scheduleId?: string } }) =>
+        task.payload?.scheduleId === createResponse.body.id,
+    );
+
+    expect(matchingTasks).toHaveLength(1);
+  });
+});
+
+async function waitForTaskFromSchedule(
+  app: INestApplication,
+  adminToken: string,
+  scheduleId: string,
+): Promise<{
+  id: string;
+  type: string;
+  payload: Record<string, unknown>;
+}> {
+  const deadline = Date.now() + 5_000;
+
+  while (Date.now() < deadline) {
+    const response = await request(app.getHttpServer())
+      .get(apiPath('/tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const matched = response.body.find(
+      (task: { payload: { scheduleId?: string } }) =>
+        task.payload?.scheduleId === scheduleId,
+    );
+
+    if (matched) {
+      return matched;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Task was not queued for schedule ${scheduleId}`);
+}

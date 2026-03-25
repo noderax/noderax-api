@@ -6,28 +6,40 @@ import { EventsModule } from '../events/events.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { AgentTasksController } from './agent-tasks.controller';
+import { ScheduledTaskSchemaBootstrap } from './bootstrap/scheduled-task-schema.bootstrap';
 import { TaskSchemaBootstrap } from './bootstrap/task-schema.bootstrap';
+import { ScheduledTaskEntity } from './entities/scheduled-task.entity';
 import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskEntity } from './entities/task.entity';
+import { ScheduledTaskRunnerService } from './scheduled-task-runner.service';
+import { ScheduledTasksController } from './scheduled-tasks.controller';
+import { ScheduledTasksService } from './scheduled-tasks.service';
 import { TaskStaleDetectorService } from './task-stale-detector.service';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TaskEntity, TaskLogEntity]),
+    TypeOrmModule.forFeature([TaskEntity, TaskLogEntity, ScheduledTaskEntity]),
     NodesModule,
     EventsModule,
     RealtimeModule,
     forwardRef(() => AgentRealtimeModule),
   ],
-  controllers: [TasksController, AgentTasksController],
+  controllers: [
+    TasksController,
+    AgentTasksController,
+    ScheduledTasksController,
+  ],
   providers: [
     TasksService,
+    ScheduledTasksService,
+    ScheduledTaskRunnerService,
     TaskSchemaBootstrap,
+    ScheduledTaskSchemaBootstrap,
     TaskStaleDetectorService,
     AgentAuthGuard,
   ],
-  exports: [TasksService],
+  exports: [TasksService, ScheduledTasksService],
 })
 export class TasksModule {}

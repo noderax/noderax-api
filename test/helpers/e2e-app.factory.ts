@@ -39,6 +39,7 @@ import { NotificationsModule } from '../../src/modules/notifications/notificatio
 import { PackagesModule } from '../../src/modules/packages/packages.module';
 import { RealtimeModule } from '../../src/modules/realtime/realtime.module';
 import { TaskLogEntity } from '../../src/modules/tasks/entities/task-log.entity';
+import { ScheduledTaskEntity } from '../../src/modules/tasks/entities/scheduled-task.entity';
 import { TaskEntity } from '../../src/modules/tasks/entities/task.entity';
 import { TasksModule } from '../../src/modules/tasks/tasks.module';
 import { UserEntity } from '../../src/modules/users/entities/user.entity';
@@ -53,6 +54,7 @@ const TEST_ENTITIES = [
   MetricEntity,
   TaskEntity,
   TaskLogEntity,
+  ScheduledTaskEntity,
 ];
 
 function createPgMemDataSource(

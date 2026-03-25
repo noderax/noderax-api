@@ -7,5 +7,10 @@ export const SYSTEM_EVENT_TYPES = {
   TASK_COMPLETED: 'task.completed',
   TASK_FAILED: 'task.failed',
   TASK_QUEUED: 'task.queued',
+  TASK_SCHEDULE_CREATED: 'task.schedule.created',
+  TASK_SCHEDULE_UPDATED: 'task.schedule.updated',
+  TASK_SCHEDULE_DELETED: 'task.schedule.deleted',
+  TASK_SCHEDULE_TRIGGERED: 'task.schedule.triggered',
+  TASK_SCHEDULE_FAILED: 'task.schedule.failed',
   TASK_STARTED: 'task.started',
 } as const;

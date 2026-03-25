@@ -79,54 +79,29 @@ export class TasksService {
   ) {}
 
   async create(createTaskDto: CreateTaskDto): Promise<TaskEntity> {
-    const node = await this.nodesService.ensureExists(createTaskDto.nodeId);
-
-    const task = this.tasksRepository.create({
+    return this.queueTask({
       nodeId: createTaskDto.nodeId,
       type: createTaskDto.type,
       payload: createTaskDto.payload ?? {},
-      status: TaskStatus.QUEUED,
-      result: null,
-      output: null,
-      outputTruncated: false,
-      startedAt: null,
-      finishedAt: null,
-      cancelRequestedAt: null,
-      cancelReason: null,
-      leaseUntil: null,
-      claimedBy: null,
-      claimToken: null,
     });
+  }
 
-    const savedTask = await this.tasksRepository.save(task);
-
-    await this.eventsService.record({
-      nodeId: savedTask.nodeId,
-      type: SYSTEM_EVENT_TYPES.TASK_QUEUED,
-      severity: EventSeverity.INFO,
-      message: `Task ${savedTask.type} queued for node ${node.hostname}`,
-      metadata: {
-        taskId: savedTask.id,
-        taskType: savedTask.type,
+  async createScheduledShellTask(input: {
+    nodeId: string;
+    scheduleId: string;
+    scheduleName: string;
+    command: string;
+  }): Promise<TaskEntity> {
+    return this.queueTask({
+      nodeId: input.nodeId,
+      type: 'shell.exec',
+      payload: {
+        title: input.scheduleName,
+        command: input.command,
+        scheduleId: input.scheduleId,
+        scheduleName: input.scheduleName,
       },
     });
-
-    this.realtimeGateway.emitTaskCreated(
-      savedTask as unknown as Record<string, unknown>,
-    );
-
-    if (this.isRealtimeTaskDispatchEnabled()) {
-      await this.agentRealtimeService.dispatchTaskToNode(savedTask);
-    }
-
-    await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
-      taskId: savedTask.id,
-      nodeId: savedTask.nodeId,
-      status: savedTask.status,
-      sourceInstanceId: this.redisService.getInstanceId(),
-    });
-
-    return savedTask;
   }
 
   async findAll(query: QueryTasksDto): Promise<TaskEntity[]> {
@@ -1271,6 +1246,61 @@ export class TasksService {
     });
 
     return this.taskLogsRepository.save(taskLog);
+  }
+
+  private async queueTask(input: {
+    nodeId: string;
+    type: string;
+    payload: Record<string, unknown>;
+  }): Promise<TaskEntity> {
+    const node = await this.nodesService.ensureExists(input.nodeId);
+
+    const task = this.tasksRepository.create({
+      nodeId: input.nodeId,
+      type: input.type,
+      payload: input.payload,
+      status: TaskStatus.QUEUED,
+      result: null,
+      output: null,
+      outputTruncated: false,
+      startedAt: null,
+      finishedAt: null,
+      cancelRequestedAt: null,
+      cancelReason: null,
+      leaseUntil: null,
+      claimedBy: null,
+      claimToken: null,
+    });
+
+    const savedTask = await this.tasksRepository.save(task);
+
+    await this.eventsService.record({
+      nodeId: savedTask.nodeId,
+      type: SYSTEM_EVENT_TYPES.TASK_QUEUED,
+      severity: EventSeverity.INFO,
+      message: `Task ${savedTask.type} queued for node ${node.hostname}`,
+      metadata: {
+        taskId: savedTask.id,
+        taskType: savedTask.type,
+      },
+    });
+
+    this.realtimeGateway.emitTaskCreated(
+      savedTask as unknown as Record<string, unknown>,
+    );
+
+    if (this.isRealtimeTaskDispatchEnabled()) {
+      await this.agentRealtimeService.dispatchTaskToNode(savedTask);
+    }
+
+    await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
+      taskId: savedTask.id,
+      nodeId: savedTask.nodeId,
+      status: savedTask.status,
+      sourceInstanceId: this.redisService.getInstanceId(),
+    });
+
+    return savedTask;
   }
 
   private isTerminalStatus(status: TaskStatus): boolean {
