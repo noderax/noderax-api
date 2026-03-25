@@ -52,6 +52,7 @@ describe('Scheduled Tasks (e2e)', () => {
   let dataSource: DataSource;
   let adminToken: string;
   let userToken: string;
+  let adminUserId: string;
   let nodeId: string;
 
   beforeAll(async () => {
@@ -68,6 +69,7 @@ describe('Scheduled Tasks (e2e)', () => {
       .expect(200);
 
     adminToken = adminLogin.body.accessToken;
+    adminUserId = adminLogin.body.user.id;
 
     await request(app.getHttpServer())
       .post(apiPath('/users'))
@@ -125,7 +127,6 @@ describe('Scheduled Tasks (e2e)', () => {
         command: 'hostname',
         cadence: 'hourly',
         minute: 5,
-        timezone: 'UTC',
       })
       .expect(403);
   });
@@ -141,12 +142,14 @@ describe('Scheduled Tasks (e2e)', () => {
         cadence: 'daily',
         minute: 15,
         hour: 3,
-        timezone: 'UTC',
       })
       .expect(201);
 
     expect(createResponse.body.name).toBe('Daily hostname check');
     expect(createResponse.body.enabled).toBe(true);
+    expect(createResponse.body.ownerUserId).toBe(adminUserId);
+    expect(createResponse.body.ownerName).toBe(process.env.ADMIN_NAME);
+    expect(createResponse.body.timezone).toBe('UTC');
 
     await request(app.getHttpServer())
       .get(apiPath('/scheduled-tasks'))
@@ -195,7 +198,6 @@ describe('Scheduled Tasks (e2e)', () => {
         command: 'hostname',
         cadence: 'hourly',
         minute: 10,
-        timezone: 'UTC',
       })
       .expect(201);
 
@@ -243,6 +245,104 @@ describe('Scheduled Tasks (e2e)', () => {
     );
 
     expect(matchingTasks).toHaveLength(1);
+  });
+
+  it('updates user timezone preferences and recomputes owned schedules', async () => {
+    await request(app.getHttpServer())
+      .patch(apiPath('/users/me/preferences'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ timezone: 'Europe/Istanbul' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.timezone).toBe('Europe/Istanbul');
+      });
+
+    const createResponse = await request(app.getHttpServer())
+      .post(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        nodeId,
+        name: 'Owner timezone schedule',
+        command: 'hostname',
+        cadence: 'daily',
+        minute: 0,
+        hour: 9,
+      })
+      .expect(201);
+
+    expect(createResponse.body.timezone).toBe('Europe/Istanbul');
+    expect(createResponse.body.ownerUserId).toBe(adminUserId);
+
+    const previousNextRunAt = createResponse.body.nextRunAt;
+
+    await request(app.getHttpServer())
+      .patch(apiPath('/users/me/preferences'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ timezone: 'America/New_York' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.timezone).toBe('America/New_York');
+      });
+
+    await request(app.getHttpServer())
+      .get(apiPath('/users/me'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.timezone).toBe('America/New_York');
+      });
+
+    await request(app.getHttpServer())
+      .get(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        const updatedSchedule = body.find(
+          (schedule: { id: string }) => schedule.id === createResponse.body.id,
+        );
+
+        expect(updatedSchedule).toEqual(
+          expect.objectContaining({
+            ownerUserId: adminUserId,
+            ownerName: process.env.ADMIN_NAME,
+            timezone: 'America/New_York',
+          }),
+        );
+        expect(updatedSchedule.nextRunAt).not.toBe(previousNextRunAt);
+      });
+
+    const legacyScheduleRepo = dataSource.getRepository(ScheduledTaskEntity);
+    await legacyScheduleRepo.update(
+      { id: createResponse.body.id },
+      {
+        ownerUserId: null,
+        timezone: 'UTC',
+      },
+    );
+
+    await request(app.getHttpServer())
+      .patch(apiPath('/users/me/preferences'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ timezone: 'Europe/Berlin' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        const legacySchedule = body.find(
+          (schedule: { id: string }) => schedule.id === createResponse.body.id,
+        );
+
+        expect(legacySchedule).toEqual(
+          expect.objectContaining({
+            ownerUserId: null,
+            timezone: 'UTC',
+            isLegacy: true,
+          }),
+        );
+      });
   });
 });
 

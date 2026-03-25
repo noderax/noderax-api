@@ -5,6 +5,7 @@ import { AgentRealtimeModule } from '../agent-realtime/agent-realtime.module';
 import { EventsModule } from '../events/events.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { UserEntity } from '../users/entities/user.entity';
 import { AgentTasksController } from './agent-tasks.controller';
 import { ScheduledTaskSchemaBootstrap } from './bootstrap/scheduled-task-schema.bootstrap';
 import { TaskSchemaBootstrap } from './bootstrap/task-schema.bootstrap';
@@ -20,7 +21,12 @@ import { TasksService } from './tasks.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TaskEntity, TaskLogEntity, ScheduledTaskEntity]),
+    TypeOrmModule.forFeature([
+      TaskEntity,
+      TaskLogEntity,
+      ScheduledTaskEntity,
+      UserEntity,
+    ]),
     NodesModule,
     EventsModule,
     RealtimeModule,

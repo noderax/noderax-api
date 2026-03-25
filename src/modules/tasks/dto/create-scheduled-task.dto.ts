@@ -11,7 +11,6 @@ import {
 } from 'class-validator';
 import {
   SCHEDULED_TASK_CADENCES,
-  SCHEDULED_TASK_TIMEZONE,
   ScheduledTaskCadence,
 } from '../scheduled-task.utils';
 
@@ -75,13 +74,4 @@ export class CreateScheduledTaskDto {
   @Min(0)
   @Max(6)
   dayOfWeek?: number;
-
-  @ApiPropertyOptional({
-    example: SCHEDULED_TASK_TIMEZONE,
-    default: SCHEDULED_TASK_TIMEZONE,
-  })
-  @IsOptional()
-  @IsString()
-  @IsIn([SCHEDULED_TASK_TIMEZONE])
-  timezone?: typeof SCHEDULED_TASK_TIMEZONE;
 }

@@ -1,7 +1,4 @@
-import {
-  ApiProperty,
-  ApiPropertyOptional,
-} from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -13,6 +10,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { NodeEntity } from '../../nodes/entities/node.entity';
+import { UserEntity } from '../../users/entities/user.entity';
 import {
   SCHEDULED_TASK_CADENCES,
   ScheduledTaskCadence,
@@ -25,6 +23,7 @@ import {
   'enabled',
   'nextRunAt',
 ])
+@Index('IDX_scheduled_tasks_owner_user', ['ownerUserId'])
 @Entity({ name: 'scheduled_tasks' })
 export class ScheduledTaskEntity {
   @ApiProperty({
@@ -44,6 +43,29 @@ export class ScheduledTaskEntity {
   @ManyToOne(() => NodeEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'nodeId' })
   node?: NodeEntity;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    example: '4d2d2219-5d3e-4761-a79b-3c09ae88d6d3',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  ownerUserId: string | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'ownerUserId' })
+  owner?: UserEntity | null;
+
+  @ApiPropertyOptional({
+    example: 'Noderax Admin',
+    nullable: true,
+  })
+  ownerName?: string | null;
+
+  @ApiProperty({
+    example: false,
+  })
+  isLegacy: boolean;
 
   @ApiProperty({
     example: 'Daily hostname check',
@@ -93,7 +115,7 @@ export class ScheduledTaskEntity {
   @ApiProperty({
     example: SCHEDULED_TASK_TIMEZONE,
   })
-  @Column({ length: 32, default: SCHEDULED_TASK_TIMEZONE })
+  @Column({ length: 80, default: SCHEDULED_TASK_TIMEZONE })
   timezone: string;
 
   @ApiProperty({

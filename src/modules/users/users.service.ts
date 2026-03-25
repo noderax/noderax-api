@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -14,7 +15,14 @@ import {
   authConfig,
   bootstrapConfig,
 } from '../../config';
+import {
+  assertValidTimeZone,
+  DEFAULT_TIMEZONE,
+} from '../../common/utils/timezone.util';
+import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
+import { computeNextScheduledRun } from '../tasks/scheduled-task.utils';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UserEntity } from './entities/user.entity';
 import { UserRole } from './entities/user-role.enum';
@@ -26,6 +34,8 @@ export class UsersService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
+    @InjectRepository(ScheduledTaskEntity)
+    private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -45,6 +55,7 @@ export class UsersService {
       name: createUserDto.name,
       role: createUserDto.role ?? UserRole.USER,
       passwordHash,
+      timezone: DEFAULT_TIMEZONE,
     });
 
     const savedUser = await this.usersRepository.save(user);
@@ -67,6 +78,48 @@ export class UsersService {
     }
 
     return user;
+  }
+
+  async updatePreferences(
+    userId: string,
+    dto: UpdateUserPreferencesDto,
+  ): Promise<UserResponseDto> {
+    const user = await this.findOneOrFail(userId);
+    const timezone = assertValidTimeZone(dto.timezone);
+
+    if (!timezone) {
+      throw new BadRequestException('Timezone is required.');
+    }
+
+    const timezoneChanged = user.timezone !== timezone;
+    if (!timezoneChanged) {
+      return this.toResponse(user);
+    }
+
+    user.timezone = timezone;
+    const savedUser = await this.usersRepository.save(user);
+    const ownedSchedules = await this.scheduledTasksRepository.find({
+      where: { ownerUserId: savedUser.id },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (ownedSchedules.length > 0) {
+      const now = new Date();
+
+      for (const schedule of ownedSchedules) {
+        schedule.timezone = savedUser.timezone;
+        schedule.claimToken = null;
+        schedule.claimedBy = null;
+        schedule.leaseUntil = null;
+        schedule.nextRunAt = schedule.enabled
+          ? computeNextScheduledRun(schedule, now)
+          : null;
+      }
+
+      await this.scheduledTasksRepository.save(ownedSchedules);
+    }
+
+    return this.toResponse(savedUser);
   }
 
   async findByEmail(email: string) {
@@ -108,6 +161,7 @@ export class UsersService {
       name: bootstrap.adminName,
       role: UserRole.ADMIN,
       passwordHash,
+      timezone: DEFAULT_TIMEZONE,
     });
 
     await this.usersRepository.save(adminUser);
@@ -121,6 +175,7 @@ export class UsersService {
       name: user.name,
       role: user.role,
       isActive: user.isActive,
+      timezone: user.timezone,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

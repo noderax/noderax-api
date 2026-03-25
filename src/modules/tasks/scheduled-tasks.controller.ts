@@ -17,6 +17,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user-role.enum';
 import { CreateScheduledTaskDto } from './dto/create-scheduled-task.dto';
@@ -47,8 +49,11 @@ export class ScheduledTasksController {
   @ApiForbiddenResponse({
     description: 'Insufficient permissions.',
   })
-  create(@Body() dto: CreateScheduledTaskDto) {
-    return this.scheduledTasksService.create(dto);
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateScheduledTaskDto,
+  ) {
+    return this.scheduledTasksService.create(user.id, dto);
   }
 
   @Get()

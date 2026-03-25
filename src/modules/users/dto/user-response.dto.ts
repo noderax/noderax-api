@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { DEFAULT_TIMEZONE } from '../../../common/utils/timezone.util';
 import { UserRole } from '../entities/user-role.enum';
 
 export class UserResponseDto {
@@ -29,6 +30,11 @@ export class UserResponseDto {
     example: true,
   })
   isActive: boolean;
+
+  @ApiProperty({
+    example: DEFAULT_TIMEZONE,
+  })
+  timezone: string;
 
   @ApiProperty({
     format: 'date-time',

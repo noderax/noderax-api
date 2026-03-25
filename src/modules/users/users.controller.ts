@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -13,6 +13,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UserRole } from './entities/user-role.enum';
 import { UsersService } from './users.service';
@@ -54,6 +55,21 @@ export class UsersController {
   async getMe(@CurrentUser() user: AuthenticatedUser) {
     const currentUser = await this.usersService.findOneOrFail(user.id);
     return this.usersService.toResponse(currentUser);
+  }
+
+  @Patch('me/preferences')
+  @ApiOperation({
+    summary: 'Update current user preferences',
+  })
+  @ApiOkResponse({
+    description: 'Authenticated user preferences updated.',
+    type: UserResponseDto,
+  })
+  updatePreferences(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateUserPreferencesDto,
+  ) {
+    return this.usersService.updatePreferences(user.id, dto);
   }
 
   @Roles(UserRole.ADMIN)

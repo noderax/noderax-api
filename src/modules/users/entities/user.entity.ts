@@ -5,6 +5,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { DEFAULT_TIMEZONE } from '../../../common/utils/timezone.util';
 import { UserRole } from './user-role.enum';
 
 @Entity({ name: 'users' })
@@ -31,6 +32,9 @@ export class UserEntity {
 
   @Column({ default: true })
   isActive: boolean;
+
+  @Column({ length: 80, default: DEFAULT_TIMEZONE })
+  timezone: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

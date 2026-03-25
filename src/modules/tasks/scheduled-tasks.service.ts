@@ -6,11 +6,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodesService } from '../nodes/nodes.service';
+import { UserEntity } from '../users/entities/user.entity';
 import { CreateScheduledTaskDto } from './dto/create-scheduled-task.dto';
 import { UpdateScheduledTaskDto } from './dto/update-scheduled-task.dto';
 import { ScheduledTaskEntity } from './entities/scheduled-task.entity';
@@ -29,28 +30,43 @@ export class ScheduledTasksService {
   constructor(
     @InjectRepository(ScheduledTaskEntity)
     private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
+    @InjectRepository(UserEntity)
+    private readonly usersRepository: Repository<UserEntity>,
     private readonly nodesService: NodesService,
     private readonly eventsService: EventsService,
     private readonly tasksService: TasksService,
   ) {}
 
   async create(
+    ownerUserId: string,
     createScheduledTaskDto: CreateScheduledTaskDto,
   ): Promise<ScheduledTaskEntity> {
     await this.nodesService.ensureExists(createScheduledTaskDto.nodeId);
+    const owner = await this.usersRepository.findOne({
+      where: { id: ownerUserId },
+    });
+
+    if (!owner) {
+      throw new NotFoundException(`User ${ownerUserId} was not found`);
+    }
 
     const normalized = this.normalizeScheduleInput(createScheduledTaskDto);
-    const nextRunAt = computeNextScheduledRun(normalized, new Date());
+    const scheduleTiming = {
+      ...normalized,
+      timezone: owner.timezone,
+    };
+    const nextRunAt = computeNextScheduledRun(scheduleTiming, new Date());
 
     const scheduledTask = this.scheduledTasksRepository.create({
       nodeId: createScheduledTaskDto.nodeId,
+      ownerUserId: owner.id,
       name: normalized.name,
       command: normalized.command,
       cadence: normalized.cadence,
       minute: normalized.minute,
       hour: normalized.hour,
       dayOfWeek: normalized.dayOfWeek,
-      timezone: SCHEDULED_TASK_TIMEZONE,
+      timezone: owner.timezone,
       enabled: true,
       nextRunAt,
       lastRunAt: null,
@@ -62,6 +78,8 @@ export class ScheduledTasksService {
     });
 
     const saved = await this.scheduledTasksRepository.save(scheduledTask);
+    saved.ownerName = owner.name;
+    saved.isLegacy = false;
 
     await this.eventsService.record({
       nodeId: saved.nodeId,
@@ -72,6 +90,9 @@ export class ScheduledTasksService {
         scheduleId: saved.id,
         scheduleName: saved.name,
         cadence: saved.cadence,
+        ownerUserId: saved.ownerUserId,
+        ownerName: owner.name,
+        timezone: saved.timezone,
         nextRunAt: saved.nextRunAt?.toISOString() ?? null,
       },
     });
@@ -80,12 +101,14 @@ export class ScheduledTasksService {
   }
 
   async findAll(): Promise<ScheduledTaskEntity[]> {
-    return this.scheduledTasksRepository
+    const schedules = await this.scheduledTasksRepository
       .createQueryBuilder('schedule')
       .orderBy('schedule.enabled', 'DESC')
       .addOrderBy('schedule.nextRunAt', 'ASC', 'NULLS LAST')
       .addOrderBy('schedule.createdAt', 'ASC')
       .getMany();
+
+    return this.populateOwnerMetadata(schedules);
   }
 
   async findOneOrFail(id: string): Promise<ScheduledTaskEntity> {
@@ -97,7 +120,10 @@ export class ScheduledTasksService {
       throw new NotFoundException(`Scheduled task ${id} was not found`);
     }
 
-    return scheduledTask;
+    const [decoratedSchedule] = await this.populateOwnerMetadata([
+      scheduledTask,
+    ]);
+    return decoratedSchedule;
   }
 
   async updateEnabled(
@@ -120,6 +146,9 @@ export class ScheduledTasksService {
     }
 
     const saved = await this.scheduledTasksRepository.save(scheduledTask);
+    saved.ownerName = scheduledTask.ownerName ?? null;
+    saved.isLegacy =
+      saved.ownerUserId === null && saved.timezone === SCHEDULED_TASK_TIMEZONE;
 
     await this.eventsService.record({
       nodeId: saved.nodeId,
@@ -132,6 +161,8 @@ export class ScheduledTasksService {
         scheduleId: saved.id,
         scheduleName: saved.name,
         enabled: saved.enabled,
+        ownerUserId: saved.ownerUserId,
+        timezone: saved.timezone,
         nextRunAt: saved.nextRunAt?.toISOString() ?? null,
       },
     });
@@ -158,6 +189,34 @@ export class ScheduledTasksService {
       deleted: true,
       id,
     };
+  }
+
+  async syncSchedulesForOwnerTimezoneChange(
+    ownerUserId: string,
+    timezone: string,
+  ): Promise<number> {
+    const schedules = await this.scheduledTasksRepository.find({
+      where: { ownerUserId },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (schedules.length === 0) {
+      return 0;
+    }
+
+    const now = new Date();
+    for (const schedule of schedules) {
+      schedule.timezone = timezone;
+      schedule.claimToken = null;
+      schedule.claimedBy = null;
+      schedule.leaseUntil = null;
+      schedule.nextRunAt = schedule.enabled
+        ? computeNextScheduledRun(schedule, now)
+        : null;
+    }
+
+    await this.scheduledTasksRepository.save(schedules);
+    return schedules.length;
   }
 
   async claimNextDueSchedule(
@@ -249,6 +308,7 @@ export class ScheduledTasksService {
           scheduleId: scheduledTask.id,
           scheduleName: scheduledTask.name,
           taskId: createdTask.id,
+          timezone: scheduledTask.timezone,
           nextRunAt: nextRunAt.toISOString(),
         },
       });
@@ -292,6 +352,39 @@ export class ScheduledTasksService {
         error: message,
       };
     }
+  }
+
+  private async populateOwnerMetadata(
+    schedules: ScheduledTaskEntity[],
+  ): Promise<ScheduledTaskEntity[]> {
+    const ownerIds = Array.from(
+      new Set(
+        schedules
+          .map((schedule) => schedule.ownerUserId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+
+    const owners =
+      ownerIds.length > 0
+        ? ((await this.usersRepository.find({
+            where: {
+              id: In(ownerIds),
+            },
+          })) ?? [])
+        : [];
+    const ownerLookup = new Map(owners.map((owner) => [owner.id, owner]));
+
+    return schedules.map((schedule) => {
+      const owner = schedule.ownerUserId
+        ? ownerLookup.get(schedule.ownerUserId)
+        : null;
+      schedule.ownerName = owner?.name ?? null;
+      schedule.isLegacy =
+        schedule.ownerUserId === null &&
+        schedule.timezone === SCHEDULED_TASK_TIMEZONE;
+      return schedule;
+    });
   }
 
   private normalizeScheduleInput(input: CreateScheduledTaskDto): {

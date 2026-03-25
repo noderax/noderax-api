@@ -7,6 +7,7 @@ describe('ScheduledTasksService', () => {
   const findOne = jest.fn();
   const remove = jest.fn();
   const update = jest.fn();
+  const find = jest.fn();
 
   const repository = {
     save,
@@ -14,7 +15,13 @@ describe('ScheduledTasksService', () => {
     findOne,
     remove,
     update,
+    find,
     createQueryBuilder: jest.fn(),
+  };
+
+  const usersRepository = {
+    findOne: jest.fn(),
+    find: jest.fn(),
   };
 
   const nodesService = {
@@ -31,6 +38,7 @@ describe('ScheduledTasksService', () => {
 
   const service = new ScheduledTasksService(
     repository as never,
+    usersRepository as never,
     nodesService as never,
     eventsService as never,
     tasksService as never,
@@ -38,6 +46,35 @@ describe('ScheduledTasksService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('recomputes owned schedules when the owner timezone changes', async () => {
+    const enabledSchedule = buildSchedule({
+      ownerUserId: 'owner-1',
+      timezone: 'UTC',
+      enabled: true,
+    });
+    const disabledSchedule = buildSchedule({
+      id: 'disabled-schedule',
+      ownerUserId: 'owner-1',
+      timezone: 'UTC',
+      enabled: false,
+      nextRunAt: null,
+    });
+    find.mockResolvedValue([enabledSchedule, disabledSchedule]);
+    save.mockImplementation(async (value) => value);
+
+    const count = await service.syncSchedulesForOwnerTimezoneChange(
+      'owner-1',
+      'Europe/Istanbul',
+    );
+
+    expect(count).toBe(2);
+    expect(enabledSchedule.timezone).toBe('Europe/Istanbul');
+    expect(enabledSchedule.nextRunAt).toBeInstanceOf(Date);
+    expect(disabledSchedule.timezone).toBe('Europe/Istanbul');
+    expect(disabledSchedule.nextRunAt).toBeNull();
+    expect(save).toHaveBeenCalledWith([enabledSchedule, disabledSchedule]);
   });
 
   it('disables schedules by clearing next run and lease state', async () => {
@@ -137,6 +174,9 @@ function buildSchedule(
     hour: 3,
     dayOfWeek: null,
     timezone: 'UTC',
+    ownerUserId: 'owner-1',
+    ownerName: 'Noderax Admin',
+    isLegacy: false,
     enabled: true,
     nextRunAt: new Date('2026-03-27T03:15:00.000Z'),
     lastRunAt: null,
