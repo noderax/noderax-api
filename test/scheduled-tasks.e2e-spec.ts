@@ -188,6 +188,26 @@ describe('Scheduled Tasks (e2e)', () => {
       });
   });
 
+  it('creates custom interval schedules', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post(apiPath('/scheduled-tasks'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        nodeId,
+        name: 'Every 7 minutes',
+        command: 'hostname',
+        cadence: 'custom',
+        minute: 0,
+        intervalMinutes: 7,
+      })
+      .expect(201);
+
+    expect(createResponse.body.cadence).toBe('custom');
+    expect(createResponse.body.intervalMinutes).toBe(7);
+    expect(createResponse.body.hour).toBeNull();
+    expect(createResponse.body.dayOfWeek).toBeNull();
+  });
+
   it('queues a real task when a due schedule is detected and skips disabled schedules', async () => {
     const createResponse = await request(app.getHttpServer())
       .post(apiPath('/scheduled-tasks'))

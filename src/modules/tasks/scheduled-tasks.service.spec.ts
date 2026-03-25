@@ -173,6 +173,7 @@ function buildSchedule(
     minute: 15,
     hour: 3,
     dayOfWeek: null,
+    intervalMinutes: null,
     timezone: 'UTC',
     ownerUserId: 'owner-1',
     ownerName: 'Noderax Admin',

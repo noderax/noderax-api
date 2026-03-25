@@ -74,4 +74,15 @@ export class CreateScheduledTaskDto {
   @Min(0)
   @Max(6)
   dayOfWeek?: number;
+
+  @ApiPropertyOptional({
+    example: 5,
+    minimum: 1,
+    maximum: 10080,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10_080)
+  intervalMinutes?: number;
 }

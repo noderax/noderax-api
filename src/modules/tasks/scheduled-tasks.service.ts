@@ -66,6 +66,7 @@ export class ScheduledTasksService {
       minute: normalized.minute,
       hour: normalized.hour,
       dayOfWeek: normalized.dayOfWeek,
+      intervalMinutes: normalized.intervalMinutes,
       timezone: owner.timezone,
       enabled: true,
       nextRunAt,
@@ -394,6 +395,7 @@ export class ScheduledTasksService {
     minute: number;
     hour: number | null;
     dayOfWeek: number | null;
+    intervalMinutes: number | null;
   } {
     const name = input.name.trim();
     const command = input.command.trim();
@@ -408,8 +410,58 @@ export class ScheduledTasksService {
       throw new BadRequestException('Command must not be empty.');
     }
 
-    if (input.cadence === 'hourly') {
+    if (input.cadence === 'minutely') {
+      if (
+        input.hour !== undefined ||
+        input.dayOfWeek !== undefined ||
+        input.intervalMinutes !== undefined
+      ) {
+        throw new BadRequestException(
+          'Minutely schedules do not accept hour, dayOfWeek, or intervalMinutes values.',
+        );
+      }
+
+      return {
+        name,
+        command,
+        cadence: input.cadence,
+        minute: 0,
+        hour: null,
+        dayOfWeek: null,
+        intervalMinutes: null,
+      };
+    }
+
+    if (input.cadence === 'custom') {
+      if (input.intervalMinutes === undefined) {
+        throw new BadRequestException(
+          'Custom schedules require an intervalMinutes value.',
+        );
+      }
+
       if (input.hour !== undefined || input.dayOfWeek !== undefined) {
+        throw new BadRequestException(
+          'Custom schedules do not accept hour or dayOfWeek values.',
+        );
+      }
+
+      return {
+        name,
+        command,
+        cadence: input.cadence,
+        minute: 0,
+        hour: null,
+        dayOfWeek: null,
+        intervalMinutes: input.intervalMinutes,
+      };
+    }
+
+    if (input.cadence === 'hourly') {
+      if (
+        input.hour !== undefined ||
+        input.dayOfWeek !== undefined ||
+        input.intervalMinutes !== undefined
+      ) {
         throw new BadRequestException(
           'Hourly schedules accept only the minute field.',
         );
@@ -422,6 +474,7 @@ export class ScheduledTasksService {
         minute: input.minute,
         hour: null,
         dayOfWeek: null,
+        intervalMinutes: null,
       };
     }
 
@@ -429,9 +482,12 @@ export class ScheduledTasksService {
       if (input.hour === undefined) {
         throw new BadRequestException('Daily schedules require an hour value.');
       }
-      if (input.dayOfWeek !== undefined) {
+      if (
+        input.dayOfWeek !== undefined ||
+        input.intervalMinutes !== undefined
+      ) {
         throw new BadRequestException(
-          'Daily schedules do not accept a dayOfWeek value.',
+          'Daily schedules do not accept dayOfWeek or intervalMinutes values.',
         );
       }
 
@@ -442,12 +498,19 @@ export class ScheduledTasksService {
         minute: input.minute,
         hour: input.hour,
         dayOfWeek: null,
+        intervalMinutes: null,
       };
     }
 
     if (input.hour === undefined || input.dayOfWeek === undefined) {
       throw new BadRequestException(
         'Weekly schedules require both hour and dayOfWeek values.',
+      );
+    }
+
+    if (input.intervalMinutes !== undefined) {
+      throw new BadRequestException(
+        'Weekly schedules do not accept an intervalMinutes value.',
       );
     }
 
@@ -458,6 +521,7 @@ export class ScheduledTasksService {
       minute: input.minute,
       hour: input.hour,
       dayOfWeek: input.dayOfWeek,
+      intervalMinutes: null,
     };
   }
 }

@@ -112,6 +112,15 @@ export class ScheduledTaskEntity {
   @Column({ type: 'smallint', nullable: true })
   dayOfWeek: number | null;
 
+  @ApiPropertyOptional({
+    example: 5,
+    minimum: 1,
+    maximum: 10080,
+    nullable: true,
+  })
+  @Column({ type: 'smallint', nullable: true })
+  intervalMinutes: number | null;
+
   @ApiProperty({
     example: SCHEDULED_TASK_TIMEZONE,
   })

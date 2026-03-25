@@ -3,7 +3,13 @@ import {
   DEFAULT_TIMEZONE,
 } from '../../common/utils/timezone.util';
 
-export const SCHEDULED_TASK_CADENCES = ['hourly', 'daily', 'weekly'] as const;
+export const SCHEDULED_TASK_CADENCES = [
+  'minutely',
+  'custom',
+  'hourly',
+  'daily',
+  'weekly',
+] as const;
 export type ScheduledTaskCadence = (typeof SCHEDULED_TASK_CADENCES)[number];
 
 export const SCHEDULED_TASK_TIMEZONE = DEFAULT_TIMEZONE;
@@ -15,6 +21,7 @@ type ScheduledTaskTiming = {
   minute: number;
   hour: number | null;
   dayOfWeek: number | null;
+  intervalMinutes?: number | null;
   timezone?: string | null;
 };
 
@@ -27,11 +34,19 @@ export function computeNextScheduledRun(
   const normalizedHour = input.hour === null ? null : clamp(input.hour, 0, 23);
   const normalizedDay =
     input.dayOfWeek === null ? null : clamp(input.dayOfWeek, 0, 6);
+  const normalizedInterval =
+    input.intervalMinutes === null || input.intervalMinutes === undefined
+      ? null
+      : clamp(input.intervalMinutes, 1, 10_080);
   const timezone = assertValidTimeZone(
     input.timezone ?? SCHEDULED_TASK_TIMEZONE,
   );
 
   switch (input.cadence) {
+    case 'minutely':
+      return computeMinutelyRun(reference);
+    case 'custom':
+      return computeCustomIntervalRun(normalizedInterval ?? 1, reference);
     case 'hourly':
       return computeHourlyRun(normalizedMinute, reference, timezone);
     case 'daily':
@@ -57,8 +72,13 @@ export function computeNextScheduledRun(
 export function describeScheduledTask(input: ScheduledTaskTiming): string {
   const minute = input.minute.toString().padStart(2, '0');
   const timezone = input.timezone ?? SCHEDULED_TASK_TIMEZONE;
+  const intervalMinutes = input.intervalMinutes ?? 1;
 
   switch (input.cadence) {
+    case 'minutely':
+      return `Every minute ${timezone}`;
+    case 'custom':
+      return `Every ${intervalMinutes} minutes ${timezone}`;
     case 'hourly':
       return `Every hour at :${minute} ${timezone}`;
     case 'daily':
@@ -132,6 +152,25 @@ function computeHourlyRun(minute: number, from: Date, timezone: string): Date {
   }
 
   throw new Error(`Unable to resolve hourly schedule in ${timezone}`);
+}
+
+function computeMinutelyRun(from: Date): Date {
+  const candidate = new Date(from);
+  candidate.setUTCSeconds(0, 0);
+
+  if (candidate.getTime() <= from.getTime()) {
+    candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
+  }
+
+  return candidate;
+}
+
+function computeCustomIntervalRun(intervalMinutes: number, from: Date): Date {
+  const candidate = computeMinutelyRun(from);
+  candidate.setUTCMinutes(
+    candidate.getUTCMinutes() + Math.max(0, intervalMinutes - 1),
+  );
+  return candidate;
 }
 
 function computeDailyRun(

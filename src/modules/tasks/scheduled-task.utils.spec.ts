@@ -1,6 +1,37 @@
 import { computeNextScheduledRun } from './scheduled-task.utils';
 
 describe('computeNextScheduledRun', () => {
+  it('advances minutely schedules to the next minute boundary', () => {
+    const nextRun = computeNextScheduledRun(
+      {
+        cadence: 'minutely',
+        minute: 0,
+        hour: null,
+        dayOfWeek: null,
+        timezone: 'UTC',
+      },
+      new Date('2026-03-26T09:31:20.000Z'),
+    );
+
+    expect(nextRun.toISOString()).toBe('2026-03-26T09:32:00.000Z');
+  });
+
+  it('advances custom schedules using the requested minute interval', () => {
+    const nextRun = computeNextScheduledRun(
+      {
+        cadence: 'custom',
+        minute: 0,
+        hour: null,
+        dayOfWeek: null,
+        intervalMinutes: 7,
+        timezone: 'UTC',
+      },
+      new Date('2026-03-26T09:31:20.000Z'),
+    );
+
+    expect(nextRun.toISOString()).toBe('2026-03-26T09:38:00.000Z');
+  });
+
   it('advances hourly schedules without drift across DST jumps', () => {
     const nextRun = computeNextScheduledRun(
       {
