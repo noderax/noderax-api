@@ -12,6 +12,8 @@ import { DataSource } from 'typeorm';
 import { APP_ENTITIES } from '../../database/app-entities';
 import {
   BOOT_MODE_ENV,
+  ensureInstallStateWritable,
+  getInstallStateHealth,
   hasInstallState,
   INSTALLER_MANAGED_FLAG,
   writeInstallState,
@@ -42,11 +44,14 @@ export class SetupService {
   private restartRequired = false;
 
   getStatus(): SetupStatusResponseDto {
+    const stateDirectory = getInstallStateHealth();
+
     if (this.restartRequired) {
       return {
         mode: 'restart_required',
         installed: false,
         restartRequired: true,
+        stateDirectory,
       };
     }
 
@@ -62,18 +67,21 @@ export class SetupService {
           mode: 'installed',
           installed: true,
           restartRequired: false,
+          stateDirectory,
         };
       case 'legacy':
         return {
           mode: 'legacy',
           installed: true,
           restartRequired: false,
+          stateDirectory,
         };
       default:
         return {
           mode: 'setup',
           installed: false,
           restartRequired: false,
+          stateDirectory,
         };
     }
   }
@@ -107,13 +115,40 @@ export class SetupService {
     }
 
     const postgresProbe = await this.probePostgres(dto.postgres);
-    if (!postgresProbe.databaseEmpty) {
+    await this.probeRedis(dto.redis);
+
+    try {
+      ensureInstallStateWritable();
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
+
+    const recoverablePartialInstall = !postgresProbe.databaseEmpty
+      ? await this.isRecoverablePartialInstall(dto.postgres)
+      : false;
+
+    if (!postgresProbe.databaseEmpty && !recoverablePartialInstall) {
       throw new ConflictException(
         'Database is not empty. Use manual migration for existing deployments.',
       );
     }
 
-    await this.probeRedis(dto.redis);
+    if (recoverablePartialInstall) {
+      writeInstallState({
+        version: 1,
+        source: 'installer',
+        installedAt: new Date().toISOString(),
+        runtimeEnv: this.buildRuntimeEnv(dto),
+      });
+
+      this.restartRequired = true;
+      this.logger.log('Recovered installer state after a partial setup run');
+
+      return {
+        success: true as const,
+        restartRequired: true as const,
+      };
+    }
 
     let dataSource: DataSource | null = null;
     const postgresClient = this.createPostgresClient(dto.postgres);
@@ -196,31 +231,7 @@ export class SetupService {
         version: 1,
         source: 'installer',
         installedAt: new Date().toISOString(),
-        runtimeEnv: {
-          DB_HOST: dto.postgres.host,
-          DB_PORT: String(dto.postgres.port ?? 5432),
-          DB_USERNAME: dto.postgres.username,
-          DB_PASSWORD: dto.postgres.password,
-          DB_NAME: dto.postgres.database,
-          DB_SSL: dto.postgres.ssl ? 'true' : 'false',
-          DB_SYNCHRONIZE: 'false',
-          DB_LOGGING: 'false',
-          REDIS_ENABLED: 'true',
-          REDIS_HOST: dto.redis.host,
-          REDIS_PORT: String(dto.redis.port ?? 6379),
-          REDIS_PASSWORD: dto.redis.password ?? '',
-          REDIS_DB: String(dto.redis.db ?? 0),
-          REDIS_URL: '',
-          REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX ?? 'noderax:',
-          JWT_SECRET: this.generateSecret(),
-          JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '1d',
-          BCRYPT_SALT_ROUNDS:
-            process.env.BCRYPT_SALT_ROUNDS ??
-            String(DEFAULT_BCRYPT_SALT_ROUNDS),
-          AGENT_ENROLLMENT_TOKEN: this.generateSecret(),
-          SEED_DEFAULT_ADMIN: 'false',
-          [INSTALLER_MANAGED_FLAG]: 'true',
-        },
+        runtimeEnv: this.buildRuntimeEnv(dto),
       });
 
       this.restartRequired = true;
@@ -321,5 +332,113 @@ export class SetupService {
 
   private generateSecret() {
     return randomBytes(48).toString('base64url');
+  }
+
+  private buildRuntimeEnv(dto: InstallSetupDto): Record<string, string> {
+    return {
+      DB_HOST: dto.postgres.host,
+      DB_PORT: String(dto.postgres.port ?? 5432),
+      DB_USERNAME: dto.postgres.username,
+      DB_PASSWORD: dto.postgres.password,
+      DB_NAME: dto.postgres.database,
+      DB_SSL: dto.postgres.ssl ? 'true' : 'false',
+      DB_SYNCHRONIZE: 'false',
+      DB_LOGGING: 'false',
+      REDIS_ENABLED: 'true',
+      REDIS_HOST: dto.redis.host,
+      REDIS_PORT: String(dto.redis.port ?? 6379),
+      REDIS_PASSWORD: dto.redis.password ?? '',
+      REDIS_DB: String(dto.redis.db ?? 0),
+      REDIS_URL: '',
+      REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX ?? 'noderax:',
+      JWT_SECRET: this.generateSecret(),
+      JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '1d',
+      BCRYPT_SALT_ROUNDS:
+        process.env.BCRYPT_SALT_ROUNDS ?? String(DEFAULT_BCRYPT_SALT_ROUNDS),
+      AGENT_ENROLLMENT_TOKEN: this.generateSecret(),
+      SEED_DEFAULT_ADMIN: 'false',
+      [INSTALLER_MANAGED_FLAG]: 'true',
+    };
+  }
+
+  private async isRecoverablePartialInstall(
+    dto: ValidatePostgresConnectionDto,
+  ): Promise<boolean> {
+    const client = this.createPostgresClient(dto);
+
+    try {
+      await client.connect();
+
+      const tablesResult = await client.query<{ table_name: string }>(
+        `
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = ANY($1::text[])
+        `,
+        [['users', 'workspaces', 'workspace_memberships']],
+      );
+
+      const presentTables = new Set(
+        tablesResult.rows.map((row) => row.table_name),
+      );
+
+      if (
+        !presentTables.has('users') ||
+        !presentTables.has('workspaces') ||
+        !presentTables.has('workspace_memberships')
+      ) {
+        return false;
+      }
+
+      const result = await client.query<{
+        adminCount: string;
+        workspaceCount: string;
+        ownerMembershipCount: string;
+        nodeCount: string;
+        taskCount: string;
+        scheduledTaskCount: string;
+        eventCount: string;
+        metricCount: string;
+        enrollmentCount: string;
+      }>(`
+        SELECT
+          (SELECT COUNT(*)::text FROM "users" WHERE "role"::text = 'platform_admin') AS "adminCount",
+          (SELECT COUNT(*)::text FROM "workspaces") AS "workspaceCount",
+          (SELECT COUNT(*)::text FROM "workspace_memberships" WHERE "role"::text = 'owner') AS "ownerMembershipCount",
+          (SELECT COUNT(*)::text FROM "nodes") AS "nodeCount",
+          (SELECT COUNT(*)::text FROM "tasks") AS "taskCount",
+          (SELECT COUNT(*)::text FROM "scheduled_tasks") AS "scheduledTaskCount",
+          (SELECT COUNT(*)::text FROM "events") AS "eventCount",
+          (SELECT COUNT(*)::text FROM "metrics") AS "metricCount",
+          (SELECT COUNT(*)::text FROM "enrollments") AS "enrollmentCount"
+      `);
+
+      const snapshot = result.rows[0];
+
+      if (!snapshot) {
+        return false;
+      }
+
+      const runtimeCounts = [
+        snapshot.nodeCount,
+        snapshot.taskCount,
+        snapshot.scheduledTaskCount,
+        snapshot.eventCount,
+        snapshot.metricCount,
+        snapshot.enrollmentCount,
+      ].map((value) => Number(value ?? '0'));
+
+      return (
+        Number(snapshot.adminCount ?? '0') > 0 &&
+        Number(snapshot.workspaceCount ?? '0') > 0 &&
+        Number(snapshot.ownerMembershipCount ?? '0') > 0 &&
+        runtimeCounts.every((count) => count === 0)
+      );
+    } catch {
+      return false;
+    } finally {
+      await client.end().catch(() => undefined);
+    }
   }
 }
