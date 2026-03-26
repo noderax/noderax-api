@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { DEFAULT_TIMEZONE } from '../../../common/utils/timezone.util';
+import { INSTALLER_MANAGED_FLAG } from '../../../install/install-state';
 
 const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
 const DEFAULT_WORKSPACE_SLUG = 'default';
@@ -12,6 +13,13 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
   constructor(private readonly dataSource: DataSource) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    if (process.env[INSTALLER_MANAGED_FLAG] === 'true') {
+      this.logger.log(
+        'Skipping legacy default workspace migration for installer-managed deployment',
+      );
+      return;
+    }
+
     const defaultWorkspaceId = await this.ensureDefaultWorkspace();
     await this.promoteLegacyAdmins();
     await this.backfillWorkspaceIds(defaultWorkspaceId);
@@ -71,7 +79,9 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
     `);
   }
 
-  private async backfillWorkspaceIds(defaultWorkspaceId: string): Promise<void> {
+  private async backfillWorkspaceIds(
+    defaultWorkspaceId: string,
+  ): Promise<void> {
     const targets = [
       'nodes',
       'tasks',

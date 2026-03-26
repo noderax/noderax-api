@@ -14,9 +14,16 @@ import { SWAGGER_BEARER_AUTH_NAME } from './common/constants/swagger.constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { APP_CONFIG_KEY, appConfig } from './config';
+import { prepareBootEnvironment } from './install/boot-mode';
+import { readInstallState } from './install/install-state';
+import { SetupAppModule } from './setup-app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+  const installState = readInstallState();
+  const bootMode = prepareBootEnvironment(installState);
+  const rootModule = bootMode === 'setup' ? SetupAppModule : AppModule;
+
+  const app = await NestFactory.create<NestExpressApplication>(rootModule, {
     bufferLogs: true,
   });
 
@@ -103,6 +110,9 @@ async function bootstrap() {
   const apiBaseUrl = buildPublicUrl(publicBaseUrl, apiPrefix);
 
   logger.log(`Noderax API listening at ${apiBaseUrl}`);
+  if (bootMode === 'setup') {
+    logger.log('Installer setup mode is active');
+  }
   if (swaggerEnabled) {
     logger.log(
       `Swagger UI available at ${buildPublicUrl(publicBaseUrl, apiPrefix, swaggerPath)}`,

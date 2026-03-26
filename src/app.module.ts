@@ -23,6 +23,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PackagesModule } from './modules/packages/packages.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { TasksModule } from './modules/tasks/tasks.module';
+import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { RedisModule } from './redis/redis.module';
@@ -49,6 +50,7 @@ import { RedisModule } from './redis/redis.module';
     RealtimeModule,
     AgentRealtimeModule,
     NotificationsModule,
+    SetupModule,
     UsersModule,
     WorkspacesModule,
     AuthModule,
