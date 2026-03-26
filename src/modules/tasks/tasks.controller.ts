@@ -12,6 +12,7 @@ import {
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user-role.enum';
+import { CreateBatchTaskDto } from './dto/create-batch-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskLogsDto } from './dto/query-task-logs.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
@@ -45,6 +46,25 @@ export class TasksController {
   })
   create(@Body() createTaskDto: CreateTaskDto) {
     return this.tasksService.create(createTaskDto);
+  }
+
+  @Post('batch')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Create tasks for multiple nodes',
+    description:
+      'Queues the same command or operation for multiple target nodes in one request. Requires ADMIN role.',
+  })
+  @ApiCreatedResponse({
+    description: 'Tasks created.',
+    type: TaskEntity,
+    isArray: true,
+  })
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions.',
+  })
+  createBatch(@Body() createBatchTaskDto: CreateBatchTaskDto) {
+    return this.tasksService.createBatch(createBatchTaskDto);
   }
 
   @Get()

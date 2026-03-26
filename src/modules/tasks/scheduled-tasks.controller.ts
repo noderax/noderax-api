@@ -21,6 +21,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user-role.enum';
+import { CreateBatchScheduledTaskDto } from './dto/create-batch-scheduled-task.dto';
 import { CreateScheduledTaskDto } from './dto/create-scheduled-task.dto';
 import { UpdateScheduledTaskDto } from './dto/update-scheduled-task.dto';
 import { ScheduledTaskEntity } from './entities/scheduled-task.entity';
@@ -54,6 +55,27 @@ export class ScheduledTasksController {
     @Body() dto: CreateScheduledTaskDto,
   ) {
     return this.scheduledTasksService.create(user.id, dto);
+  }
+
+  @Post('batch')
+  @ApiOperation({
+    summary: 'Create scheduled tasks for multiple nodes',
+    description:
+      'Stores the same recurring shell.exec definition for multiple target nodes. Requires ADMIN role.',
+  })
+  @ApiCreatedResponse({
+    description: 'Scheduled tasks created.',
+    type: ScheduledTaskEntity,
+    isArray: true,
+  })
+  @ApiForbiddenResponse({
+    description: 'Insufficient permissions.',
+  })
+  createBatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateBatchScheduledTaskDto,
+  ) {
+    return this.scheduledTasksService.createBatch(user.id, dto);
   }
 
   @Get()

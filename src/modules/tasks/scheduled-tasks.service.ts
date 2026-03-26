@@ -12,6 +12,7 @@ import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodesService } from '../nodes/nodes.service';
 import { UserEntity } from '../users/entities/user.entity';
+import { CreateBatchScheduledTaskDto } from './dto/create-batch-scheduled-task.dto';
 import { CreateScheduledTaskDto } from './dto/create-scheduled-task.dto';
 import { UpdateScheduledTaskDto } from './dto/update-scheduled-task.dto';
 import { ScheduledTaskEntity } from './entities/scheduled-task.entity';
@@ -41,64 +42,29 @@ export class ScheduledTasksService {
     ownerUserId: string,
     createScheduledTaskDto: CreateScheduledTaskDto,
   ): Promise<ScheduledTaskEntity> {
-    await this.nodesService.ensureExists(createScheduledTaskDto.nodeId);
-    const owner = await this.usersRepository.findOne({
-      where: { id: ownerUserId },
-    });
-
-    if (!owner) {
-      throw new NotFoundException(`User ${ownerUserId} was not found`);
-    }
-
+    const owner = await this.findOwnerOrFail(ownerUserId);
     const normalized = this.normalizeScheduleInput(createScheduledTaskDto);
-    const scheduleTiming = {
-      ...normalized,
-      timezone: owner.timezone,
-    };
-    const nextRunAt = computeNextScheduledRun(scheduleTiming, new Date());
-
-    const scheduledTask = this.scheduledTasksRepository.create({
-      nodeId: createScheduledTaskDto.nodeId,
-      ownerUserId: owner.id,
-      name: normalized.name,
-      command: normalized.command,
-      cadence: normalized.cadence,
-      minute: normalized.minute,
-      hour: normalized.hour,
-      dayOfWeek: normalized.dayOfWeek,
-      intervalMinutes: normalized.intervalMinutes,
-      timezone: owner.timezone,
-      enabled: true,
-      nextRunAt,
-      lastRunAt: null,
-      lastRunTaskId: null,
-      lastError: null,
-      leaseUntil: null,
-      claimedBy: null,
-      claimToken: null,
-    });
-
-    const saved = await this.scheduledTasksRepository.save(scheduledTask);
-    saved.ownerName = owner.name;
-    saved.isLegacy = false;
-
-    await this.eventsService.record({
-      nodeId: saved.nodeId,
-      type: SYSTEM_EVENT_TYPES.TASK_SCHEDULE_CREATED,
-      severity: EventSeverity.INFO,
-      message: `Scheduled task ${saved.name} created. ${describeScheduledTask(saved)}`,
-      metadata: {
-        scheduleId: saved.id,
-        scheduleName: saved.name,
-        cadence: saved.cadence,
-        ownerUserId: saved.ownerUserId,
-        ownerName: owner.name,
-        timezone: saved.timezone,
-        nextRunAt: saved.nextRunAt?.toISOString() ?? null,
-      },
-    });
+    const [saved] = await this.createSchedulesForNodes(
+      owner,
+      [createScheduledTaskDto.nodeId],
+      normalized,
+    );
 
     return saved;
+  }
+
+  async createBatch(
+    ownerUserId: string,
+    createBatchScheduledTaskDto: CreateBatchScheduledTaskDto,
+  ): Promise<ScheduledTaskEntity[]> {
+    const owner = await this.findOwnerOrFail(ownerUserId);
+    const normalized = this.normalizeScheduleInput(createBatchScheduledTaskDto);
+
+    return this.createSchedulesForNodes(
+      owner,
+      createBatchScheduledTaskDto.nodeIds,
+      normalized,
+    );
   }
 
   async findAll(): Promise<ScheduledTaskEntity[]> {
@@ -388,15 +354,9 @@ export class ScheduledTasksService {
     });
   }
 
-  private normalizeScheduleInput(input: CreateScheduledTaskDto): {
-    name: string;
-    command: string;
-    cadence: ScheduledTaskEntity['cadence'];
-    minute: number;
-    hour: number | null;
-    dayOfWeek: number | null;
-    intervalMinutes: number | null;
-  } {
+  private normalizeScheduleInput(
+    input: ScheduledTaskInputShape,
+  ): NormalizedScheduleInput {
     const name = input.name.trim();
     const command = input.command.trim();
 
@@ -524,4 +484,128 @@ export class ScheduledTasksService {
       intervalMinutes: null,
     };
   }
+
+  private async findOwnerOrFail(ownerUserId: string): Promise<UserEntity> {
+    const owner = await this.usersRepository.findOne({
+      where: { id: ownerUserId },
+    });
+
+    if (!owner) {
+      throw new NotFoundException(`User ${ownerUserId} was not found`);
+    }
+
+    return owner;
+  }
+
+  private async createSchedulesForNodes(
+    owner: UserEntity,
+    rawNodeIds: string[],
+    normalized: NormalizedScheduleInput,
+  ): Promise<ScheduledTaskEntity[]> {
+    const nodeIds = this.normalizeNodeIds(rawNodeIds);
+    await Promise.all(
+      nodeIds.map((nodeId) => this.nodesService.ensureExists(nodeId)),
+    );
+
+    const now = new Date();
+    const nextRunAt = computeNextScheduledRun(
+      {
+        ...normalized,
+        timezone: owner.timezone,
+      },
+      now,
+    );
+    const schedules: ScheduledTaskEntity[] = [];
+
+    for (const nodeId of nodeIds) {
+      const scheduledTask = this.scheduledTasksRepository.create({
+        nodeId,
+        ownerUserId: owner.id,
+        name: normalized.name,
+        command: normalized.command,
+        cadence: normalized.cadence,
+        minute: normalized.minute,
+        hour: normalized.hour,
+        dayOfWeek: normalized.dayOfWeek,
+        intervalMinutes: normalized.intervalMinutes,
+        timezone: owner.timezone,
+        enabled: true,
+        nextRunAt,
+        lastRunAt: null,
+        lastRunTaskId: null,
+        lastError: null,
+        leaseUntil: null,
+        claimedBy: null,
+        claimToken: null,
+      });
+
+      const saved = await this.scheduledTasksRepository.save(scheduledTask);
+      saved.ownerName = owner.name;
+      saved.isLegacy = false;
+
+      await this.eventsService.record({
+        nodeId: saved.nodeId,
+        type: SYSTEM_EVENT_TYPES.TASK_SCHEDULE_CREATED,
+        severity: EventSeverity.INFO,
+        message: `Scheduled task ${saved.name} created. ${describeScheduledTask(saved)}`,
+        metadata: {
+          scheduleId: saved.id,
+          scheduleName: saved.name,
+          cadence: saved.cadence,
+          ownerUserId: saved.ownerUserId,
+          ownerName: owner.name,
+          timezone: saved.timezone,
+          nextRunAt: saved.nextRunAt?.toISOString() ?? null,
+        },
+      });
+
+      schedules.push(saved);
+    }
+
+    return schedules;
+  }
+
+  private normalizeNodeIds(nodeIds: string[]): string[] {
+    const normalizedNodeIds = Array.from(
+      new Set(nodeIds.map((nodeId) => nodeId.trim()).filter(Boolean)),
+    );
+
+    if (normalizedNodeIds.length === 0) {
+      throw new BadRequestException('Select at least one node.');
+    }
+
+    return normalizedNodeIds;
+  }
 }
+
+type ScheduledTaskInputShape =
+  | Pick<
+      CreateScheduledTaskDto,
+      | 'name'
+      | 'command'
+      | 'cadence'
+      | 'minute'
+      | 'hour'
+      | 'dayOfWeek'
+      | 'intervalMinutes'
+    >
+  | Pick<
+      CreateBatchScheduledTaskDto,
+      | 'name'
+      | 'command'
+      | 'cadence'
+      | 'minute'
+      | 'hour'
+      | 'dayOfWeek'
+      | 'intervalMinutes'
+    >;
+
+type NormalizedScheduleInput = {
+  name: string;
+  command: string;
+  cadence: ScheduledTaskEntity['cadence'];
+  minute: number;
+  hour: number | null;
+  dayOfWeek: number | null;
+  intervalMinutes: number | null;
+};

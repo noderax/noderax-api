@@ -54,6 +54,7 @@ describe('Scheduled Tasks (e2e)', () => {
   let userToken: string;
   let adminUserId: string;
   let nodeId: string;
+  let secondaryNodeId: string;
 
   beforeAll(async () => {
     configureTestEnv();
@@ -104,6 +105,19 @@ describe('Scheduled Tasks (e2e)', () => {
       .expect(201);
 
     nodeId = nodeResponse.body.id;
+
+    const secondaryNodeResponse = await request(app.getHttpServer())
+      .post(apiPath('/nodes'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Schedule Node 02',
+        hostname: 'schedule-node-02',
+        os: 'ubuntu',
+        arch: 'arm64',
+      })
+      .expect(201);
+
+    secondaryNodeId = secondaryNodeResponse.body.id;
   });
 
   afterAll(async () => {
@@ -127,6 +141,31 @@ describe('Scheduled Tasks (e2e)', () => {
         command: 'hostname',
         cadence: 'hourly',
         minute: 5,
+      })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post(apiPath('/tasks/batch'))
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        nodeIds: [nodeId, secondaryNodeId],
+        type: 'shell.exec',
+        payload: {
+          command: 'hostname',
+        },
+      })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post(apiPath('/scheduled-tasks/batch'))
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        nodeIds: [nodeId, secondaryNodeId],
+        name: 'Forbidden batch schedule',
+        command: 'hostname',
+        cadence: 'custom',
+        minute: 0,
+        intervalMinutes: 7,
       })
       .expect(403);
   });
@@ -206,6 +245,67 @@ describe('Scheduled Tasks (e2e)', () => {
     expect(createResponse.body.intervalMinutes).toBe(7);
     expect(createResponse.body.hour).toBeNull();
     expect(createResponse.body.dayOfWeek).toBeNull();
+  });
+
+  it('creates one-off tasks and schedules for multiple nodes', async () => {
+    const batchTasksResponse = await request(app.getHttpServer())
+      .post(apiPath('/tasks/batch'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        nodeIds: [nodeId, secondaryNodeId],
+        type: 'shell.exec',
+        payload: {
+          command: 'hostname',
+        },
+      })
+      .expect(201);
+
+    expect(batchTasksResponse.body).toHaveLength(2);
+    expect(
+      new Set(
+        batchTasksResponse.body.map((task: { nodeId: string }) => task.nodeId),
+      ),
+    ).toEqual(new Set([nodeId, secondaryNodeId]));
+    expect(
+      batchTasksResponse.body.every(
+        (task: { type: string; payload: { command?: string } }) =>
+          task.type === 'shell.exec' && task.payload.command === 'hostname',
+      ),
+    ).toBe(true);
+
+    const batchSchedulesResponse = await request(app.getHttpServer())
+      .post(apiPath('/scheduled-tasks/batch'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        nodeIds: [nodeId, secondaryNodeId],
+        name: 'Every 7 minutes on both nodes',
+        command: 'hostname',
+        cadence: 'custom',
+        minute: 0,
+        intervalMinutes: 7,
+      })
+      .expect(201);
+
+    expect(batchSchedulesResponse.body).toHaveLength(2);
+    expect(
+      new Set(
+        batchSchedulesResponse.body.map(
+          (schedule: { nodeId: string }) => schedule.nodeId,
+        ),
+      ),
+    ).toEqual(new Set([nodeId, secondaryNodeId]));
+    expect(
+      batchSchedulesResponse.body.every(
+        (schedule: {
+          cadence: string;
+          intervalMinutes: number;
+          ownerUserId: string;
+        }) =>
+          schedule.cadence === 'custom' &&
+          schedule.intervalMinutes === 7 &&
+          schedule.ownerUserId === adminUserId,
+      ),
+    ).toBe(true);
   });
 
   it('queues a real task when a due schedule is detected and skips disabled schedules', async () => {

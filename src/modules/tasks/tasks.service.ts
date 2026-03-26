@@ -35,6 +35,7 @@ import { AppendTaskLogDto } from './dto/append-task-log.dto';
 import { ClaimAgentTaskResponseDto } from './dto/claim-agent-task-response.dto';
 import { ClaimAgentTasksDto } from './dto/claim-agent-tasks.dto';
 import { CompleteAgentTaskDto } from './dto/complete-agent-task.dto';
+import { CreateBatchTaskDto } from './dto/create-batch-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { PullAgentTasksDto } from './dto/pull-agent-tasks.dto';
 import { QueryTaskLogsDto } from './dto/query-task-logs.dto';
@@ -84,6 +85,35 @@ export class TasksService {
       type: createTaskDto.type,
       payload: createTaskDto.payload ?? {},
     });
+  }
+
+  async createBatch(
+    createBatchTaskDto: CreateBatchTaskDto,
+  ): Promise<TaskEntity[]> {
+    const nodeIds = this.normalizeNodeIds(createBatchTaskDto.nodeIds);
+    const nodeLookup = await this.loadNodeLookup(nodeIds);
+    const tasks: TaskEntity[] = [];
+
+    for (const nodeId of nodeIds) {
+      const node = nodeLookup.get(nodeId);
+
+      if (!node) {
+        throw new NotFoundException(`Node ${nodeId} was not found`);
+      }
+
+      tasks.push(
+        await this.queueTask(
+          {
+            nodeId,
+            type: createBatchTaskDto.type,
+            payload: createBatchTaskDto.payload ?? {},
+          },
+          node,
+        ),
+      );
+    }
+
+    return tasks;
   }
 
   async createScheduledShellTask(input: {
@@ -1248,12 +1278,16 @@ export class TasksService {
     return this.taskLogsRepository.save(taskLog);
   }
 
-  private async queueTask(input: {
-    nodeId: string;
-    type: string;
-    payload: Record<string, unknown>;
-  }): Promise<TaskEntity> {
-    const node = await this.nodesService.ensureExists(input.nodeId);
+  private async queueTask(
+    input: {
+      nodeId: string;
+      type: string;
+      payload: Record<string, unknown>;
+    },
+    nodeOverride?: NodeEntity,
+  ): Promise<TaskEntity> {
+    const node =
+      nodeOverride ?? (await this.nodesService.ensureExists(input.nodeId));
 
     const task = this.tasksRepository.create({
       nodeId: input.nodeId,
@@ -1301,6 +1335,28 @@ export class TasksService {
     });
 
     return savedTask;
+  }
+
+  private normalizeNodeIds(nodeIds: string[]): string[] {
+    const normalizedNodeIds = Array.from(
+      new Set(nodeIds.map((nodeId) => nodeId.trim()).filter(Boolean)),
+    );
+
+    if (normalizedNodeIds.length === 0) {
+      throw new BadRequestException('Select at least one node.');
+    }
+
+    return normalizedNodeIds;
+  }
+
+  private async loadNodeLookup(
+    nodeIds: string[],
+  ): Promise<Map<string, NodeEntity>> {
+    const nodes = await Promise.all(
+      nodeIds.map((nodeId) => this.nodesService.ensureExists(nodeId)),
+    );
+
+    return new Map(nodes.map((node) => [node.id, node] as const));
   }
 
   private isTerminalStatus(status: TaskStatus): boolean {
