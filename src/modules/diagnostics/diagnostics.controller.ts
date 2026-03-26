@@ -19,7 +19,7 @@ export class DiagnosticsController {
   constructor(private readonly diagnosticsService: DiagnosticsService) {}
 
   @Get('task-flow')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Header('Cache-Control', 'no-store')
   @ApiOperation({
     summary: 'Get task-flow diagnostics snapshot',
