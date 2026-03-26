@@ -24,12 +24,19 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+RUN apk add --no-cache su-exec
+
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist ./dist
 COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-USER node
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+USER root
 
 EXPOSE 3000
+
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 CMD ["node", "dist/main.js"]

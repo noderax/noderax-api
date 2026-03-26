@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
+import { DataSource } from 'typeorm';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { NodesService } from './nodes.service';
 
@@ -16,11 +17,13 @@ export class NodeOfflineDetectorService
   private readonly logger = new Logger(NodeOfflineDetectorService.name);
   private readonly intervalName = 'node-offline-detector';
   private isRunning = false;
+  private hasLoggedMissingNodesTable = false;
 
   constructor(
     private readonly nodesService: NodesService,
     private readonly configService: ConfigService,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly dataSource: DataSource,
   ) {}
 
   onModuleInit(): void {
@@ -60,6 +63,19 @@ export class NodeOfflineDetectorService
     this.isRunning = true;
 
     try {
+      if (!(await this.hasTable('nodes'))) {
+        if (!this.hasLoggedMissingNodesTable) {
+          this.logger.warn(
+            'Skipping stale node detection because the "nodes" table does not exist',
+          );
+          this.hasLoggedMissingNodesTable = true;
+        }
+
+        return;
+      }
+
+      this.hasLoggedMissingNodesTable = false;
+
       await this.nodesService.markStaleNodesOffline();
     } catch (error) {
       const message =
@@ -68,5 +84,21 @@ export class NodeOfflineDetectorService
     } finally {
       this.isRunning = false;
     }
+  }
+
+  private async hasTable(tableName: string): Promise<boolean> {
+    const result = (await this.dataSource.query(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = $1
+        ) AS "exists"
+      `,
+      [tableName],
+    )) as Array<{ exists: boolean }>;
+
+    return Boolean(result[0]?.exists);
   }
 }

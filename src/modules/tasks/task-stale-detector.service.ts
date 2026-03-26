@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
+import { DataSource } from 'typeorm';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { TasksService } from './tasks.service';
 
@@ -14,11 +15,13 @@ export class TaskStaleDetectorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TaskStaleDetectorService.name);
   private readonly intervalName = 'task-stale-detector';
   private isRunning = false;
+  private hasLoggedMissingTasksTable = false;
 
   constructor(
     private readonly tasksService: TasksService,
     private readonly configService: ConfigService,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly dataSource: DataSource,
   ) {}
 
   onModuleInit(): void {
@@ -63,6 +66,19 @@ export class TaskStaleDetectorService implements OnModuleInit, OnModuleDestroy {
     this.isRunning = true;
 
     try {
+      if (!(await this.hasTable('tasks'))) {
+        if (!this.hasLoggedMissingTasksTable) {
+          this.logger.warn(
+            'Skipping stale task detection because the "tasks" table does not exist',
+          );
+          this.hasLoggedMissingTasksTable = true;
+        }
+
+        return;
+      }
+
+      this.hasLoggedMissingTasksTable = false;
+
       const failedCount = await this.tasksService.failStaleTasks({
         queuedTimeoutSeconds: agents.staleQueuedTaskTimeoutSeconds,
         runningTimeoutSeconds: agents.staleRunningTaskTimeoutSeconds,
@@ -80,5 +96,21 @@ export class TaskStaleDetectorService implements OnModuleInit, OnModuleDestroy {
     } finally {
       this.isRunning = false;
     }
+  }
+
+  private async hasTable(tableName: string): Promise<boolean> {
+    const result = (await this.dataSource.query(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = $1
+        ) AS "exists"
+      `,
+      [tableName],
+    )) as Array<{ exists: boolean }>;
+
+    return Boolean(result[0]?.exists);
   }
 }

@@ -30,6 +30,29 @@ export const INSTALL_STATE_FILENAME = 'install-state.json';
 export const INSTALLER_MANAGED_FLAG = 'NODERAX_INSTALLER_MANAGED';
 export const BOOT_MODE_ENV = 'NODERAX_BOOT_MODE';
 
+const isIgnorablePermissionMetadataError = (error: unknown) => {
+  if (
+    !error ||
+    typeof error !== 'object' ||
+    !('code' in error) ||
+    typeof error.code !== 'string'
+  ) {
+    return false;
+  }
+
+  return ['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EROFS'].includes(error.code);
+};
+
+const trySetPermissions = (path: string, mode: number) => {
+  try {
+    chmodSync(path, mode);
+  } catch (error) {
+    if (!isIgnorablePermissionMetadataError(error)) {
+      throw error;
+    }
+  }
+};
+
 const normalizeStateDirValue = (value?: string | null) => {
   if (typeof value !== 'string') {
     return null;
@@ -65,7 +88,7 @@ const probeInstallStateWritable = () => {
 
   try {
     mkdirSync(installStateDir, { recursive: true, mode: 0o700 });
-    chmodSync(installStateDir, 0o700);
+    trySetPermissions(installStateDir, 0o700);
     accessSync(installStateDir, constants.W_OK);
 
     const probePath = join(
@@ -77,7 +100,7 @@ const probeInstallStateWritable = () => {
       encoding: 'utf8',
       mode: 0o600,
     });
-    chmodSync(probePath, 0o600);
+    trySetPermissions(probePath, 0o600);
     unlinkSync(probePath);
 
     return {
@@ -151,7 +174,7 @@ export const writeInstallState = (state: InstallState) => {
     encoding: 'utf8',
     mode: 0o600,
   });
-  chmodSync(tempPath, 0o600);
+  trySetPermissions(tempPath, 0o600);
   renameSync(tempPath, installStatePath);
-  chmodSync(installStatePath, 0o600);
+  trySetPermissions(installStatePath, 0o600);
 };

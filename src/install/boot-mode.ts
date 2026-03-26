@@ -7,14 +7,22 @@ import { Client } from 'pg';
 
 export type BootMode = 'setup' | 'installed' | 'legacy';
 
-const LEGACY_SCHEMA_TABLES = [
+const LEGACY_CORE_SCHEMA_TABLES = [
   'users',
   'nodes',
   'tasks',
   'events',
   'metrics',
+] as const;
+
+const LEGACY_BOOTSTRAPPABLE_SCHEMA_TABLES = [
   'enrollments',
   'scheduled_tasks',
+] as const;
+
+const LEGACY_SCHEMA_TABLES = [
+  ...LEGACY_CORE_SCHEMA_TABLES,
+  ...LEGACY_BOOTSTRAPPABLE_SCHEMA_TABLES,
 ] as const;
 
 const hasRequiredValue = (value?: string | null) =>
@@ -43,7 +51,7 @@ export const hasLegacyRuntimeEnv = () => {
 };
 
 const detectLegacySchemaState = async (): Promise<
-  'present' | 'absent' | 'unknown'
+  'present' | 'partial' | 'absent' | 'unknown'
 > => {
   if (!hasLegacyRuntimeEnv()) {
     return 'absent';
@@ -60,9 +68,9 @@ const detectLegacySchemaState = async (): Promise<
 
   try {
     await client.connect();
-    const result = await client.query<{ count: string }>(
+    const result = await client.query<{ tableName: string }>(
       `
-        SELECT COUNT(*)::int AS "count"
+        SELECT table_name AS "tableName"
         FROM information_schema.tables
         WHERE table_schema = 'public'
           AND table_name = ANY($1::text[])
@@ -70,7 +78,19 @@ const detectLegacySchemaState = async (): Promise<
       [LEGACY_SCHEMA_TABLES],
     );
 
-    return Number(result.rows[0]?.count ?? 0) > 0 ? 'present' : 'absent';
+    const existingTables = new Set(result.rows.map((row) => row.tableName));
+    const hasAnyLegacyTable = LEGACY_SCHEMA_TABLES.some((tableName) =>
+      existingTables.has(tableName),
+    );
+    const hasCompleteCoreSchema = LEGACY_CORE_SCHEMA_TABLES.every((tableName) =>
+      existingTables.has(tableName),
+    );
+
+    if (hasCompleteCoreSchema) {
+      return 'present';
+    }
+
+    return hasAnyLegacyTable ? 'partial' : 'absent';
   } catch {
     return 'unknown';
   } finally {
@@ -90,7 +110,7 @@ export const resolveBootMode = (
   }
 
   return detectLegacySchemaState().then((schemaState) =>
-    schemaState === 'absent' ? 'setup' : 'legacy',
+    schemaState === 'present' || schemaState === 'unknown' ? 'legacy' : 'setup',
   );
 };
 
