@@ -30,18 +30,29 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
   }
 
   private async ensureDefaultWorkspace(): Promise<string> {
-    const existing = (await this.dataSource.query(
-      `
-        SELECT "id"
-        FROM "workspaces"
-        WHERE "slug" = $1
-        LIMIT 1
-      `,
-      [DEFAULT_WORKSPACE_SLUG],
-    )) as Array<{ id: string }>;
+    const existing = await this.findDefaultWorkspaceCandidates();
+    const currentDefaultWorkspace = existing.find(
+      (workspace) => workspace.isDefault,
+    );
+    const legacyDefaultSlugWorkspace = existing.find(
+      (workspace) => workspace.slug === DEFAULT_WORKSPACE_SLUG,
+    );
 
-    if (existing[0]?.id) {
-      return existing[0].id;
+    if (currentDefaultWorkspace) {
+      if (
+        legacyDefaultSlugWorkspace &&
+        legacyDefaultSlugWorkspace.id !== currentDefaultWorkspace.id
+      ) {
+        this.logger.warn(
+          `Found default workspace "${currentDefaultWorkspace.id}" and legacy "${DEFAULT_WORKSPACE_SLUG}" workspace "${legacyDefaultSlugWorkspace.id}". Preserving the current default workspace.`,
+        );
+      }
+
+      return currentDefaultWorkspace.id;
+    }
+
+    if (legacyDefaultSlugWorkspace) {
+      return legacyDefaultSlugWorkspace.id;
     }
 
     const seededAdmin = (await this.dataSource.query(
@@ -59,6 +70,7 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
       `
         INSERT INTO "workspaces" ("name", "slug", "defaultTimezone", "createdByUserId", "isArchived", "isDefault")
         VALUES ($1, $2, $3, $4, false, true)
+        ON CONFLICT DO NOTHING
         RETURNING "id"
       `,
       [
@@ -69,7 +81,27 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
       ],
     )) as Array<{ id: string }>;
 
-    return rows[0].id;
+    if (rows[0]?.id) {
+      return rows[0].id;
+    }
+
+    const afterInsertAttempt = await this.findDefaultWorkspaceCandidates();
+    const recoveredDefaultWorkspace = afterInsertAttempt.find(
+      (workspace) => workspace.isDefault,
+    );
+    const recoveredLegacyWorkspace = afterInsertAttempt.find(
+      (workspace) => workspace.slug === DEFAULT_WORKSPACE_SLUG,
+    );
+
+    if (recoveredDefaultWorkspace) {
+      return recoveredDefaultWorkspace.id;
+    }
+
+    if (recoveredLegacyWorkspace) {
+      return recoveredLegacyWorkspace.id;
+    }
+
+    throw new Error('Unable to resolve a default workspace during bootstrap.');
   }
 
   private async ensureDefaultWorkspaceFlag(
@@ -96,6 +128,20 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
       `,
       [defaultWorkspaceId],
     );
+  }
+
+  private async findDefaultWorkspaceCandidates(): Promise<
+    Array<{ id: string; slug: string; isDefault: boolean }>
+  > {
+    return (await this.dataSource.query(
+      `
+        SELECT "id", "slug", "isDefault"
+        FROM "workspaces"
+        WHERE "isDefault" = true OR "slug" = $1
+        ORDER BY "isDefault" DESC, "createdAt" ASC
+      `,
+      [DEFAULT_WORKSPACE_SLUG],
+    )) as Array<{ id: string; slug: string; isDefault: boolean }>;
   }
 
   private async promoteLegacyAdmins(): Promise<void> {
