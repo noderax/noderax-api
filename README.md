@@ -50,7 +50,9 @@ src/
 - Node inventory with scheduler-driven online and offline status
 - Two-step agent enrollment with admin approval plus legacy registration compatibility
 - Metrics ingestion persisted to PostgreSQL
-- Task creation, polling, execution updates, and logs
+- Task creation, batch dispatch, polling, execution updates, and logs
+- Timezone-aware scheduled task creation and recurring queue generation
+- Per-user timezone preferences that drive schedule execution semantics
 - **Realtime node management:** Reboot and Noderax Agent restart actions
 - Event persistence with notification stubs
 - Realtime broadcasts for node, metric, task, and event updates
@@ -124,6 +126,7 @@ pnpm start:prod
 ### Railway Deployment
 
 For Railway or similar PaaS environments:
+
 - The API is configured to bind to `0.0.0.0` natively via `NEST_BIND_ALL=true`.
 - Healthchecks are supported via `GET /health`.
 - Explicit `express` dependency has been removed to reduce bundle size and improve startup performance.
@@ -161,6 +164,19 @@ The API runs a background scheduler that checks online nodes at the configured i
 - The transition is emitted once per state change, not on every scheduler tick.
 - Each offline transition records a `node.offline` system event and publishes realtime updates.
 - The next valid heartbeat moves the node back to `online`, updates `lastSeenAt`, and records a `node.online` event.
+
+## Tasking Model
+
+Noderax uses one task execution pipeline for manual runs, batch dispatch, and scheduled jobs.
+
+- `POST /tasks` creates a one-off task for a single node.
+- `POST /tasks/batch` creates the same task definition for multiple nodes in one request.
+- `POST /scheduled-tasks` stores a recurring `shell.exec` definition for one node.
+- `POST /scheduled-tasks/batch` stores the same recurring definition across multiple nodes.
+- The scheduled-task runner uses a database-backed lease and polling loop to find due schedules and enqueue standard `shell.exec` tasks.
+- Agents do not receive a special schedule-only task type. They claim and execute the generated work as normal queued tasks.
+- New schedules inherit the creator's saved IANA timezone. If that user later updates `PATCH /users/me/preferences`, owned schedules are recomputed to keep the same intended local run time.
+- Legacy schedules without an owner remain on `UTC`.
 
 ## Main Endpoints
 
@@ -337,6 +353,7 @@ Request body:
 ### Authenticated
 
 - `GET /users/me`
+- `PATCH /users/me/preferences`
 - `GET /nodes`
 - `GET /nodes/:id`
 - `GET /nodes/:id/packages`
@@ -356,7 +373,13 @@ Request body:
 - `DELETE /nodes/:id/packages/:name`
 - `DELETE /nodes/:id`
 - `POST /tasks`
+- `POST /tasks/batch`
 - `POST /tasks/:id/cancel`
+- `GET /scheduled-tasks`
+- `POST /scheduled-tasks`
+- `POST /scheduled-tasks/batch`
+- `PATCH /scheduled-tasks/:id`
+- `DELETE /scheduled-tasks/:id`
 
 ## Two-Step Enrollment API
 
@@ -498,7 +521,34 @@ curl -X POST http://localhost:3000/api/v1/tasks \
   }'
 ```
 
-### 8. Claim Queued Tasks as an Agent
+### 8. Update Your Timezone Preference
+
+```bash
+curl -X PATCH http://localhost:3000/api/v1/users/me/preferences \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <jwt>" \
+  -d '{
+    "timezone": "Europe/Istanbul"
+  }'
+```
+
+### 9. Create a Scheduled Task
+
+```bash
+curl -X POST http://localhost:3000/api/v1/scheduled-tasks \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <jwt>" \
+  -d '{
+    "nodeId": "generated-node-id",
+    "name": "Daily docker check",
+    "command": "docker ps",
+    "cadence": "daily",
+    "minute": 0,
+    "hour": 9
+  }'
+```
+
+### 10. Claim Queued Tasks as an Agent
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/agent/tasks/claim \
@@ -510,7 +560,7 @@ curl -X POST http://localhost:3000/api/v1/agent/tasks/claim \
   }'
 ```
 
-### 9. Start and Complete a Task as an Agent
+### 11. Start and Complete a Task as an Agent
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/started \
@@ -557,7 +607,7 @@ curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/completed \
   }'
 ```
 
-### 8. List Installed Packages
+### 12. List Installed Packages
 
 ```bash
 curl -X GET "http://localhost:3000/api/v1/nodes/generated-node-id/packages" \
