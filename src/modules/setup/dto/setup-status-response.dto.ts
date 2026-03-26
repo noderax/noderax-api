@@ -7,6 +7,12 @@ class SetupStateDirectoryStatusDto {
   path: string;
 
   @ApiProperty({
+    example: './.noderax',
+    nullable: true,
+  })
+  configuredValue: string | null;
+
+  @ApiProperty({
     example: true,
   })
   usingCustomPath: boolean;

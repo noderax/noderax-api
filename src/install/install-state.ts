@@ -20,6 +20,7 @@ export type InstallState = {
 
 export type InstallStateHealth = {
   path: string;
+  configuredValue: string | null;
   usingCustomPath: boolean;
   writable: boolean;
   error: string | null;
@@ -29,8 +30,30 @@ export const INSTALL_STATE_FILENAME = 'install-state.json';
 export const INSTALLER_MANAGED_FLAG = 'NODERAX_INSTALLER_MANAGED';
 export const BOOT_MODE_ENV = 'NODERAX_BOOT_MODE';
 
+const normalizeStateDirValue = (value?: string | null) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const unquoted =
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ? trimmed.slice(1, -1).trim()
+      : trimmed;
+
+  return unquoted || null;
+};
+
 export const getInstallStateDir = () =>
-  resolve(process.env.NODERAX_STATE_DIR ?? join(process.cwd(), '.noderax'));
+  resolve(
+    normalizeStateDirValue(process.env.NODERAX_STATE_DIR) ??
+      join(process.cwd(), '.noderax'),
+  );
 
 export const getInstallStatePath = () =>
   join(getInstallStateDir(), INSTALL_STATE_FILENAME);
@@ -38,6 +61,7 @@ export const getInstallStatePath = () =>
 const probeInstallStateWritable = () => {
   const installStatePath = getInstallStatePath();
   const installStateDir = dirname(installStatePath);
+  const configuredValue = normalizeStateDirValue(process.env.NODERAX_STATE_DIR);
 
   try {
     mkdirSync(installStateDir, { recursive: true, mode: 0o700 });
@@ -58,14 +82,16 @@ const probeInstallStateWritable = () => {
 
     return {
       path: installStatePath,
-      usingCustomPath: Boolean(process.env.NODERAX_STATE_DIR?.trim()),
+      configuredValue,
+      usingCustomPath: Boolean(configuredValue),
       writable: true,
       error: null,
     } satisfies InstallStateHealth;
   } catch (error) {
     return {
       path: installStatePath,
-      usingCustomPath: Boolean(process.env.NODERAX_STATE_DIR?.trim()),
+      configuredValue,
+      usingCustomPath: Boolean(configuredValue),
       writable: false,
       error: `Install state directory "${installStateDir}" is not writable. Set NODERAX_STATE_DIR to a writable application-data directory, such as a mounted volume, persistent disk, or another writable path outside a read-only app filesystem. Original error: ${
         (error as Error).message
