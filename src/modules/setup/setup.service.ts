@@ -216,6 +216,7 @@ export class SetupService {
           defaultTimezone: normalizedTimezone,
           createdByUserId: adminUser.id,
           isArchived: false,
+          isDefault: true,
         }),
       );
 

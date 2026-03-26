@@ -52,6 +52,12 @@ export class WorkspaceEntity {
   @Column({ type: 'boolean', default: false })
   isArchived: boolean;
 
+  @ApiProperty({
+    example: true,
+  })
+  @Column({ type: 'boolean', default: false })
+  isDefault: boolean;
+
   @ApiPropertyOptional({
     enum: WorkspaceMembershipRole,
     enumName: 'WorkspaceMembershipRole',

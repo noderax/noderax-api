@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  Matches,
+  MinLength,
+} from 'class-validator';
 
 export class CreateWorkspaceDto {
   @ApiProperty({
@@ -33,4 +39,11 @@ export class CreateWorkspaceDto {
   @IsOptional()
   @IsBoolean()
   isArchived?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
 }

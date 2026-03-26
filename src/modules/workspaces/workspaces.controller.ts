@@ -109,6 +109,28 @@ export class WorkspacesController {
     return this.workspacesService.updateWorkspace(workspaceId, user, dto);
   }
 
+  @Delete(':workspaceId')
+  @UseGuards(WorkspaceMembershipGuard, WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  @ApiOperation({
+    summary: 'Delete a workspace',
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        deleted: true,
+        id: '9d4174b9-5dc2-4891-8d1b-f0a2f6c4e52c',
+        slug: 'acme-ops',
+      },
+    },
+  })
+  delete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    return this.workspacesService.deleteWorkspace(workspaceId, user);
+  }
+
   @Get(':workspaceId/members')
   @UseGuards(WorkspaceMembershipGuard)
   @ApiOperation({
@@ -247,12 +269,7 @@ export class WorkspacesController {
     @Param('teamId') teamId: string,
     @Body() dto: AddTeamMemberDto,
   ) {
-    return this.workspacesService.addTeamMember(
-      workspaceId,
-      teamId,
-      user,
-      dto,
-    );
+    return this.workspacesService.addTeamMember(workspaceId, teamId, user, dto);
   }
 
   @Delete(':workspaceId/teams/:teamId/members/:userId')

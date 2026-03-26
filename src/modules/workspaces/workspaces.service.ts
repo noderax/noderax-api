@@ -49,10 +49,12 @@ export class WorkspacesService {
     private readonly usersService: UsersService,
   ) {}
 
-  async findAccessibleWorkspaces(user: AuthenticatedUser): Promise<WorkspaceEntity[]> {
+  async findAccessibleWorkspaces(
+    user: AuthenticatedUser,
+  ): Promise<WorkspaceEntity[]> {
     if (user.role === UserRole.PLATFORM_ADMIN) {
       const workspaces = await this.workspacesRepository.find({
-        order: { isArchived: 'ASC', createdAt: 'ASC' },
+        order: { isDefault: 'DESC', isArchived: 'ASC', createdAt: 'ASC' },
       });
 
       return workspaces.map((workspace) => {
@@ -69,7 +71,8 @@ export class WorkspacesService {
         'membership."workspaceId" = workspace.id',
       )
       .where('membership."userId" = :userId', { userId: user.id })
-      .orderBy('workspace."isArchived"', 'ASC')
+      .orderBy('workspace."isDefault"', 'DESC')
+      .addOrderBy('workspace."isArchived"', 'ASC')
       .addOrderBy('workspace."createdAt"', 'ASC')
       .getMany();
 
@@ -78,10 +81,15 @@ export class WorkspacesService {
     }
 
     const memberships = await this.membershipsRepository.find({
-      where: { userId: user.id, workspaceId: In(workspaces.map((workspace) => workspace.id)) },
+      where: {
+        userId: user.id,
+        workspaceId: In(workspaces.map((workspace) => workspace.id)),
+      },
     });
     const roleLookup = new Map(
-      memberships.map((membership) => [membership.workspaceId, membership.role] as const),
+      memberships.map(
+        (membership) => [membership.workspaceId, membership.role] as const,
+      ),
     );
 
     return workspaces.map((workspace) => {
@@ -91,7 +99,9 @@ export class WorkspacesService {
   }
 
   async findWorkspaceOrFail(id: string): Promise<WorkspaceEntity> {
-    const workspace = await this.workspacesRepository.findOne({ where: { id } });
+    const workspace = await this.workspacesRepository.findOne({
+      where: { id },
+    });
 
     if (!workspace) {
       throw new NotFoundException(`Workspace ${id} was not found`);
@@ -128,9 +138,7 @@ export class WorkspacesService {
 
     const membership = await this.findMembershipForUser(workspaceId, user.id);
     if (!membership) {
-      throw new ForbiddenException(
-        'You do not have access to this workspace.',
-      );
+      throw new ForbiddenException('You do not have access to this workspace.');
     }
 
     workspace.currentUserRole = membership.role;
@@ -155,6 +163,8 @@ export class WorkspacesService {
     const timezone = dto.defaultTimezone
       ? assertValidTimeZone(dto.defaultTimezone)
       : DEFAULT_TIMEZONE;
+    const shouldBecomeDefault =
+      dto.isDefault === true || !(await this.hasDefaultWorkspace());
 
     const existing = await this.workspacesRepository.findOne({
       where: { slug },
@@ -170,6 +180,7 @@ export class WorkspacesService {
       defaultTimezone: timezone,
       createdByUserId: actor.id,
       isArchived: dto.isArchived ?? false,
+      isDefault: false,
     });
     const saved = await this.workspacesRepository.save(workspace);
 
@@ -181,6 +192,11 @@ export class WorkspacesService {
       }),
     );
 
+    if (shouldBecomeDefault) {
+      await this.setDefaultWorkspace(saved.id);
+      return this.findWorkspaceOrFail(saved.id);
+    }
+
     return saved;
   }
 
@@ -191,6 +207,16 @@ export class WorkspacesService {
   ): Promise<WorkspaceEntity> {
     const workspace = await this.findWorkspaceForUserOrFail(workspaceId, actor);
     await this.assertWorkspaceAdmin(workspaceId, actor);
+
+    if (dto.isDefault !== undefined) {
+      this.assertPlatformAdmin(actor);
+
+      if (!dto.isDefault && workspace.isDefault) {
+        throw new BadRequestException(
+          'Default workspace cannot be unset directly. Select another workspace as default first.',
+        );
+      }
+    }
 
     if (dto.name !== undefined) {
       const name = dto.name.trim();
@@ -231,7 +257,34 @@ export class WorkspacesService {
       await this.recomputeWorkspaceSchedules(saved.id, saved.defaultTimezone);
     }
 
+    if (dto.isDefault) {
+      await this.setDefaultWorkspace(saved.id);
+      return this.findWorkspaceOrFail(saved.id);
+    }
+
     return saved;
+  }
+
+  async deleteWorkspace(
+    workspaceId: string,
+    actor: AuthenticatedUser,
+  ): Promise<{ deleted: true; id: string; slug: string }> {
+    const workspace = await this.findWorkspaceForUserOrFail(workspaceId, actor);
+    await this.assertWorkspaceAdmin(workspaceId, actor);
+
+    if (workspace.isDefault) {
+      throw new ConflictException(
+        'Default workspace cannot be deleted. Select another default workspace first.',
+      );
+    }
+
+    await this.workspacesRepository.remove(workspace);
+
+    return {
+      deleted: true,
+      id: workspace.id,
+      slug: workspace.slug,
+    };
   }
 
   async listMembers(workspaceId: string): Promise<WorkspaceMembershipEntity[]> {
@@ -518,7 +571,11 @@ export class WorkspacesService {
 
   async getDefaultWorkspaceOrFail(): Promise<WorkspaceEntity> {
     const workspace = await this.workspacesRepository.findOne({
-      where: { slug: 'default' },
+      where: [{ isDefault: true }, { slug: 'default' }],
+      order: {
+        isDefault: 'DESC',
+        createdAt: 'ASC',
+      },
     });
 
     if (!workspace) {
@@ -600,6 +657,33 @@ export class WorkspacesService {
     if (user.role !== UserRole.PLATFORM_ADMIN) {
       throw new ForbiddenException('Platform admin access is required.');
     }
+  }
+
+  private async hasDefaultWorkspace(): Promise<boolean> {
+    const workspace = await this.workspacesRepository.findOne({
+      where: { isDefault: true },
+      select: ['id'],
+    });
+
+    return Boolean(workspace);
+  }
+
+  private async setDefaultWorkspace(workspaceId: string): Promise<void> {
+    await this.workspacesRepository.manager.transaction(async (manager) => {
+      await manager
+        .createQueryBuilder()
+        .update(WorkspaceEntity)
+        .set({ isDefault: false })
+        .where('"isDefault" = true')
+        .execute();
+
+      await manager
+        .createQueryBuilder()
+        .update(WorkspaceEntity)
+        .set({ isDefault: true })
+        .where('"id" = :workspaceId', { workspaceId })
+        .execute();
+    });
   }
 
   private normalizeSlug(value: string): string {

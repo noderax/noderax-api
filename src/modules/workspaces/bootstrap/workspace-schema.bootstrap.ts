@@ -10,7 +10,9 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     if (process.env.NODE_ENV === 'test') {
-      this.logger.log('Skipping raw workspace schema bootstrap in test environment');
+      this.logger.log(
+        'Skipping raw workspace schema bootstrap in test environment',
+      );
       return;
     }
 
@@ -37,6 +39,7 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
         "defaultTimezone" varchar(80) NOT NULL DEFAULT '${DEFAULT_TIMEZONE}',
         "createdByUserId" uuid NULL,
         "isArchived" boolean NOT NULL DEFAULT false,
+        "isDefault" boolean NOT NULL DEFAULT false,
         "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
         "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
         CONSTRAINT "PK_workspaces_id" PRIMARY KEY ("id")
@@ -78,8 +81,19 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
     `);
 
     await this.dataSource.query(`
+      ALTER TABLE "workspaces"
+      ADD COLUMN IF NOT EXISTS "isDefault" boolean NOT NULL DEFAULT false
+    `);
+
+    await this.dataSource.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS "IDX_workspaces_slug"
       ON "workspaces" ("slug")
+    `);
+
+    await this.dataSource.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "UQ_workspaces_single_default"
+      ON "workspaces" ("isDefault")
+      WHERE "isDefault" = true
     `);
 
     await this.dataSource.query(`
@@ -132,9 +146,18 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
 
     await this.dataSource.query(`
       ALTER TABLE "workspaces"
+      ADD COLUMN IF NOT EXISTS "isDefault" boolean NOT NULL DEFAULT false
+    `);
+
+    await this.dataSource
+      .query(
+        `
+      ALTER TABLE "workspaces"
       ADD CONSTRAINT "FK_workspaces_created_by_user"
       FOREIGN KEY ("createdByUserId") REFERENCES "users"("id") ON DELETE SET NULL
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
     await this.dataSource.query(`
       CREATE INDEX IF NOT EXISTS "IDX_nodes_workspace_id"
@@ -168,71 +191,115 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
   }
 
   private async ensureWorkspaceForeignKeys(): Promise<void> {
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "workspace_memberships"
       ADD CONSTRAINT "FK_workspace_memberships_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "workspace_memberships"
       ADD CONSTRAINT "FK_workspace_memberships_user"
       FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "teams"
       ADD CONSTRAINT "FK_teams_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "team_memberships"
       ADD CONSTRAINT "FK_team_memberships_team"
       FOREIGN KEY ("teamId") REFERENCES "teams"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "team_memberships"
       ADD CONSTRAINT "FK_team_memberships_user"
       FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "nodes"
       ADD CONSTRAINT "FK_nodes_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "tasks"
       ADD CONSTRAINT "FK_tasks_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "events"
       ADD CONSTRAINT "FK_events_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "metrics"
       ADD CONSTRAINT "FK_metrics_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "enrollments"
       ADD CONSTRAINT "FK_enrollments_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE SET NULL
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TABLE "scheduled_tasks"
       ADD CONSTRAINT "FK_scheduled_tasks_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
   }
 
   private async ensureWorkspaceMembershipRoleEnumExists(): Promise<void> {
@@ -272,8 +339,12 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
       return;
     }
 
-    await this.dataSource.query(`
+    await this.dataSource
+      .query(
+        `
       ALTER TYPE "user_role_enum" ADD VALUE 'platform_admin'
-    `).catch(() => undefined);
+    `,
+      )
+      .catch(() => undefined);
   }
 }

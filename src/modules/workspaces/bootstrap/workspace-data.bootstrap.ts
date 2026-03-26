@@ -21,6 +21,7 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
     }
 
     const defaultWorkspaceId = await this.ensureDefaultWorkspace();
+    await this.ensureDefaultWorkspaceFlag(defaultWorkspaceId);
     await this.promoteLegacyAdmins();
     await this.backfillWorkspaceIds(defaultWorkspaceId);
     await this.ensureDefaultMemberships(defaultWorkspaceId);
@@ -56,8 +57,8 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
     const timezone = seededAdmin[0]?.timezone || DEFAULT_TIMEZONE;
     const rows = (await this.dataSource.query(
       `
-        INSERT INTO "workspaces" ("name", "slug", "defaultTimezone", "createdByUserId", "isArchived")
-        VALUES ($1, $2, $3, $4, false)
+        INSERT INTO "workspaces" ("name", "slug", "defaultTimezone", "createdByUserId", "isArchived", "isDefault")
+        VALUES ($1, $2, $3, $4, false, true)
         RETURNING "id"
       `,
       [
@@ -69,6 +70,32 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
     )) as Array<{ id: string }>;
 
     return rows[0].id;
+  }
+
+  private async ensureDefaultWorkspaceFlag(
+    defaultWorkspaceId: string,
+  ): Promise<void> {
+    const existing = (await this.dataSource.query(
+      `
+        SELECT "id"
+        FROM "workspaces"
+        WHERE "isDefault" = true
+        LIMIT 1
+      `,
+    )) as Array<{ id: string }>;
+
+    if (existing[0]?.id) {
+      return;
+    }
+
+    await this.dataSource.query(
+      `
+        UPDATE "workspaces"
+        SET "isDefault" = true
+        WHERE "id" = $1
+      `,
+      [defaultWorkspaceId],
+    );
   }
 
   private async promoteLegacyAdmins(): Promise<void> {
