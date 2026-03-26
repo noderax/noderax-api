@@ -39,7 +39,7 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
       `
         SELECT "id", "timezone"
         FROM "users"
-        WHERE "role" IN ('platform_admin', 'admin')
+        WHERE "role"::text IN ('platform_admin', 'admin')
         ORDER BY "createdAt" ASC
         LIMIT 1
       `,
@@ -67,7 +67,7 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
     await this.dataSource.query(`
       UPDATE "users"
       SET "role" = 'platform_admin'
-      WHERE "role" = 'admin'
+      WHERE "role"::text = 'admin'
     `);
   }
 

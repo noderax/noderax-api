@@ -36,45 +36,43 @@ describe('ScheduledTasksService', () => {
     createScheduledShellTask: jest.fn(),
   };
 
+  const workspacesService = {
+    findOneOrFail: jest.fn(),
+  };
+
   const service = new ScheduledTasksService(
     repository as never,
     usersRepository as never,
     nodesService as never,
     eventsService as never,
     tasksService as never,
+    workspacesService as never,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('recomputes owned schedules when the owner timezone changes', async () => {
-    const enabledSchedule = buildSchedule({
-      ownerUserId: 'owner-1',
-      timezone: 'UTC',
-      enabled: true,
-    });
-    const disabledSchedule = buildSchedule({
-      id: 'disabled-schedule',
-      ownerUserId: 'owner-1',
-      timezone: 'UTC',
+  it('enables schedules by recomputing the next run and clearing lease state', async () => {
+    const schedule = buildSchedule({
       enabled: false,
       nextRunAt: null,
+      claimToken: 'claim-token',
+      claimedBy: 'runner-1',
+      leaseUntil: new Date('2026-03-26T11:59:00.000Z'),
     });
-    find.mockResolvedValue([enabledSchedule, disabledSchedule]);
+    findOne.mockResolvedValue(schedule);
     save.mockImplementation(async (value) => value);
 
-    const count = await service.syncSchedulesForOwnerTimezoneChange(
-      'owner-1',
-      'Europe/Istanbul',
-    );
+    const result = await service.updateEnabled(schedule.id, {
+      enabled: true,
+    });
 
-    expect(count).toBe(2);
-    expect(enabledSchedule.timezone).toBe('Europe/Istanbul');
-    expect(enabledSchedule.nextRunAt).toBeInstanceOf(Date);
-    expect(disabledSchedule.timezone).toBe('Europe/Istanbul');
-    expect(disabledSchedule.nextRunAt).toBeNull();
-    expect(save).toHaveBeenCalledWith([enabledSchedule, disabledSchedule]);
+    expect(result.enabled).toBe(true);
+    expect(result.nextRunAt).toBeInstanceOf(Date);
+    expect(result.claimToken).toBeNull();
+    expect(result.claimedBy).toBeNull();
+    expect(result.leaseUntil).toBeNull();
   });
 
   it('disables schedules by clearing next run and lease state', async () => {
@@ -113,6 +111,7 @@ describe('ScheduledTasksService', () => {
     expect(result).toEqual({ ok: true });
     expect(tasksService.createScheduledShellTask).toHaveBeenCalledWith({
       nodeId: schedule.nodeId,
+      workspaceId: schedule.workspaceId,
       scheduleId: schedule.id,
       scheduleName: schedule.name,
       command: schedule.command,
@@ -166,6 +165,7 @@ function buildSchedule(
 ): ScheduledTaskEntity {
   return {
     id: 'b6c8b6be-e54d-46d7-816c-9732cf5efe7d',
+    workspaceId: 'workspace-1',
     nodeId: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
     name: 'Daily hostname check',
     command: 'hostname',
@@ -175,6 +175,7 @@ function buildSchedule(
     dayOfWeek: null,
     intervalMinutes: null,
     timezone: 'UTC',
+    timezoneSource: 'workspace',
     ownerUserId: 'owner-1',
     ownerName: 'Noderax Admin',
     isLegacy: false,

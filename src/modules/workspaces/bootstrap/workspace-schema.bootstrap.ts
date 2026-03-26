@@ -9,6 +9,11 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
   constructor(private readonly dataSource: DataSource) {}
 
   async onModuleInit(): Promise<void> {
+    if (process.env.NODE_ENV === 'test') {
+      this.logger.log('Skipping raw workspace schema bootstrap in test environment');
+      return;
+    }
+
     await this.dataSource.query(`
       CREATE EXTENSION IF NOT EXISTS pgcrypto
     `);

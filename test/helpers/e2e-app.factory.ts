@@ -44,6 +44,10 @@ import { TaskEntity } from '../../src/modules/tasks/entities/task.entity';
 import { TasksModule } from '../../src/modules/tasks/tasks.module';
 import { UserEntity } from '../../src/modules/users/entities/user.entity';
 import { UsersModule } from '../../src/modules/users/users.module';
+import { TeamEntity } from '../../src/modules/workspaces/entities/team.entity';
+import { WorkspaceMembershipEntity } from '../../src/modules/workspaces/entities/workspace-membership.entity';
+import { WorkspaceEntity } from '../../src/modules/workspaces/entities/workspace.entity';
+import { WorkspacesModule } from '../../src/modules/workspaces/workspaces.module';
 import { RedisModule } from '../../src/redis/redis.module';
 
 const TEST_ENTITIES = [
@@ -55,6 +59,9 @@ const TEST_ENTITIES = [
   TaskEntity,
   TaskLogEntity,
   ScheduledTaskEntity,
+  WorkspaceEntity,
+  WorkspaceMembershipEntity,
+  TeamEntity,
 ];
 
 function createPgMemDataSource(
@@ -135,6 +142,7 @@ export async function createE2eApp(): Promise<INestApplication> {
       UsersModule,
       AuthModule,
       DiagnosticsModule,
+      WorkspacesModule,
       EnrollmentsModule,
       NodesModule,
       PackagesModule,

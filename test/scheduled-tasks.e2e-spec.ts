@@ -53,6 +53,7 @@ describe('Scheduled Tasks (e2e)', () => {
   let adminToken: string;
   let userToken: string;
   let adminUserId: string;
+  let workspaceId: string;
   let nodeId: string;
   let secondaryNodeId: string;
 
@@ -71,6 +72,13 @@ describe('Scheduled Tasks (e2e)', () => {
 
     adminToken = adminLogin.body.accessToken;
     adminUserId = adminLogin.body.user.id;
+
+    const workspacesResponse = await request(app.getHttpServer())
+      .get(apiPath('/workspaces'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    workspaceId = workspacesResponse.body[0].id;
 
     await request(app.getHttpServer())
       .post(apiPath('/users'))
@@ -367,7 +375,7 @@ describe('Scheduled Tasks (e2e)', () => {
     expect(matchingTasks).toHaveLength(1);
   });
 
-  it('updates user timezone preferences and recomputes owned schedules', async () => {
+  it('keeps user timezone as display-only and recomputes workspace schedules when the workspace timezone changes', async () => {
     await request(app.getHttpServer())
       .patch(apiPath('/users/me/preferences'))
       .set('Authorization', `Bearer ${adminToken}`)
@@ -390,7 +398,7 @@ describe('Scheduled Tasks (e2e)', () => {
       })
       .expect(201);
 
-    expect(createResponse.body.timezone).toBe('Europe/Istanbul');
+    expect(createResponse.body.timezone).toBe('UTC');
     expect(createResponse.body.ownerUserId).toBe(adminUserId);
 
     const previousNextRunAt = createResponse.body.nextRunAt;
@@ -404,12 +412,23 @@ describe('Scheduled Tasks (e2e)', () => {
         expect(body.timezone).toBe('America/New_York');
       });
 
-    await request(app.getHttpServer())
+    const meResponse = await request(app.getHttpServer())
       .get(apiPath('/users/me'))
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200)
       .expect(({ body }) => {
         expect(body.timezone).toBe('America/New_York');
+      });
+
+    expect(meResponse.body.timezone).toBe('America/New_York');
+
+    await request(app.getHttpServer())
+      .patch(apiPath(`/workspaces/${workspaceId}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ defaultTimezone: 'Asia/Tokyo' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.defaultTimezone).toBe('Asia/Tokyo');
       });
 
     await request(app.getHttpServer())
@@ -425,7 +444,8 @@ describe('Scheduled Tasks (e2e)', () => {
           expect.objectContaining({
             ownerUserId: adminUserId,
             ownerName: process.env.ADMIN_NAME,
-            timezone: 'America/New_York',
+            timezone: 'Asia/Tokyo',
+            timezoneSource: 'workspace',
           }),
         );
         expect(updatedSchedule.nextRunAt).not.toBe(previousNextRunAt);
@@ -437,14 +457,9 @@ describe('Scheduled Tasks (e2e)', () => {
       {
         ownerUserId: null,
         timezone: 'UTC',
+        timezoneSource: 'legacy_fixed',
       },
     );
-
-    await request(app.getHttpServer())
-      .patch(apiPath('/users/me/preferences'))
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ timezone: 'Europe/Berlin' })
-      .expect(200);
 
     await request(app.getHttpServer())
       .get(apiPath('/scheduled-tasks'))
@@ -459,6 +474,7 @@ describe('Scheduled Tasks (e2e)', () => {
           expect.objectContaining({
             ownerUserId: null,
             timezone: 'UTC',
+            timezoneSource: 'legacy_fixed',
             isLegacy: true,
           }),
         );
