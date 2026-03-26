@@ -20,7 +20,7 @@ import { SetupAppModule } from './setup-app.module';
 
 async function bootstrap() {
   const installState = readInstallState();
-  const bootMode = prepareBootEnvironment(installState);
+  const bootMode = await prepareBootEnvironment(installState);
   const rootModule = bootMode === 'setup' ? SetupAppModule : AppModule;
 
   const app = await NestFactory.create<NestExpressApplication>(rootModule, {
