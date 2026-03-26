@@ -27,7 +27,7 @@ import { UsersService } from './users.service';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Get()
   @ApiOperation({
     summary: 'List users',
@@ -72,7 +72,7 @@ export class UsersController {
     return this.usersService.updatePreferences(user.id, dto);
   }
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Post()
   @ApiOperation({
     summary: 'Create a user',

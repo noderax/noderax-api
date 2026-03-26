@@ -23,6 +23,14 @@ export class NodeEntity {
   id: string;
 
   @ApiProperty({
+    format: 'uuid',
+    example: '9d4174b9-5dc2-4891-8d1b-f0a2f6c4e52c',
+  })
+  @Index()
+  @Column({ type: 'uuid' })
+  workspaceId: string;
+
+  @ApiProperty({
     example: 'srv-01',
   })
   @Column({ length: 120 })

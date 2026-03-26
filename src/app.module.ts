@@ -24,6 +24,7 @@ import { PackagesModule } from './modules/packages/packages.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { UsersModule } from './modules/users/users.module';
+import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { RedisModule } from './redis/redis.module';
 
 @Module({
@@ -49,6 +50,7 @@ import { RedisModule } from './redis/redis.module';
     AgentRealtimeModule,
     NotificationsModule,
     UsersModule,
+    WorkspacesModule,
     AuthModule,
     DiagnosticsModule,
     EnrollmentsModule,

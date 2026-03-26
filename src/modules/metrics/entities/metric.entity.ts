@@ -18,6 +18,14 @@ export class MetricEntity {
 
   @ApiProperty({
     format: 'uuid',
+    example: '9d4174b9-5dc2-4891-8d1b-f0a2f6c4e52c',
+  })
+  @Index()
+  @Column({ type: 'uuid' })
+  workspaceId: string;
+
+  @ApiProperty({
+    format: 'uuid',
     example: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
   })
   @Index()

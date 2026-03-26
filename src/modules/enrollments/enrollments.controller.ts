@@ -55,7 +55,7 @@ export class EnrollmentsController {
     return this.enrollmentsService.initiate(body);
   }
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Post(':token/finalize')
   @ApiBearerAuth(SWAGGER_BEARER_AUTH_NAME)
   @ApiUnauthorizedResponse({

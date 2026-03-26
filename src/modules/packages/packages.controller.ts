@@ -125,7 +125,7 @@ export class PackagesController {
     return result.body;
   }
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Post('nodes/:id/packages')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiParam({
@@ -158,7 +158,7 @@ export class PackagesController {
     return this.packagesService.install(id, body);
   }
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Delete('nodes/:id/packages/:name')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiParam({

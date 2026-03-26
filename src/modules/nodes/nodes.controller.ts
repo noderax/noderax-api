@@ -66,7 +66,7 @@ export class NodesController {
     return this.nodesService.findOneOrFail(id);
   }
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Post()
   @ApiOperation({
     summary: 'Create a node manually',
@@ -78,13 +78,13 @@ export class NodesController {
     type: NodeEntity,
   })
   @ApiForbiddenResponse({
-    description: 'Admin role required.',
+    description: 'Platform admin role required.',
   })
   create(@Body() createNodeDto: CreateNodeDto) {
     return this.nodesService.create(createNodeDto);
   }
 
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @Delete(':id')
   @ApiOperation({
     summary: 'Delete a node',
@@ -99,7 +99,7 @@ export class NodesController {
     },
   })
   @ApiForbiddenResponse({
-    description: 'Admin role required.',
+    description: 'Platform admin role required.',
   })
   @ApiNotFoundResponse({
     description: 'Node not found.',

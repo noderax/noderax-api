@@ -82,7 +82,6 @@ export class RealtimeGateway
   }
 
   emitNodeStatusUpdate(payload: Record<string, unknown>) {
-    this.server.emit(REALTIME_EVENTS.NODE_STATUS_UPDATED, payload);
     if (payload.nodeId) {
       this.server
         .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
@@ -91,7 +90,6 @@ export class RealtimeGateway
   }
 
   emitMetricIngested(payload: Record<string, unknown>) {
-    this.server.emit(REALTIME_EVENTS.METRICS_INGESTED, payload);
     if (payload.nodeId) {
       this.server
         .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
@@ -100,7 +98,6 @@ export class RealtimeGateway
   }
 
   emitTaskCreated(payload: Record<string, unknown>) {
-    this.server.emit(REALTIME_EVENTS.TASK_CREATED, payload);
     if (payload.nodeId) {
       this.server
         .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
@@ -109,7 +106,6 @@ export class RealtimeGateway
   }
 
   emitTaskUpdated(payload: Record<string, unknown>) {
-    this.server.emit(REALTIME_EVENTS.TASK_UPDATED, payload);
     if (payload.nodeId) {
       this.server
         .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
@@ -118,7 +114,6 @@ export class RealtimeGateway
   }
 
   emitEventCreated(payload: Record<string, unknown>) {
-    this.server.emit(REALTIME_EVENTS.EVENT_CREATED, payload);
     if (payload.nodeId) {
       this.server
         .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)

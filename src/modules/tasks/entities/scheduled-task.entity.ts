@@ -35,6 +35,14 @@ export class ScheduledTaskEntity {
 
   @ApiProperty({
     format: 'uuid',
+    example: '9d4174b9-5dc2-4891-8d1b-f0a2f6c4e52c',
+  })
+  @Index()
+  @Column({ type: 'uuid' })
+  workspaceId: string;
+
+  @ApiProperty({
+    format: 'uuid',
     example: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
   })
   @Column({ type: 'uuid' })
@@ -126,6 +134,18 @@ export class ScheduledTaskEntity {
   })
   @Column({ length: 80, default: SCHEDULED_TASK_TIMEZONE })
   timezone: string;
+
+  @ApiProperty({
+    enum: ['workspace', 'legacy_fixed'],
+    example: 'workspace',
+  })
+  @Column({
+    type: 'enum',
+    enumName: 'scheduled_task_timezone_source_enum',
+    enum: ['workspace', 'legacy_fixed'],
+    default: 'legacy_fixed',
+  })
+  timezoneSource: 'workspace' | 'legacy_fixed';
 
   @ApiProperty({
     example: true,

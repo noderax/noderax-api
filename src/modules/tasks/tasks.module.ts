@@ -6,6 +6,7 @@ import { EventsModule } from '../events/events.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UserEntity } from '../users/entities/user.entity';
+import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { AgentTasksController } from './agent-tasks.controller';
 import { ScheduledTaskSchemaBootstrap } from './bootstrap/scheduled-task-schema.bootstrap';
 import { TaskSchemaBootstrap } from './bootstrap/task-schema.bootstrap';
@@ -18,6 +19,8 @@ import { ScheduledTasksService } from './scheduled-tasks.service';
 import { TaskStaleDetectorService } from './task-stale-detector.service';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
+import { WorkspaceScheduledTasksController } from './workspace-scheduled-tasks.controller';
+import { WorkspaceTasksController } from './workspace-tasks.controller';
 
 @Module({
   imports: [
@@ -30,12 +33,15 @@ import { TasksService } from './tasks.service';
     NodesModule,
     EventsModule,
     RealtimeModule,
+    WorkspacesModule,
     forwardRef(() => AgentRealtimeModule),
   ],
   controllers: [
     TasksController,
+    WorkspaceTasksController,
     AgentTasksController,
     ScheduledTasksController,
+    WorkspaceScheduledTasksController,
   ],
   providers: [
     TasksService,

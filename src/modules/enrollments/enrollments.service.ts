@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import { NodesService } from '../nodes/nodes.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
+import { WorkspacesService } from '../workspaces/workspaces.service';
 import { FinalizeEnrollmentDto } from './dto/finalize-enrollment.dto';
 import { FinalizeEnrollmentResponseDto } from './dto/finalize-enrollment-response.dto';
 import { EnrollmentStatusResponseDto } from './dto/enrollment-status-response.dto';
@@ -32,6 +33,7 @@ export class EnrollmentsService {
     private readonly usersService: UsersService,
     private readonly nodesService: NodesService,
     private readonly notificationsService: NotificationsService,
+    private readonly workspacesService: WorkspacesService,
   ) {}
 
   async initiate(
@@ -88,6 +90,7 @@ export class EnrollmentsService {
   async finalize(
     token: string,
     finalizeEnrollmentDto: FinalizeEnrollmentDto,
+    workspaceId?: string,
   ): Promise<FinalizeEnrollmentResponseDto> {
     const enrollment = await this.findByTokenOrThrow(token, {
       includeAgentToken: true,
@@ -111,8 +114,12 @@ export class EnrollmentsService {
       throw new GoneException('Enrollment token has expired or was revoked');
     }
 
+    const resolvedWorkspaceId =
+      workspaceId ??
+      (await this.workspacesService.getDefaultWorkspaceOrFail()).id;
     const agentToken = this.enrollmentTokensService.issueAgentToken();
     const node = await this.nodesService.createFromEnrollment({
+      workspaceId: resolvedWorkspaceId,
       name: finalizeEnrollmentDto.nodeName,
       description: finalizeEnrollmentDto.description ?? null,
       hostname: enrollment.hostname,
@@ -122,6 +129,7 @@ export class EnrollmentsService {
     });
 
     enrollment.status = EnrollmentStatus.APPROVED;
+    enrollment.workspaceId = resolvedWorkspaceId;
     enrollment.nodeId = node.id;
     enrollment.agentToken = agentToken;
     enrollment.expiresAt = new Date();

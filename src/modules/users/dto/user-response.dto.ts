@@ -22,7 +22,7 @@ export class UserResponseDto {
   @ApiProperty({
     enum: UserRole,
     enumName: 'UserRole',
-    example: UserRole.ADMIN,
+    example: UserRole.PLATFORM_ADMIN,
   })
   role: UserRole;
 

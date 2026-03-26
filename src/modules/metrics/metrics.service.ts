@@ -38,6 +38,7 @@ export class MetricsService {
     // console.log('[DEBUG] Ingesting metrics:', JSON.stringify(agentMetricsDto, null, 2));
 
     const metric = this.metricsRepository.create({
+      workspaceId: node.workspaceId,
       nodeId: agentMetricsDto.nodeId,
       cpuUsage: this.resolvePercentageMetric(
         agentMetricsDto.cpuUsage,
@@ -93,11 +94,17 @@ export class MetricsService {
     return savedMetric;
   }
 
-  async findAll(query: QueryMetricsDto) {
+  async findAll(query: QueryMetricsDto, workspaceId?: string) {
     const metricsQuery = this.metricsRepository
       .createQueryBuilder('metric')
       .orderBy('metric.recordedAt', 'DESC')
       .take(query.limit ?? 50);
+
+    if (workspaceId) {
+      metricsQuery.andWhere('metric.workspaceId = :workspaceId', {
+        workspaceId,
+      });
+    }
 
     if (query.nodeId) {
       metricsQuery.andWhere('metric.nodeId = :nodeId', {

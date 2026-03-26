@@ -12,6 +12,7 @@ import { TaskLogEntity } from './task-log.entity';
 import { TaskStatus } from './task-status.enum';
 
 @Index('IDX_tasks_node_status_created_at', ['nodeId', 'status', 'createdAt'])
+@Index('IDX_tasks_workspace_created_at', ['workspaceId', 'createdAt'])
 @Entity({ name: 'tasks' })
 export class TaskEntity {
   @ApiProperty({
@@ -20,6 +21,14 @@ export class TaskEntity {
   })
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    example: '9d4174b9-5dc2-4891-8d1b-f0a2f6c4e52c',
+  })
+  @Index()
+  @Column({ type: 'uuid' })
+  workspaceId: string;
 
   @ApiProperty({
     format: 'uuid',

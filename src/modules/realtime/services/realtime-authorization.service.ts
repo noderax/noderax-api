@@ -8,33 +8,40 @@ import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../../../common/types/authenticated-user.type';
 import { NodeEntity } from '../../nodes/entities/node.entity';
 import { UserRole } from '../../users/entities/user-role.enum';
+import { WorkspacesService } from '../../workspaces/workspaces.service';
 
 @Injectable()
 export class RealtimeAuthorizationService {
   constructor(
     @InjectRepository(NodeEntity)
     private readonly nodesRepository: Repository<NodeEntity>,
+    private readonly workspacesService: WorkspacesService,
   ) {}
 
   async assertCanAccessNode(
     user: AuthenticatedUser,
     nodeId: string,
   ): Promise<void> {
-    const nodeExists = await this.nodesRepository.exists({
+    const node = await this.nodesRepository.findOne({
       where: { id: nodeId },
+      select: ['id', 'workspaceId'],
     });
 
-    if (!nodeExists) {
+    if (!node) {
       throw new NotFoundException(`Node ${nodeId} was not found`);
     }
 
-    if (user.role === UserRole.ADMIN) {
+    if (user.role === UserRole.PLATFORM_ADMIN) {
       return;
     }
 
-    if (user.role === UserRole.USER) {
-      // Placeholder policy: authenticated users currently inherit the same
-      // node-read access as the HTTP API. Tighten this here when per-node ACLs land.
+    if (
+      user.role === UserRole.USER &&
+      (await this.workspacesService.findMembershipForUser(
+        node.workspaceId,
+        user.id,
+      ))
+    ) {
       return;
     }
 

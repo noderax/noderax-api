@@ -19,8 +19,6 @@ import {
   assertValidTimeZone,
   DEFAULT_TIMEZONE,
 } from '../../common/utils/timezone.util';
-import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
-import { computeNextScheduledRun } from '../tasks/scheduled-task.utils';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { UserResponseDto } from './dto/user-response.dto';
@@ -34,8 +32,6 @@ export class UsersService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
-    @InjectRepository(ScheduledTaskEntity)
-    private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -91,35 +87,12 @@ export class UsersService {
       throw new BadRequestException('Timezone is required.');
     }
 
-    const timezoneChanged = user.timezone !== timezone;
-    if (!timezoneChanged) {
+    if (user.timezone === timezone) {
       return this.toResponse(user);
     }
 
     user.timezone = timezone;
-    const savedUser = await this.usersRepository.save(user);
-    const ownedSchedules = await this.scheduledTasksRepository.find({
-      where: { ownerUserId: savedUser.id },
-      order: { createdAt: 'ASC' },
-    });
-
-    if (ownedSchedules.length > 0) {
-      const now = new Date();
-
-      for (const schedule of ownedSchedules) {
-        schedule.timezone = savedUser.timezone;
-        schedule.claimToken = null;
-        schedule.claimedBy = null;
-        schedule.leaseUntil = null;
-        schedule.nextRunAt = schedule.enabled
-          ? computeNextScheduledRun(schedule, now)
-          : null;
-      }
-
-      await this.scheduledTasksRepository.save(ownedSchedules);
-    }
-
-    return this.toResponse(savedUser);
+    return this.toResponse(await this.usersRepository.save(user));
   }
 
   async findByEmail(email: string) {
@@ -159,7 +132,7 @@ export class UsersService {
     const adminUser = this.usersRepository.create({
       email: bootstrap.adminEmail.toLowerCase(),
       name: bootstrap.adminName,
-      role: UserRole.ADMIN,
+      role: UserRole.PLATFORM_ADMIN,
       passwordHash,
       timezone: DEFAULT_TIMEZONE,
     });

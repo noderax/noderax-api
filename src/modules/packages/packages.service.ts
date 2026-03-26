@@ -36,10 +36,11 @@ export class PackagesService {
 
   async listInstalled(
     nodeId: string,
+    workspaceId?: string,
   ): Promise<
     PackageHttpResponse<ListPackagesResponseDto | PackageTaskAcceptedDto>
   > {
-    const task = await this.getOrCreatePackageListTask(nodeId);
+    const task = await this.getOrCreatePackageListTask(nodeId, workspaceId);
 
     return this.resolveReadTask(task.id, {
       nodeId,
@@ -50,6 +51,7 @@ export class PackagesService {
 
   async search(
     query: QueryPackageSearchDto,
+    workspaceId?: string,
   ): Promise<
     PackageHttpResponse<SearchPackagesResponseDto | PackageTaskAcceptedDto>
   > {
@@ -60,7 +62,7 @@ export class PackagesService {
         term: query.term,
         query: query.term,
       },
-    });
+    }, workspaceId);
 
     return this.resolveReadTask(task.id, {
       nodeId: query.nodeId,
@@ -72,6 +74,7 @@ export class PackagesService {
   async install(
     nodeId: string,
     installPackagesDto: InstallPackagesDto,
+    workspaceId?: string,
   ): Promise<PackageTaskAcceptedDto> {
     const names = installPackagesDto.names;
     const purge = installPackagesDto.purge ?? false;
@@ -84,7 +87,7 @@ export class PackagesService {
         package: names.length === 1 ? names[0] : undefined,
         purge,
       },
-    });
+    }, workspaceId);
 
     return this.buildAcceptedResponse(task.id, {
       nodeId,
@@ -99,6 +102,7 @@ export class PackagesService {
     nodeId: string,
     name: string,
     query: QueryPackageRemovalDto,
+    workspaceId?: string,
   ): Promise<PackageTaskAcceptedDto> {
     const purge = this.normalizeBoolean(
       query.purge as boolean | string | null | undefined,
@@ -116,7 +120,7 @@ export class PackagesService {
         package: name,
         purge,
       },
-    });
+    }, workspaceId);
 
     return this.buildAcceptedResponse(task.id, {
       nodeId,
@@ -412,8 +416,12 @@ export class PackagesService {
 
   private async getOrCreatePackageListTask(
     nodeId: string,
+    workspaceId?: string,
   ): Promise<TaskEntity> {
-    const inFlightTask = await this.findInFlightPackageListTask(nodeId);
+    const inFlightTask = await this.findInFlightPackageListTask(
+      nodeId,
+      workspaceId,
+    );
     if (inFlightTask) {
       this.logger.warn(
         JSON.stringify({
@@ -430,16 +438,17 @@ export class PackagesService {
       nodeId,
       type: TASK_TYPES.PACKAGE_LIST,
       payload: {},
-    });
+    }, workspaceId);
   }
 
   private async findInFlightPackageListTask(
     nodeId: string,
+    workspaceId?: string,
   ): Promise<TaskEntity | null> {
     const tasks = await this.tasksService.findAll({
       nodeId,
       limit: PACKAGE_RECENT_TASK_SCAN_LIMIT,
-    });
+    }, workspaceId);
 
     const task = tasks.find(
       (candidate) =>
@@ -453,11 +462,12 @@ export class PackagesService {
 
   private async findLatestSuccessfulPackageListTask(
     nodeId: string,
+    workspaceId?: string,
   ): Promise<TaskEntity | null> {
     const tasks = await this.tasksService.findAll({
       nodeId,
       limit: PACKAGE_RECENT_TASK_SCAN_LIMIT,
-    });
+    }, workspaceId);
 
     const task = tasks.find(
       (candidate) =>

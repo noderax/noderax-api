@@ -12,6 +12,7 @@ import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodesService } from '../nodes/nodes.service';
 import { UserEntity } from '../users/entities/user.entity';
+import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateBatchScheduledTaskDto } from './dto/create-batch-scheduled-task.dto';
 import { CreateScheduledTaskDto } from './dto/create-scheduled-task.dto';
 import { UpdateScheduledTaskDto } from './dto/update-scheduled-task.dto';
@@ -36,16 +37,20 @@ export class ScheduledTasksService {
     private readonly nodesService: NodesService,
     private readonly eventsService: EventsService,
     private readonly tasksService: TasksService,
+    private readonly workspacesService: WorkspacesService,
   ) {}
 
   async create(
     ownerUserId: string,
+    workspaceId: string | undefined,
     createScheduledTaskDto: CreateScheduledTaskDto,
   ): Promise<ScheduledTaskEntity> {
     const owner = await this.findOwnerOrFail(ownerUserId);
+    const workspace = await this.resolveWorkspace(workspaceId, ownerUserId);
     const normalized = this.normalizeScheduleInput(createScheduledTaskDto);
     const [saved] = await this.createSchedulesForNodes(
       owner,
+      workspace,
       [createScheduledTaskDto.nodeId],
       normalized,
     );
@@ -55,21 +60,28 @@ export class ScheduledTasksService {
 
   async createBatch(
     ownerUserId: string,
+    workspaceId: string | undefined,
     createBatchScheduledTaskDto: CreateBatchScheduledTaskDto,
   ): Promise<ScheduledTaskEntity[]> {
     const owner = await this.findOwnerOrFail(ownerUserId);
+    const workspace = await this.resolveWorkspace(workspaceId, ownerUserId);
     const normalized = this.normalizeScheduleInput(createBatchScheduledTaskDto);
 
     return this.createSchedulesForNodes(
       owner,
+      workspace,
       createBatchScheduledTaskDto.nodeIds,
       normalized,
     );
   }
 
-  async findAll(): Promise<ScheduledTaskEntity[]> {
+  async findAll(workspaceId?: string): Promise<ScheduledTaskEntity[]> {
     const schedules = await this.scheduledTasksRepository
       .createQueryBuilder('schedule')
+      .where(
+        workspaceId ? 'schedule.workspaceId = :workspaceId' : '1=1',
+        workspaceId ? { workspaceId } : {},
+      )
       .orderBy('schedule.enabled', 'DESC')
       .addOrderBy('schedule.nextRunAt', 'ASC', 'NULLS LAST')
       .addOrderBy('schedule.createdAt', 'ASC')
@@ -78,9 +90,12 @@ export class ScheduledTasksService {
     return this.populateOwnerMetadata(schedules);
   }
 
-  async findOneOrFail(id: string): Promise<ScheduledTaskEntity> {
+  async findOneOrFail(
+    id: string,
+    workspaceId?: string,
+  ): Promise<ScheduledTaskEntity> {
     const scheduledTask = await this.scheduledTasksRepository.findOne({
-      where: { id },
+      where: workspaceId ? { id, workspaceId } : { id },
     });
 
     if (!scheduledTask) {
@@ -96,8 +111,9 @@ export class ScheduledTasksService {
   async updateEnabled(
     id: string,
     dto: UpdateScheduledTaskDto,
+    workspaceId?: string,
   ): Promise<ScheduledTaskEntity> {
-    const scheduledTask = await this.findOneOrFail(id);
+    const scheduledTask = await this.findOneOrFail(id, workspaceId);
     scheduledTask.enabled = dto.enabled;
     scheduledTask.claimToken = null;
     scheduledTask.claimedBy = null;
@@ -114,8 +130,7 @@ export class ScheduledTasksService {
 
     const saved = await this.scheduledTasksRepository.save(scheduledTask);
     saved.ownerName = scheduledTask.ownerName ?? null;
-    saved.isLegacy =
-      saved.ownerUserId === null && saved.timezone === SCHEDULED_TASK_TIMEZONE;
+    saved.isLegacy = saved.timezoneSource === 'legacy_fixed';
 
     await this.eventsService.record({
       nodeId: saved.nodeId,
@@ -137,8 +152,11 @@ export class ScheduledTasksService {
     return saved;
   }
 
-  async delete(id: string): Promise<{ deleted: true; id: string }> {
-    const scheduledTask = await this.findOneOrFail(id);
+  async delete(
+    id: string,
+    workspaceId?: string,
+  ): Promise<{ deleted: true; id: string }> {
+    const scheduledTask = await this.findOneOrFail(id, workspaceId);
     await this.scheduledTasksRepository.remove(scheduledTask);
 
     await this.eventsService.record({
@@ -156,34 +174,6 @@ export class ScheduledTasksService {
       deleted: true,
       id,
     };
-  }
-
-  async syncSchedulesForOwnerTimezoneChange(
-    ownerUserId: string,
-    timezone: string,
-  ): Promise<number> {
-    const schedules = await this.scheduledTasksRepository.find({
-      where: { ownerUserId },
-      order: { createdAt: 'ASC' },
-    });
-
-    if (schedules.length === 0) {
-      return 0;
-    }
-
-    const now = new Date();
-    for (const schedule of schedules) {
-      schedule.timezone = timezone;
-      schedule.claimToken = null;
-      schedule.claimedBy = null;
-      schedule.leaseUntil = null;
-      schedule.nextRunAt = schedule.enabled
-        ? computeNextScheduledRun(schedule, now)
-        : null;
-    }
-
-    await this.scheduledTasksRepository.save(schedules);
-    return schedules.length;
   }
 
   async claimNextDueSchedule(
@@ -241,6 +231,7 @@ export class ScheduledTasksService {
     try {
       const createdTask = await this.tasksService.createScheduledShellTask({
         nodeId: scheduledTask.nodeId,
+        workspaceId: scheduledTask.workspaceId,
         scheduleId: scheduledTask.id,
         scheduleName: scheduledTask.name,
         command: scheduledTask.command,
@@ -347,9 +338,7 @@ export class ScheduledTasksService {
         ? ownerLookup.get(schedule.ownerUserId)
         : null;
       schedule.ownerName = owner?.name ?? null;
-      schedule.isLegacy =
-        schedule.ownerUserId === null &&
-        schedule.timezone === SCHEDULED_TASK_TIMEZONE;
+      schedule.isLegacy = schedule.timezoneSource === 'legacy_fixed';
       return schedule;
     });
   }
@@ -499,19 +488,20 @@ export class ScheduledTasksService {
 
   private async createSchedulesForNodes(
     owner: UserEntity,
+    workspace: Awaited<ReturnType<WorkspacesService['findWorkspaceOrFail']>>,
     rawNodeIds: string[],
     normalized: NormalizedScheduleInput,
   ): Promise<ScheduledTaskEntity[]> {
     const nodeIds = this.normalizeNodeIds(rawNodeIds);
     await Promise.all(
-      nodeIds.map((nodeId) => this.nodesService.ensureExists(nodeId)),
+      nodeIds.map((nodeId) => this.nodesService.ensureExists(nodeId, workspace.id)),
     );
 
     const now = new Date();
     const nextRunAt = computeNextScheduledRun(
       {
         ...normalized,
-        timezone: owner.timezone,
+        timezone: workspace.defaultTimezone,
       },
       now,
     );
@@ -519,6 +509,7 @@ export class ScheduledTasksService {
 
     for (const nodeId of nodeIds) {
       const scheduledTask = this.scheduledTasksRepository.create({
+        workspaceId: workspace.id,
         nodeId,
         ownerUserId: owner.id,
         name: normalized.name,
@@ -528,7 +519,8 @@ export class ScheduledTasksService {
         hour: normalized.hour,
         dayOfWeek: normalized.dayOfWeek,
         intervalMinutes: normalized.intervalMinutes,
-        timezone: owner.timezone,
+        timezone: workspace.defaultTimezone,
+        timezoneSource: 'workspace',
         enabled: true,
         nextRunAt,
         lastRunAt: null,
@@ -554,6 +546,7 @@ export class ScheduledTasksService {
           cadence: saved.cadence,
           ownerUserId: saved.ownerUserId,
           ownerName: owner.name,
+          workspaceId: saved.workspaceId,
           timezone: saved.timezone,
           nextRunAt: saved.nextRunAt?.toISOString() ?? null,
         },
@@ -575,6 +568,29 @@ export class ScheduledTasksService {
     }
 
     return normalizedNodeIds;
+  }
+
+  private async resolveWorkspace(
+    workspaceId: string | undefined,
+    ownerUserId: string,
+  ) {
+    if (workspaceId) {
+      return this.workspacesService.findWorkspaceOrFail(workspaceId);
+    }
+
+    const defaultWorkspace = await this.workspacesService.getDefaultWorkspaceOrFail();
+    const membership = await this.workspacesService.findMembershipForUser(
+      defaultWorkspace.id,
+      ownerUserId,
+    );
+
+    if (!membership) {
+      throw new NotFoundException(
+        `User ${ownerUserId} is not a member of the default workspace.`,
+      );
+    }
+
+    return defaultWorkspace;
   }
 }
 

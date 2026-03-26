@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { NodeEntity } from '../nodes/entities/node.entity';
+import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
 import { WsNodeSubscriptionGuard } from './guards/ws-node-subscription.guard';
 import { RealtimeGateway } from './realtime.gateway';
@@ -10,7 +11,7 @@ import { RealtimeAuthorizationService } from './services/realtime-authorization.
 import { RealtimePubsubBridgeService } from './services/realtime-pubsub-bridge.service';
 
 @Module({
-  imports: [AuthModule, TypeOrmModule.forFeature([NodeEntity])],
+  imports: [AuthModule, TypeOrmModule.forFeature([NodeEntity]), WorkspacesModule],
   providers: [
     RealtimeGateway,
     RealtimePubsubBridgeService,

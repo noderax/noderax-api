@@ -16,6 +16,7 @@ import { RedisService } from '../../redis/redis.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
 import { NodeEntity } from './entities/node.entity';
@@ -32,12 +33,20 @@ export class NodesService {
     private readonly eventsService: EventsService,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
+    private readonly workspacesService: WorkspacesService,
   ) {}
 
-  async create(createNodeDto: CreateNodeDto): Promise<NodeEntity> {
+  async create(
+    createNodeDto: CreateNodeDto,
+    workspaceId?: string,
+  ): Promise<NodeEntity> {
     await this.assertHostnameAvailable(createNodeDto.hostname);
+    const resolvedWorkspaceId =
+      workspaceId ??
+      (await this.workspacesService.getDefaultWorkspaceOrFail()).id;
 
     const node = this.nodesRepository.create({
+      workspaceId: resolvedWorkspaceId,
       name: createNodeDto.name ?? createNodeDto.hostname,
       description: createNodeDto.description ?? null,
       hostname: createNodeDto.hostname,
@@ -49,12 +58,19 @@ export class NodesService {
     return this.nodesRepository.save(node);
   }
 
-  async findAll(query: QueryNodesDto): Promise<NodeEntity[]> {
+  async findAll(
+    query: QueryNodesDto,
+    workspaceId?: string,
+  ): Promise<NodeEntity[]> {
     const nodesQuery = this.nodesRepository
       .createQueryBuilder('node')
       .orderBy('node.createdAt', 'DESC')
       .take(query.limit ?? 50)
       .skip(query.offset ?? 0);
+
+    if (workspaceId) {
+      nodesQuery.andWhere('node.workspaceId = :workspaceId', { workspaceId });
+    }
 
     if (query.status) {
       nodesQuery.andWhere('node.status = :status', { status: query.status });
@@ -72,9 +88,9 @@ export class NodesService {
     return nodesQuery.getMany();
   }
 
-  async findOneOrFail(id: string): Promise<NodeEntity> {
+  async findOneOrFail(id: string, workspaceId?: string): Promise<NodeEntity> {
     const node = await this.nodesRepository.findOne({
-      where: { id },
+      where: workspaceId ? { id, workspaceId } : { id },
     });
 
     if (!node) {
@@ -84,18 +100,22 @@ export class NodesService {
     return node;
   }
 
-  async delete(id: string): Promise<{ deleted: true; id: string }> {
-    const node = await this.findOneOrFail(id);
+  async delete(
+    id: string,
+    workspaceId?: string,
+  ): Promise<{ deleted: true; id: string }> {
+    const node = await this.findOneOrFail(id, workspaceId);
     await this.nodesRepository.remove(node);
 
     return { deleted: true, id };
   }
 
-  async ensureExists(nodeId: string): Promise<NodeEntity> {
-    return this.findOneOrFail(nodeId);
+  async ensureExists(nodeId: string, workspaceId?: string): Promise<NodeEntity> {
+    return this.findOneOrFail(nodeId, workspaceId);
   }
 
   async createFromEnrollment(input: {
+    workspaceId: string;
     name: string;
     description: string | null;
     hostname: string;
@@ -106,6 +126,7 @@ export class NodesService {
     await this.assertHostnameAvailable(input.hostname);
 
     const node = this.nodesRepository.create({
+      workspaceId: input.workspaceId,
       name: input.name,
       description: input.description,
       hostname: input.hostname,
@@ -143,6 +164,8 @@ export class NodesService {
     }
 
     const node = this.nodesRepository.create({
+      workspaceId:
+        (await this.workspacesService.getDefaultWorkspaceOrFail()).id,
       name: input.hostname,
       hostname: input.hostname,
       os: input.os,

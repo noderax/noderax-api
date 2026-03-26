@@ -21,6 +21,15 @@ export class EnrollmentEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    example: '9d4174b9-5dc2-4891-8d1b-f0a2f6c4e52c',
+  })
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  workspaceId: string | null;
+
   @ApiProperty({
     example: 'admin@example.com',
   })

@@ -33,7 +33,7 @@ import { ScheduledTasksService } from './scheduled-tasks.service';
   description: 'JWT authentication required.',
 })
 @Controller('scheduled-tasks')
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.PLATFORM_ADMIN)
 export class ScheduledTasksController {
   constructor(private readonly scheduledTasksService: ScheduledTasksService) {}
 
@@ -54,7 +54,7 @@ export class ScheduledTasksController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateScheduledTaskDto,
   ) {
-    return this.scheduledTasksService.create(user.id, dto);
+    return this.scheduledTasksService.create(user.id, undefined, dto);
   }
 
   @Post('batch')
@@ -75,7 +75,7 @@ export class ScheduledTasksController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateBatchScheduledTaskDto,
   ) {
-    return this.scheduledTasksService.createBatch(user.id, dto);
+    return this.scheduledTasksService.createBatch(user.id, undefined, dto);
   }
 
   @Get()

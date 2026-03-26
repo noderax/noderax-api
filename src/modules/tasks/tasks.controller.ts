@@ -31,11 +31,11 @@ export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Post()
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @ApiOperation({
     summary: 'Create a task',
     description:
-      'Queues a command or operation for a target node. Requires ADMIN role.',
+      'Queues a command or operation for a target node. Requires PLATFORM_ADMIN role.',
   })
   @ApiCreatedResponse({
     description: 'Task created.',
@@ -49,11 +49,11 @@ export class TasksController {
   }
 
   @Post('batch')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @ApiOperation({
     summary: 'Create tasks for multiple nodes',
     description:
-      'Queues the same command or operation for multiple target nodes in one request. Requires ADMIN role.',
+      'Queues the same command or operation for multiple target nodes in one request. Requires PLATFORM_ADMIN role.',
   })
   @ApiCreatedResponse({
     description: 'Tasks created.',
@@ -112,7 +112,7 @@ export class TasksController {
   }
 
   @Post(':id/cancel')
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.PLATFORM_ADMIN)
   @ApiOperation({
     summary: 'Request task cancellation',
     description:

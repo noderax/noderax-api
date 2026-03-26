@@ -79,19 +79,24 @@ export class TasksService {
     private readonly configService: ConfigService,
   ) {}
 
-  async create(createTaskDto: CreateTaskDto): Promise<TaskEntity> {
+  async create(
+    createTaskDto: CreateTaskDto,
+    workspaceId?: string,
+  ): Promise<TaskEntity> {
     return this.queueTask({
       nodeId: createTaskDto.nodeId,
       type: createTaskDto.type,
       payload: createTaskDto.payload ?? {},
+      workspaceId,
     });
   }
 
   async createBatch(
     createBatchTaskDto: CreateBatchTaskDto,
+    workspaceId?: string,
   ): Promise<TaskEntity[]> {
     const nodeIds = this.normalizeNodeIds(createBatchTaskDto.nodeIds);
-    const nodeLookup = await this.loadNodeLookup(nodeIds);
+    const nodeLookup = await this.loadNodeLookup(nodeIds, workspaceId);
     const tasks: TaskEntity[] = [];
 
     for (const nodeId of nodeIds) {
@@ -107,6 +112,7 @@ export class TasksService {
             nodeId,
             type: createBatchTaskDto.type,
             payload: createBatchTaskDto.payload ?? {},
+            workspaceId,
           },
           node,
         ),
@@ -121,10 +127,12 @@ export class TasksService {
     scheduleId: string;
     scheduleName: string;
     command: string;
+    workspaceId?: string;
   }): Promise<TaskEntity> {
     return this.queueTask({
       nodeId: input.nodeId,
       type: 'shell.exec',
+      workspaceId: input.workspaceId,
       payload: {
         title: input.scheduleName,
         command: input.command,
@@ -134,12 +142,16 @@ export class TasksService {
     });
   }
 
-  async findAll(query: QueryTasksDto): Promise<TaskEntity[]> {
+  async findAll(query: QueryTasksDto, workspaceId?: string): Promise<TaskEntity[]> {
     const tasksQuery = this.tasksRepository
       .createQueryBuilder('task')
       .orderBy('task.createdAt', 'DESC')
       .take(query.limit ?? 50)
       .skip(query.offset ?? 0);
+
+    if (workspaceId) {
+      tasksQuery.andWhere('task.workspaceId = :workspaceId', { workspaceId });
+    }
 
     if (query.nodeId) {
       tasksQuery.andWhere('task.nodeId = :nodeId', { nodeId: query.nodeId });
@@ -213,8 +225,10 @@ export class TasksService {
     return staleTasks.length + requeuedClaimedCount;
   }
 
-  async findOneOrFail(id: string): Promise<TaskEntity> {
-    const task = await this.tasksRepository.findOne({ where: { id } });
+  async findOneOrFail(id: string, workspaceId?: string): Promise<TaskEntity> {
+    const task = await this.tasksRepository.findOne({
+      where: workspaceId ? { id, workspaceId } : { id },
+    });
 
     if (!task) {
       throw new NotFoundException(`Task ${id} was not found`);
@@ -227,9 +241,10 @@ export class TasksService {
     taskId: string,
     timeoutMs = 10000,
     pollMs = 250,
+    workspaceId?: string,
   ): Promise<TaskEntity | null> {
     const deadline = Date.now() + Math.max(timeoutMs, 0);
-    let task = await this.findOneOrFail(taskId);
+    let task = await this.findOneOrFail(taskId, workspaceId);
 
     if (this.isTerminalStatus(task.status)) {
       return task;
@@ -237,7 +252,7 @@ export class TasksService {
 
     while (Date.now() < deadline) {
       await this.delay(Math.max(pollMs, 1));
-      task = await this.findOneOrFail(taskId);
+      task = await this.findOneOrFail(taskId, workspaceId);
 
       if (this.isTerminalStatus(task.status)) {
         return task;
@@ -250,8 +265,9 @@ export class TasksService {
   async requestTaskCancellation(
     taskId: string,
     dto: RequestTaskCancelDto,
+    workspaceId?: string,
   ): Promise<TaskEntity> {
-    const task = await this.findOneOrFail(taskId);
+    const task = await this.findOneOrFail(taskId, workspaceId);
     const previousStatus = task.status;
     const now = new Date();
     const normalizedReason =
@@ -303,7 +319,10 @@ export class TasksService {
     }
 
     if (savedTask.status === TaskStatus.CANCELLED) {
-      const node = await this.nodesService.findOneOrFail(savedTask.nodeId);
+      const node = await this.nodesService.findOneOrFail(
+        savedTask.nodeId,
+        savedTask.workspaceId,
+      );
       await this.eventsService.record({
         nodeId: savedTask.nodeId,
         type: SYSTEM_EVENT_TYPES.TASK_CANCELLED,
@@ -407,8 +426,9 @@ export class TasksService {
   async findLogs(
     taskId: string,
     query: QueryTaskLogsDto,
+    workspaceId?: string,
   ): Promise<TaskLogEntity[]> {
-    await this.findOneOrFail(taskId);
+    await this.findOneOrFail(taskId, workspaceId);
 
     return this.taskLogsRepository.find({
       where: { taskId },
@@ -1283,13 +1303,16 @@ export class TasksService {
       nodeId: string;
       type: string;
       payload: Record<string, unknown>;
+      workspaceId?: string;
     },
     nodeOverride?: NodeEntity,
   ): Promise<TaskEntity> {
     const node =
-      nodeOverride ?? (await this.nodesService.ensureExists(input.nodeId));
+      nodeOverride ??
+      (await this.nodesService.ensureExists(input.nodeId, input.workspaceId));
 
     const task = this.tasksRepository.create({
+      workspaceId: node.workspaceId,
       nodeId: input.nodeId,
       type: input.type,
       payload: input.payload,
@@ -1351,9 +1374,12 @@ export class TasksService {
 
   private async loadNodeLookup(
     nodeIds: string[],
+    workspaceId?: string,
   ): Promise<Map<string, NodeEntity>> {
     const nodes = await Promise.all(
-      nodeIds.map((nodeId) => this.nodesService.ensureExists(nodeId)),
+      nodeIds.map((nodeId) =>
+        this.nodesService.ensureExists(nodeId, workspaceId),
+      ),
     );
 
     return new Map(nodes.map((node) => [node.id, node] as const));
