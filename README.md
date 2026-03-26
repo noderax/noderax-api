@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Noderax API</h1>
 
-Noderax is an agent-based infrastructure management platform. This repository contains the monolithic NestJS control plane API used by the web dashboard and remote Go agents. It provides the REST and realtime communication layer for the entire platform.
+Noderax API is the NestJS control plane for the platform. It serves the web dashboard, the first-run installer, workspace-aware control-plane routes, and the remote Go agent runtime.
 
 Current stable release: `1.0.0`
 
@@ -12,50 +12,56 @@ Current stable release: `1.0.0`
 - NestJS 11
 - TypeScript
 - PostgreSQL with TypeORM
-- Redis for pub/sub and future queue work
+- Redis for pub/sub and bridge work
 - JWT authentication
-- Socket.IO gateway for realtime updates
+- Socket.IO gateways for web and agent realtime
 
 ## Module Layout
 
 ```text
 src/
   modules/
+    agent-realtime/
     agents/
     auth/
+    diagnostics/
     enrollments/
     events/
     metrics/
     nodes/
     notifications/
+    packages/
+    platform-settings/
     realtime/
+    setup/
     tasks/
     users/
+    workspaces/
   common/
-    decorators/
-    filters/
-    guards/
-    interceptors/
-    types/
-    utils/
   config/
   database/
+  install/
   redis/
 ```
 
-## MVP Features
+## Platform Surface
 
-- JWT login flow with optional seeded default admin
-- User roles: `admin`, `user`
-- Node inventory with scheduler-driven online and offline status
-- Two-step agent enrollment with admin approval plus legacy registration compatibility
-- Metrics ingestion persisted to PostgreSQL
-- Task creation, batch dispatch, polling, execution updates, and logs
-- Timezone-aware scheduled task creation and recurring queue generation
-- Per-user timezone preferences that drive schedule execution semantics
-- **Realtime node management:** Reboot and Noderax Agent restart actions
-- Event persistence with notification stubs
-- Realtime broadcasts for node, metric, task, and event updates
+- Installer-managed first-run setup with `setup`, `installed`, `legacy`, and `restart_required` modes
+- Workspace-aware control plane with:
+  - workspace listing and detail
+  - members and teams
+  - owner/admin/member/viewer roles
+  - default-workspace selection
+  - protected workspace deletion rules
+- Platform-level admin role: `platform_admin`
+- Node inventory with online and offline detection
+- Agent enrollment with approval flow plus legacy registration compatibility
+- Metrics ingestion and node telemetry persistence
+- Task creation, batch dispatch, long-poll task claiming, lifecycle updates, and logs
+- Scheduled task creation with workspace timezone support
+- Package operations through the shared task pipeline
+- Platform settings persistence through installer state
+- Realtime updates for node state, metrics, tasks, and events
 
 ## Local Setup
 
@@ -71,20 +77,22 @@ pnpm install
 cp .env.example .env
 ```
 
-Set at least these values before real usage:
+Important values:
 
 - `JWT_SECRET`
-- `AGENT_ENROLLMENT_TOKEN`
-- `AGENT_HEARTBEAT_TIMEOUT_SECONDS`
-- `AGENT_OFFLINE_CHECK_INTERVAL_SECONDS`
-- database credentials
-- Redis settings if Redis is enabled
+- `DB_HOST`
+- `DB_PORT`
+- `DB_USERNAME`
+- `DB_PASSWORD`
+- `DB_NAME`
+- `REDIS_ENABLED`
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `NODERAX_STATE_DIR`
 
-`AGENT_ENROLLMENT_TOKEN` is the shared secret used only by the legacy `POST /agent/register` flow. The preferred enrollment path is the new two-step `/enrollments/initiate` -> `/enrollments/:token/finalize` -> `/enrollments/:token` flow.
-`AGENT_HEARTBEAT_TIMEOUT_SECONDS` controls how long a node may stay silent before the background scheduler marks it offline.
-`AGENT_OFFLINE_CHECK_INTERVAL_SECONDS` controls how often the scheduler scans for stale online nodes.
+For installer-managed deployments, `NODERAX_STATE_DIR` should point to a writable application-data path. For Docker, use a mounted path such as `/data/noderax`.
 
-If you want the API to create a first admin user automatically, set:
+If you want the API to create the first platform admin automatically, set:
 
 - `SEED_DEFAULT_ADMIN=true`
 - `ADMIN_NAME`
@@ -97,16 +105,29 @@ If you want the API to create a first admin user automatically, set:
 pnpm start:dev
 ```
 
-The default API base URL is `http://localhost:3000/api/v1`.
-Swagger UI is available at `http://localhost:3000/api/v1/docs`.
-OpenAPI JSON is available at `http://localhost:3000/api/v1/docs-json`.
+Default URLs:
 
-Swagger groups package management routes under `Packages` (now using optimized `dpkg -l` parsing for Debian/Ubuntu), the new two-step enrollment routes under `Enrollments`, and marks the legacy `Agents / register` route as deprecated.
+- API base: `http://localhost:3000/api/v1`
+- Swagger UI: `http://localhost:3000/api/v1/docs`
+- OpenAPI JSON: `http://localhost:3000/api/v1/docs-json`
 
 ## Docker
 
 ```bash
 cp .env.example .env
+```
+
+Recommended `.env` values for the bundled compose stack:
+
+```env
+NODE_ENV=production
+DB_SYNCHRONIZE=false
+NODERAX_STATE_DIR=/data/noderax
+```
+
+Then run:
+
+```bash
 docker compose up --build
 ```
 
@@ -116,86 +137,76 @@ Services:
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
-## Production Build & Deployment
+The provided `docker-compose.yml` mounts a named volume for installer state at `/data/noderax`.
 
-```bash
-pnpm build
-pnpm start:prod
-```
+## Installer And State Directory
 
-### Railway Deployment
+The installer persists runtime setup into `install-state.json` under `NODERAX_STATE_DIR`.
 
-For Railway or similar PaaS environments:
+Important behavior:
 
-- The API is configured to bind to `0.0.0.0` natively via `NEST_BIND_ALL=true`.
-- Healthchecks are supported via `GET /health`.
-- Explicit `express` dependency has been removed to reduce bundle size and improve startup performance.
+- `setup` mode:
+  Fresh install. The API exposes `/setup/*` and waits for first-time provisioning.
+- `installed` mode:
+  The installer has completed and the normal app surface is active.
+- `restart_required` mode:
+  Installer-managed settings were updated and a restart is needed before they fully apply.
+- `legacy` mode:
+  Existing schema and env-driven installs continue to boot without installer ownership.
 
-## Environment
+If the state directory is not writable, setup and platform-settings flows will warn or fail. In containers, use a writable mounted directory instead of writing under a read-only application path.
 
-All required variables are documented in `.env.example`.
+## Roles And Workspace Model
 
-Important agent settings:
+- Platform role:
+  - `platform_admin`
+  - `user`
+- Workspace membership roles:
+  - `owner`
+  - `admin`
+  - `member`
+  - `viewer`
 
-- `AGENT_HEARTBEAT_TIMEOUT_SECONDS`
-  Nodes that do not send a heartbeat within this window are marked `offline`.
-- `AGENT_OFFLINE_CHECK_INTERVAL_SECONDS`
-  Background polling interval for stale-node detection.
-- `AGENT_REALTIME_PING_TIMEOUT_SECONDS`
-  Realtime socket ping timeout before force-disconnect.
-- `AGENT_REALTIME_PING_CHECK_INTERVAL_SECONDS`
-  How often realtime ping timeout checks run.
-- `AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS`
-  How often stale task detector checks for stuck queued/running tasks.
-- `AGENT_STALE_QUEUED_TASK_TIMEOUT_SECONDS`
-  Mark queued tasks as failed after this many seconds.
-- `AGENT_STALE_RUNNING_TASK_TIMEOUT_SECONDS`
-  Mark running tasks as failed after this many seconds.
-- `AGENT_HIGH_CPU_THRESHOLD`
-  Threshold above which CPU usage is considered high.
-- `AGENT_ENROLLMENT_TOKEN`
-  Shared secret for the legacy one-step `/agent/register` path only.
+Key rules:
 
-## Heartbeat Timeout And Offline Detection
+- `platform_admin` can create workspaces and manage platform settings.
+- Workspace `owner` and `admin` can update workspace settings, members, teams, and delete the workspace.
+- The current default workspace cannot be deleted until another workspace is selected as default.
 
-The API runs a background scheduler that checks online nodes at the configured interval.
+## Task Delivery Model
 
-- If `lastSeenAt` is older than `AGENT_HEARTBEAT_TIMEOUT_SECONDS`, the node transitions from `online` to `offline`.
-- The transition is emitted once per state change, not on every scheduler tick.
-- Each offline transition records a `node.offline` system event and publishes realtime updates.
-- The next valid heartbeat moves the node back to `online`, updates `lastSeenAt`, and records a `node.online` event.
+The primary task execution path is HTTP polling.
 
-## Tasking Model
-
-Noderax uses one task execution pipeline for manual runs, batch dispatch, and scheduled jobs.
-
-- `POST /tasks` creates a one-off task for a single node.
-- `POST /tasks/batch` creates the same task definition for multiple nodes in one request.
-- `POST /scheduled-tasks` stores a recurring `shell.exec` definition for one node.
-- `POST /scheduled-tasks/batch` stores the same recurring definition across multiple nodes.
-- The scheduled-task runner uses a database-backed lease and polling loop to find due schedules and enqueue standard `shell.exec` tasks.
-- Agents do not receive a special schedule-only task type. They claim and execute the generated work as normal queued tasks.
-- New schedules inherit the creator's saved IANA timezone. If that user later updates `PATCH /users/me/preferences`, owned schedules are recomputed to keep the same intended local run time.
-- Legacy schedules without an owner remain on `UTC`.
+- Agents long-poll `POST /agent/tasks/claim`
+- Agents report lifecycle with:
+  - `POST /agent/tasks/:taskId/accepted`
+  - `POST /agent/tasks/:taskId/started`
+  - `POST /agent/tasks/:taskId/logs`
+  - `POST /agent/tasks/:taskId/completed`
+- Cancellation is observed through agent control polling
+- Realtime agent sockets remain active for telemetry and lifecycle support
+- Realtime task push exists only as an explicit compatibility mode and is disabled by default
 
 ## Main Endpoints
 
-All HTTP routes below are relative to `http://localhost:3000/api/v1`.
+All routes below are relative to `http://localhost:3000/api/v1`.
 
-### Public
+### Public / Installer
 
 - `GET /health`
 - `POST /auth/login`
+- `GET /setup/status`
+- `POST /setup/validate/postgres`
+- `POST /setup/validate/redis`
+- `POST /setup/install`
 - `POST /enrollments/initiate`
 - `GET /enrollments/:token`
-- `POST /agent/register` (legacy, deprecated)
+
+### Agent
+
+- `POST /agent/register` (legacy)
 - `POST /agent/heartbeat`
 - `POST /agent/metrics`
-
-### Agent-Authenticated
-
-These endpoints are intended for registered agents and require `nodeId` plus `agentToken` in the request body.
-
 - `POST /agent/tasks/claim`
 - `POST /agent/tasks/:taskId/accepted`
 - `GET /agent/tasks/:taskId/control`
@@ -203,538 +214,65 @@ These endpoints are intended for registered agents and require `nodeId` plus `ag
 - `POST /agent/tasks/:taskId/logs`
 - `POST /agent/tasks/:taskId/completed`
 
-### Diagnostics (Admin JWT)
-
-- `GET /diagnostics/task-flow`
-
-Returns a stable diagnostics snapshot for the frontend task-flow panel.
-
-Example response:
-
-```json
-{
-  "fetchedAt": "2026-03-23T12:34:56.000Z",
-  "source": "agent-task-flow",
-  "agentCounters": {
-    "metrics.ingested": 12345,
-    "connection.opened": 87
-  },
-  "claimCounters": {
-    "task.claim.attempted": 340,
-    "task.claim.succeeded": 320,
-    "task.claim.failed": 20,
-    "task.claim.emptyPoll": 140
-  },
-  "queue": {
-    "queued": 12,
-    "running": 5
-  },
-  "health": {
-    "realtimeConnected": true,
-    "lastAgentSeenAt": "2026-03-23T12:34:50.000Z",
-    "lastClaimAt": "2026-03-23T12:34:49.000Z"
-  }
-}
-```
-
-Claim counter semantics:
-
-- `task.claim.attempted`: Claim poll requests received.
-- `task.claim.succeeded`: Claim requests that returned a task.
-- `task.claim.failed`: Claim failures (authorization + internal errors).
-- `task.claim.emptyPoll`: Claim requests that returned no task.
-
-## Agent Task API Contract
-
-All agent task routes authenticate with `nodeId` and `agentToken` in the JSON body.
-
-### Claim queued tasks
-
-`POST /agent/tasks/claim`
-
-Request body:
-
-```json
-{
-  "nodeId": "generated-node-id",
-  "agentToken": "generated-agent-token",
-  "limit": 10
-}
-```
-
-Response body:
-
-```json
-{
-  "tasks": [
-    {
-      "id": "task-id",
-      "nodeId": "generated-node-id",
-      "type": "shell.exec",
-      "status": "queued",
-      "payload": {
-        "command": "hostname"
-      }
-    }
-  ]
-}
-```
-
-### Start a task
-
-`POST /agent/tasks/:taskId/started`
-
-Request body:
-
-```json
-{
-  "nodeId": "generated-node-id",
-  "agentToken": "generated-agent-token",
-  "taskId": "task-id",
-  "startedAt": "2026-03-18T10:18:00.000Z"
-}
-```
-
-### Append task logs
-
-`POST /agent/tasks/:taskId/logs`
-
-Supported request bodies:
-
-Legacy single-message payload:
-
-```json
-{
-  "nodeId": "generated-node-id",
-  "agentToken": "generated-agent-token",
-  "message": "running docker ps"
-}
-```
-
-Go-agent batched payload:
-
-```json
-{
-  "nodeId": "generated-node-id",
-  "agentToken": "generated-agent-token",
-  "taskId": "task-id",
-  "entries": [
-    {
-      "stream": "stdout",
-      "line": "container-a",
-      "timestamp": "2026-03-18T10:18:05.000Z"
-    }
-  ]
-}
-```
-
-### Complete a task
-
-`POST /agent/tasks/:taskId/completed`
-
-Request body:
-
-```json
-{
-  "nodeId": "generated-node-id",
-  "agentToken": "generated-agent-token",
-  "taskId": "task-id",
-  "status": "success",
-  "exitCode": 0,
-  "durationMs": 7032,
-  "completedAt": "2026-03-18T10:19:10.000Z",
-  "result": {
-    "rowsAffected": 4
-  },
-  "output": "command completed successfully"
-}
-```
-
-### Authenticated
+### Authenticated Control Plane
 
 - `GET /users/me`
 - `PATCH /users/me/preferences`
-- `GET /nodes`
-- `GET /nodes/:id`
-- `GET /nodes/:id/packages`
-- `GET /packages/search`
-- `GET /metrics`
-- `GET /tasks`
-- `GET /tasks/:id`
-- `GET /events`
+- `GET /workspaces`
+- `GET /workspaces/:workspaceId`
+- `GET /workspaces/:workspaceId/members`
+- `GET /workspaces/:workspaceId/teams`
+- `GET /workspaces/:workspaceId/nodes`
+- `GET /workspaces/:workspaceId/tasks`
+- `GET /workspaces/:workspaceId/scheduled-tasks`
+- `GET /workspaces/:workspaceId/events`
+- `GET /workspaces/:workspaceId/metrics`
+- `GET /workspaces/:workspaceId/nodes/:id/packages`
 
-### Admin
+### Admin Surfaces
 
-- `GET /users`
-- `POST /users`
-- `POST /enrollments/:token/finalize`
-- `POST /nodes`
-- `POST /nodes/:id/packages`
-- `DELETE /nodes/:id/packages/:name`
-- `DELETE /nodes/:id`
-- `POST /tasks`
-- `POST /tasks/batch`
-- `POST /tasks/:id/cancel`
-- `GET /scheduled-tasks`
-- `POST /scheduled-tasks`
-- `POST /scheduled-tasks/batch`
-- `PATCH /scheduled-tasks/:id`
-- `DELETE /scheduled-tasks/:id`
+- `POST /workspaces`
+- `PATCH /workspaces/:workspaceId`
+- `DELETE /workspaces/:workspaceId`
+- `POST /workspaces/:workspaceId/members`
+- `PATCH /workspaces/:workspaceId/members/:membershipId`
+- `DELETE /workspaces/:workspaceId/members/:membershipId`
+- `POST /workspaces/:workspaceId/teams`
+- `PATCH /workspaces/:workspaceId/teams/:teamId`
+- `DELETE /workspaces/:workspaceId/teams/:teamId`
+- `GET /platform-settings`
+- `PATCH /platform-settings`
 
-## Two-Step Enrollment API
+### Diagnostics
 
-The preferred agent bootstrap flow is now enrollment-based. The raw enrollment token is returned only once to the agent, while the API stores a salted `tokenHash` plus a deterministic `tokenLookupHash` for secure lookup and verification.
+- `GET /diagnostics/task-flow`
 
-- `POST /enrollments/initiate`
-  Public. Creates a short-lived pending enrollment for `{ "email": "...", "hostname": "...", "additionalInfo": { ... } }` and returns `{ "token": "...", "expiresAt": "..." }`.
-- `POST /enrollments/:token/finalize`
-  Admin-only. Verifies the token and email, creates the node, issues a fresh `agentToken`, and returns `{ "nodeId": "...", "agentToken": "..." }`.
-- `GET /enrollments/:token`
-  Public. Returns `{ "status": "pending" }`, `{ "status": "revoked" }`, or `{ "status": "approved", "nodeId": "...", "agentToken": "..." }`.
+Returns claim, realtime, and queue-health counters for the web diagnostics panel.
 
-Pending enrollment tokens expire after 15 minutes. Finalization is single-use: approved or revoked tokens can no longer transition state. Swagger documents these routes at `http://localhost:3000/api/v1/docs` under the `Enrollments` tag, including public versus admin access rules and token-expiry behavior.
+## Realtime Behavior
 
-## Package Management API
+The API publishes web-facing realtime events for:
 
-Package management is task-backed so the web UI can reuse the existing task and log streams.
+- `node.status.updated`
+- `metrics.ingested`
+- `task.created`
+- `task.updated`
+- `event.created`
 
-- `GET /nodes/:id/packages`
-  Queues a `packageList` task, waits up to 10 seconds, and returns a structured package list on success. If the task is still `queued` or `running`, the API falls back to `202 Accepted` with a task envelope.
-- `GET /packages/search?nodeId=<node-id>&term=<query>`
-  Queues a `packageSearch` task with `{ "term": "<query>" }`. Debian documents apt search behavior against package names and descriptions in [apt(8)](https://manpages.debian.org/experimental/apt/apt.8.en.html), and related apt-cache output includes package metadata plus a short description in [apt-cache(8)](https://manpages.debian.org/testing/apt/apt-cache.8.en.html).
-- `POST /nodes/:id/packages`
-  Admin-only. Queues a `packageInstall` task with `{ "names": [...], "purge": false }` and immediately returns `202 Accepted`.
-- `DELETE /nodes/:id/packages/:name?purge=true`
-  Admin-only. Queues `packageRemove` or `packagePurge`. Debian documents that `remove` leaves configuration files in place while `purge` removes them too in [apt-get(8)](https://manpages.debian.org/experimental/apt/apt-get.8.en.html).
+It also hosts the agent realtime namespace at `/agent-realtime`.
 
-Read responses include `taskId` and `taskStatus` so the UI can pivot to `GET /tasks/:id` and `GET /tasks/:id/logs` when needed.
-Swagger documents these endpoints at `http://localhost:3000/api/v1/docs` under the `Packages` section, including the admin-only RBAC notes and the `200` versus `202` response behavior for read routes.
+## Verification
 
-## Example Flow
-
-### 1. Login
+Recommended checks:
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@example.com",
-    "password": "ChangeMe123!"
-  }'
+pnpm build
+pnpm lint
+pnpm test
 ```
-
-### 2. Initiate Agent Enrollment
-
-```bash
-curl -X POST http://localhost:3000/api/v1/enrollments/initiate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@example.com",
-    "hostname": "srv-01",
-    "additionalInfo": {
-      "os": "ubuntu",
-      "arch": "amd64",
-      "agentVersion": "dev"
-    }
-  }'
-```
-
-Response:
-
-```json
-{
-  "token": "short-lived-enrollment-token",
-  "expiresAt": "2026-03-19T14:15:00.000Z"
-}
-```
-
-### 3. Finalize Enrollment In The Web App
-
-```bash
-curl -X POST http://localhost:3000/api/v1/enrollments/short-lived-enrollment-token/finalize \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <admin-jwt>" \
-  -d '{
-    "email": "admin@example.com",
-    "nodeName": "Production Node EU-1",
-    "description": "Primary web node"
-  }'
-```
-
-### 4. Poll Enrollment Status From The Agent
-
-```bash
-curl http://localhost:3000/api/v1/enrollments/short-lived-enrollment-token
-```
-
-Approved response:
-
-```json
-{
-  "status": "approved",
-  "nodeId": "generated-node-id",
-  "agentToken": "generated-agent-token"
-}
-```
-
-### 5. Send a Heartbeat
-
-```bash
-curl -X POST http://localhost:3000/api/v1/agent/heartbeat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nodeId": "generated-node-id",
-    "agentToken": "generated-agent-token"
-  }'
-```
-
-### 6. Ingest Metrics
-
-```bash
-curl -X POST http://localhost:3000/api/v1/agent/metrics \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nodeId": "generated-node-id",
-    "agentToken": "generated-agent-token",
-    "cpuUsage": 74.2,
-    "memoryUsage": 63.1,
-    "diskUsage": 48.9,
-    "networkStats": {
-      "rxBytes": 124000,
-      "txBytes": 98000
-    }
-  }'
-```
-
-### 7. Create a Task
-
-```bash
-curl -X POST http://localhost:3000/api/v1/tasks \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <jwt>" \
-  -d '{
-    "nodeId": "generated-node-id",
-    "type": "shell.exec",
-    "payload": {
-      "command": "docker ps"
-    }
-  }'
-```
-
-### 8. Update Your Timezone Preference
-
-```bash
-curl -X PATCH http://localhost:3000/api/v1/users/me/preferences \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <jwt>" \
-  -d '{
-    "timezone": "Europe/Istanbul"
-  }'
-```
-
-### 9. Create a Scheduled Task
-
-```bash
-curl -X POST http://localhost:3000/api/v1/scheduled-tasks \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <jwt>" \
-  -d '{
-    "nodeId": "generated-node-id",
-    "name": "Daily docker check",
-    "command": "docker ps",
-    "cadence": "daily",
-    "minute": 0,
-    "hour": 9
-  }'
-```
-
-### 10. Claim Queued Tasks as an Agent
-
-```bash
-curl -X POST http://localhost:3000/api/v1/agent/tasks/claim \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nodeId": "generated-node-id",
-    "agentToken": "generated-agent-token",
-    "limit": 10
-  }'
-```
-
-### 11. Start and Complete a Task as an Agent
-
-```bash
-curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/started \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nodeId": "generated-node-id",
-    "agentToken": "generated-agent-token",
-    "taskId": "<task-id>",
-    "startedAt": "2026-03-18T10:18:00.000Z"
-  }'
-```
-
-```bash
-curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/logs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nodeId": "generated-node-id",
-    "agentToken": "generated-agent-token",
-    "entries": [
-      {
-        "stream": "stdout",
-        "line": "docker ps completed",
-        "timestamp": "2026-03-18T10:18:05.000Z"
-      }
-    ]
-  }'
-```
-
-```bash
-curl -X POST http://localhost:3000/api/v1/agent/tasks/<task-id>/completed \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nodeId": "generated-node-id",
-    "agentToken": "generated-agent-token",
-    "status": "success",
-    "taskId": "<task-id>",
-    "exitCode": 0,
-    "durationMs": 7032,
-    "completedAt": "2026-03-18T10:19:10.000Z",
-    "result": {
-      "exitCode": 0
-    },
-    "output": "command completed successfully"
-  }'
-```
-
-### 12. List Installed Packages
-
-```bash
-curl -X GET "http://localhost:3000/api/v1/nodes/generated-node-id/packages" \
-  -H "Authorization: Bearer <jwt>"
-```
-
-If the agent finishes the `packageList` task within the wait window, the response body looks like:
-
-```json
-{
-  "taskId": "task-id",
-  "taskStatus": "success",
-  "nodeId": "generated-node-id",
-  "operation": "packageList",
-  "names": [],
-  "purge": null,
-  "term": null,
-  "packages": [
-    {
-      "name": "nginx",
-      "version": "1.24.0-2ubuntu7",
-      "architecture": "amd64",
-      "description": "small, powerful, scalable web/proxy server"
-    }
-  ],
-  "error": null
-}
-```
-
-### 9. Queue a Package Install
-
-```bash
-curl -X POST http://localhost:3000/api/v1/nodes/generated-node-id/packages \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <jwt>" \
-  -d '{
-    "names": ["nginx", "curl"],
-    "purge": false
-  }'
-```
-
-Response body:
-
-```json
-{
-  "taskId": "task-id",
-  "taskStatus": "queued",
-  "nodeId": "generated-node-id",
-  "operation": "packageInstall",
-  "names": ["nginx", "curl"],
-  "purge": false,
-  "term": null
-}
-```
-
-### 10. Search Packages
-
-```bash
-curl -X GET "http://localhost:3000/api/v1/packages/search?nodeId=generated-node-id&term=nginx" \
-  -H "Authorization: Bearer <jwt>"
-```
-
-Successful response body:
-
-```json
-{
-  "taskId": "task-id",
-  "taskStatus": "success",
-  "nodeId": "generated-node-id",
-  "operation": "packageSearch",
-  "names": [],
-  "purge": null,
-  "term": "nginx",
-  "results": [
-    {
-      "name": "nginx",
-      "version": "1.24.0-2ubuntu7",
-      "description": "small, powerful, scalable web/proxy server"
-    }
-  ],
-  "error": null
-}
-```
-
-### 11. Remove or Purge a Package
-
-```bash
-curl -X DELETE "http://localhost:3000/api/v1/nodes/generated-node-id/packages/nginx?purge=true" \
-  -H "Authorization: Bearer <jwt>"
-```
-
-Accepted response body:
-
-```json
-{
-  "taskId": "task-id",
-  "taskStatus": "queued",
-  "nodeId": "generated-node-id",
-  "operation": "packagePurge",
-  "names": ["nginx"],
-  "purge": true,
-  "term": null
-}
-```
-
-## Realtime
-
-Socket.IO is exposed separately at the `realtime` namespace and does not use the HTTP API prefix.
-
-- Connect to `/realtime`
-- Subscribe to node-specific events with `subscribe.node`
-- Published events include:
-  - `node.status.updated`
-  - `metrics.ingested`
-  - `task.created`
-  - `task.updated`
-  - `event.created`
-
-Realtime behavior around heartbeat timeouts:
-
-- When the offline scheduler marks a node stale, clients receive `node.status.updated`.
-- The related persisted system event is also broadcast through `event.created` with type `node.offline`.
-- When a heartbeat brings the node back, clients receive another `node.status.updated` and a `node.online` system event.
 
 ## Notes
 
-- Agent metrics ingestion requires `agentToken` for authentication.
-- Agent registration requires a valid `enrollmentToken` shared during initial agent enrollment.
-- Redis is optional at runtime. If unavailable, the API still works and logs Redis connection warnings when publish operations are attempted.
-- Notifications are stubbed and ready for Telegram or webhook integrations later.
+- The bundled installer and platform-settings flows are designed for writable persistent storage.
+- Workspace-scoped routes are the primary surface for the current web app.
+- Legacy env-driven installs are still supported, but new installs should prefer the setup flow.
