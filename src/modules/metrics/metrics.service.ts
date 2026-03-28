@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Repository } from 'typeorm';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';

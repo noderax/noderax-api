@@ -25,6 +25,7 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
     await this.promoteLegacyAdmins();
     await this.backfillWorkspaceIds(defaultWorkspaceId);
     await this.ensureDefaultMemberships(defaultWorkspaceId);
+    await this.removeInvalidTeamMemberships();
     await this.syncDefaultWorkspaceTimezone(defaultWorkspaceId);
     this.logger.log('Ensured default workspace data migration completed');
   }
@@ -232,5 +233,28 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
       `,
       [defaultWorkspaceId, seededAdmin[0]?.timezone ?? DEFAULT_TIMEZONE],
     );
+  }
+
+  private async removeInvalidTeamMemberships(): Promise<void> {
+    const invalidMemberships = (await this.dataSource.query(`
+      SELECT tm."id"
+      FROM "team_memberships" tm
+      JOIN "teams" t
+        ON t."id" = tm."teamId"
+      LEFT JOIN "workspace_memberships" wm
+        ON wm."workspaceId" = t."workspaceId"
+       AND wm."userId" = tm."userId"
+      WHERE wm."id" IS NULL
+    `)) as Array<{ id: string }>;
+
+    for (const membership of invalidMemberships) {
+      await this.dataSource.query(
+        `
+          DELETE FROM "team_memberships"
+          WHERE "id" = $1
+        `,
+        [membership.id],
+      );
+    }
   }
 }

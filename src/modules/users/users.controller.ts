@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -13,6 +21,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { CreateUserDto } from './dto/create-user.dto';
+import { DeleteUserResponseDto } from './dto/delete-user-response.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UserRole } from './entities/user-role.enum';
@@ -86,5 +96,44 @@ export class UsersController {
   })
   create(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto);
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Patch(':userId')
+  @ApiOperation({
+    summary: 'Update a user',
+  })
+  @ApiOkResponse({
+    description: 'User updated.',
+    type: UserResponseDto,
+  })
+  @ApiForbiddenResponse({
+    description: 'Admin role required.',
+  })
+  update(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserDto,
+  ) {
+    return this.usersService.update(actor, userId, dto);
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Delete(':userId')
+  @ApiOperation({
+    summary: 'Delete a user',
+  })
+  @ApiOkResponse({
+    description: 'User deleted.',
+    type: DeleteUserResponseDto,
+  })
+  @ApiForbiddenResponse({
+    description: 'Admin role required.',
+  })
+  remove(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.usersService.delete(actor, userId);
   }
 }

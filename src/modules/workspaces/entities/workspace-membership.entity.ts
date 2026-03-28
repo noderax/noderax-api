@@ -73,6 +73,12 @@ export class WorkspaceMembershipEntity {
   })
   userEmail?: string | null;
 
+  @ApiPropertyOptional({
+    example: true,
+    nullable: true,
+  })
+  userIsActive?: boolean | null;
+
   @ApiProperty({
     format: 'date-time',
     example: '2026-03-26T09:10:00.000Z',

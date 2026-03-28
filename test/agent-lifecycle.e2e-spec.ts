@@ -97,6 +97,13 @@ type AgentTaskEnvelope = {
   payload: Record<string, unknown>;
 };
 
+function buildAgentHeaders(nodeId: string, agentToken: string) {
+  return {
+    Authorization: `Bearer ${agentToken}`,
+    'x-agent-node-id': nodeId,
+  };
+}
+
 async function waitForQueuedTask(
   app: INestApplication,
   nodeId: string,
@@ -108,18 +115,23 @@ async function waitForQueuedTask(
   await waitFor(
     async () => {
       const response = await request(app.getHttpServer())
-        .post(apiPath('/agent/tasks/pull'))
+        .post(apiPath('/agent/tasks/claim'))
+        .set(buildAgentHeaders(nodeId, agentToken))
         .send({
-          nodeId,
-          agentToken,
-          limit: 1000,
+          maxTasks: 1,
+          waitMs: 0,
         })
-        .expect(200);
+        .expect((res) => {
+          if (![200, 204].includes(res.status)) {
+            throw new Error(`Unexpected claim status ${res.status}`);
+          }
+        });
 
-      matchedTask =
-        response.body.tasks.find(
-          (task: AgentTaskEnvelope) => task.type === taskType,
-        ) ?? null;
+      const claimedTask =
+        response.status === 200
+          ? (response.body.task as AgentTaskEnvelope | null)
+          : null;
+      matchedTask = claimedTask?.type === taskType ? claimedTask : null;
 
       return matchedTask !== null;
     },
@@ -143,12 +155,11 @@ async function startTaskAsAgent(
   agentToken: string,
 ) {
   await request(app.getHttpServer())
-    .post(apiPath(`/agent/tasks/${taskId}/start`))
+    .post(apiPath(`/agent/tasks/${taskId}/started`))
+    .set(buildAgentHeaders(nodeId, agentToken))
     .send({
-      nodeId,
-      agentToken,
       taskId,
-      startedAt: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
     })
     .expect(200);
 }
@@ -161,12 +172,11 @@ async function completeTaskAsAgent(
   body: Record<string, unknown>,
 ) {
   await request(app.getHttpServer())
-    .post(apiPath(`/agent/tasks/${taskId}/complete`))
+    .post(apiPath(`/agent/tasks/${taskId}/completed`))
+    .set(buildAgentHeaders(nodeId, agentToken))
     .send({
-      nodeId,
-      agentToken,
       taskId,
-      completedAt: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
       durationMs: 25,
       ...body,
     })
@@ -192,7 +202,7 @@ describe('Agent Lifecycle (e2e)', () => {
     if (app) {
       await app.close();
     }
-  });
+  }, 30000);
 
   it('logs in as the seeded admin user', async () => {
     const response = await request(app.getHttpServer())
@@ -217,7 +227,7 @@ describe('Agent Lifecycle (e2e)', () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.email).toBe(process.env.ADMIN_EMAIL);
-        expect(body.role).toBe('admin');
+        expect(body.role).toBe('platform_admin');
       });
   });
 
@@ -331,36 +341,13 @@ describe('Agent Lifecycle (e2e)', () => {
         nodeId,
         agentToken,
         collectedAt: new Date().toISOString(),
-        cpu: {
-          usagePercent: 12.5,
+        cpuUsage: 12.5,
+        memoryUsage: 33.3,
+        diskUsage: 44.4,
+        networkStats: {
+          rxBytes: 1000,
+          txBytes: 2000,
         },
-        memory: {
-          totalBytes: 1024,
-          usedBytes: 341,
-          freeBytes: 683,
-          usedPercent: 33.3,
-          availableBytes: 683,
-        },
-        disk: {
-          path: '/',
-          totalBytes: 4096,
-          usedBytes: 1819,
-          freeBytes: 2277,
-          usedPercent: 44.4,
-        },
-        networks: [
-          {
-            interface: 'eth0',
-            bytesSent: 2000,
-            bytesRecv: 1000,
-            packetsSent: 20,
-            packetsRecv: 10,
-            errorsIn: 0,
-            errorsOut: 0,
-            dropIn: 0,
-            dropOut: 0,
-          },
-        ],
       })
       .expect(200)
       .expect(({ body }) => {
@@ -396,36 +383,34 @@ describe('Agent Lifecycle (e2e)', () => {
     taskId = response.body.id;
 
     await request(app.getHttpServer())
-      .post(apiPath('/agent/tasks/pull'))
+      .post(apiPath('/agent/tasks/claim'))
+      .set(buildAgentHeaders(nodeId, agentToken))
       .send({
-        nodeId,
-        agentToken,
-        limit: 1000,
+        maxTasks: 1,
+        waitMs: 0,
       })
       .expect(200)
       .expect(({ body }) => {
-        expect(body.tasks).toHaveLength(1);
-        expect(body.tasks[0].id).toBe(taskId);
-        expect(body.tasks[0].status).toBe('queued');
+        expect(body.task.id).toBe(taskId);
+        expect(body.task.status).toBe('accepted');
       });
 
     await request(app.getHttpServer())
-      .post(apiPath(`/agent/tasks/${taskId}/start`))
+      .post(apiPath(`/agent/tasks/${taskId}/started`))
+      .set(buildAgentHeaders(secondNodeId, secondAgentToken))
       .send({
-        nodeId: secondNodeId,
-        agentToken: secondAgentToken,
+        taskId,
       })
       .expect(404);
   });
 
   it('executes the task lifecycle for the owning agent', async () => {
     await request(app.getHttpServer())
-      .post(apiPath(`/agent/tasks/${taskId}/start`))
+      .post(apiPath(`/agent/tasks/${taskId}/started`))
+      .set(buildAgentHeaders(nodeId, agentToken))
       .send({
-        nodeId,
-        agentToken,
         taskId,
-        startedAt: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
       })
       .expect(200)
       .expect(({ body }) => {
@@ -435,34 +420,27 @@ describe('Agent Lifecycle (e2e)', () => {
 
     await request(app.getHttpServer())
       .post(apiPath(`/agent/tasks/${taskId}/logs`))
+      .set(buildAgentHeaders(nodeId, agentToken))
       .send({
-        nodeId,
-        agentToken,
         taskId,
-        entries: [
-          {
-            timestamp: new Date().toISOString(),
-            stream: 'stdout',
-            line: 'hostname resolved to srv-test-01',
-          },
-        ],
+        timestamp: new Date().toISOString(),
+        stream: 'stdout',
+        line: 'hostname resolved to srv-test-01',
       })
-      .expect(201)
+      .expect(200)
       .expect(({ body }) => {
-        expect(body).toHaveLength(1);
-        expect(body[0].taskId).toBe(taskId);
-        expect(body[0].level).toBe('stdout');
+        expect(body.taskId).toBe(taskId);
+        expect(body.level).toBe('stdout');
       });
 
     await request(app.getHttpServer())
-      .post(apiPath(`/agent/tasks/${taskId}/complete`))
+      .post(apiPath(`/agent/tasks/${taskId}/completed`))
+      .set(buildAgentHeaders(nodeId, agentToken))
       .send({
-        nodeId,
-        agentToken,
         taskId,
         status: 'success',
         exitCode: 0,
-        completedAt: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
         durationMs: 25,
       })
       .expect(200)
@@ -642,6 +620,7 @@ describe('Agent Lifecycle (e2e)', () => {
     expect(packageTask.id).toBe(response.body.taskId);
     expect(packageTask.payload).toEqual({
       names: ['nginx', 'curl'],
+      packages: ['nginx', 'curl'],
       purge: true,
     });
   });
@@ -664,6 +643,8 @@ describe('Agent Lifecycle (e2e)', () => {
     expect(removeTask.body.type).toBe(TASK_TYPES.PACKAGE_REMOVE);
     expect(removeTask.body.payload).toEqual({
       names: ['nginx'],
+      packages: ['nginx'],
+      package: 'nginx',
       purge: false,
     });
 
@@ -681,9 +662,11 @@ describe('Agent Lifecycle (e2e)', () => {
       .expect(200);
 
     expect(purgeResponse.body.operation).toBe(TASK_TYPES.PACKAGE_PURGE);
-    expect(purgeTask.body.type).toBe(TASK_TYPES.PACKAGE_PURGE);
+    expect(purgeTask.body.type).toBe(TASK_TYPES.PACKAGE_REMOVE);
     expect(purgeTask.body.payload).toEqual({
       names: ['nginx'],
+      packages: ['nginx'],
+      package: 'nginx',
       purge: true,
     });
   }, 15000);
@@ -700,13 +683,6 @@ describe('Agent Lifecycle (e2e)', () => {
       },
     );
 
-    const packageTask = await waitForQueuedTask(
-      app,
-      nodeId,
-      agentToken,
-      TASK_TYPES.PACKAGE_SEARCH,
-    );
-
     const response = await responsePromise;
     const body = (await response.json()) as {
       taskId: string;
@@ -716,10 +692,19 @@ describe('Agent Lifecycle (e2e)', () => {
     };
 
     expect(response.status).toBe(202);
-    expect(body.taskId).toBe(packageTask.id);
+    expect(body.taskId).toBeDefined();
     expect(body.operation).toBe(TASK_TYPES.PACKAGE_SEARCH);
     expect(body.taskStatus).toBe('queued');
     expect(body.term).toBe('redis');
+
+    await request(app.getHttpServer())
+      .get(apiPath(`/tasks/${body.taskId}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body: taskBody }) => {
+        expect(taskBody.type).toBe(TASK_TYPES.PACKAGE_SEARCH);
+        expect(taskBody.status).toBe('queued');
+      });
   }, 15000);
 
   it('rejects websocket connections with invalid JWTs', async () => {

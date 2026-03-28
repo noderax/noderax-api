@@ -11,11 +11,9 @@ export class WorkspaceRolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles =
-      this.reflector.getAllAndOverride<WorkspaceMembershipRole[]>(
-        WORKSPACE_ROLES_KEY,
-        [context.getHandler(), context.getClass()],
-      );
+    const requiredRoles = this.reflector.getAllAndOverride<
+      WorkspaceMembershipRole[]
+    >(WORKSPACE_ROLES_KEY, [context.getHandler(), context.getClass()]);
 
     if (!requiredRoles?.length) {
       return true;

@@ -11,7 +11,11 @@ import { RealtimeAuthorizationService } from './services/realtime-authorization.
 import { RealtimePubsubBridgeService } from './services/realtime-pubsub-bridge.service';
 
 @Module({
-  imports: [AuthModule, TypeOrmModule.forFeature([NodeEntity]), WorkspacesModule],
+  imports: [
+    AuthModule,
+    TypeOrmModule.forFeature([NodeEntity]),
+    WorkspacesModule,
+  ],
   providers: [
     RealtimeGateway,
     RealtimePubsubBridgeService,

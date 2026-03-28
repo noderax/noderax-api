@@ -21,7 +21,6 @@ import {
   computeNextScheduledRun,
   describeScheduledTask,
   SCHEDULED_TASK_RUNNER_LEASE_MS,
-  SCHEDULED_TASK_TIMEZONE,
 } from './scheduled-task.utils';
 import { TasksService } from './tasks.service';
 
@@ -494,7 +493,9 @@ export class ScheduledTasksService {
   ): Promise<ScheduledTaskEntity[]> {
     const nodeIds = this.normalizeNodeIds(rawNodeIds);
     await Promise.all(
-      nodeIds.map((nodeId) => this.nodesService.ensureExists(nodeId, workspace.id)),
+      nodeIds.map((nodeId) =>
+        this.nodesService.ensureExists(nodeId, workspace.id),
+      ),
     );
 
     const now = new Date();
@@ -578,7 +579,8 @@ export class ScheduledTasksService {
       return this.workspacesService.findWorkspaceOrFail(workspaceId);
     }
 
-    const defaultWorkspace = await this.workspacesService.getDefaultWorkspaceOrFail();
+    const defaultWorkspace =
+      await this.workspacesService.getDefaultWorkspaceOrFail();
     const membership = await this.workspacesService.findMembershipForUser(
       defaultWorkspace.id,
       ownerUserId,

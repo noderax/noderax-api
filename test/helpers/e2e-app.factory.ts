@@ -44,6 +44,7 @@ import { TaskEntity } from '../../src/modules/tasks/entities/task.entity';
 import { TasksModule } from '../../src/modules/tasks/tasks.module';
 import { UserEntity } from '../../src/modules/users/entities/user.entity';
 import { UsersModule } from '../../src/modules/users/users.module';
+import { TeamMembershipEntity } from '../../src/modules/workspaces/entities/team-membership.entity';
 import { TeamEntity } from '../../src/modules/workspaces/entities/team.entity';
 import { WorkspaceMembershipEntity } from '../../src/modules/workspaces/entities/workspace-membership.entity';
 import { WorkspaceEntity } from '../../src/modules/workspaces/entities/workspace.entity';
@@ -61,6 +62,7 @@ const TEST_ENTITIES = [
   ScheduledTaskEntity,
   WorkspaceEntity,
   WorkspaceMembershipEntity,
+  TeamMembershipEntity,
   TeamEntity,
 ];
 

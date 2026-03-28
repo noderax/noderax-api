@@ -142,7 +142,10 @@ export class TasksService {
     });
   }
 
-  async findAll(query: QueryTasksDto, workspaceId?: string): Promise<TaskEntity[]> {
+  async findAll(
+    query: QueryTasksDto,
+    workspaceId?: string,
+  ): Promise<TaskEntity[]> {
     const tasksQuery = this.tasksRepository
       .createQueryBuilder('task')
       .orderBy('task.createdAt', 'DESC')

@@ -26,6 +26,7 @@ import { WorkspaceRolesGuard } from '../../common/guards/workspace-roles.guard';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { UserRole } from '../users/entities/user-role.enum';
 import { AddTeamMemberDto } from './dto/add-team-member.dto';
+import { AssignableUserDto } from './dto/assignable-user.dto';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { CreateWorkspaceMemberDto } from './dto/create-workspace-member.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
@@ -142,6 +143,23 @@ export class WorkspacesController {
   })
   listMembers(@Param('workspaceId') workspaceId: string) {
     return this.workspacesService.listMembers(workspaceId);
+  }
+
+  @Get(':workspaceId/assignable-users')
+  @UseGuards(WorkspaceMembershipGuard, WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  @ApiOperation({
+    summary: 'List active users that can be added to the workspace',
+  })
+  @ApiOkResponse({
+    type: AssignableUserDto,
+    isArray: true,
+  })
+  listAssignableUsers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+  ) {
+    return this.workspacesService.listAssignableUsers(workspaceId, user);
   }
 
   @Post(':workspaceId/members')

@@ -55,14 +55,17 @@ export class PackagesService {
   ): Promise<
     PackageHttpResponse<SearchPackagesResponseDto | PackageTaskAcceptedDto>
   > {
-    const task = await this.tasksService.create({
-      nodeId: query.nodeId,
-      type: TASK_TYPES.PACKAGE_SEARCH,
-      payload: {
-        term: query.term,
-        query: query.term,
+    const task = await this.tasksService.create(
+      {
+        nodeId: query.nodeId,
+        type: TASK_TYPES.PACKAGE_SEARCH,
+        payload: {
+          term: query.term,
+          query: query.term,
+        },
       },
-    }, workspaceId);
+      workspaceId,
+    );
 
     return this.resolveReadTask(task.id, {
       nodeId: query.nodeId,
@@ -78,16 +81,19 @@ export class PackagesService {
   ): Promise<PackageTaskAcceptedDto> {
     const names = installPackagesDto.names;
     const purge = installPackagesDto.purge ?? false;
-    const task = await this.tasksService.create({
-      nodeId,
-      type: TASK_TYPES.PACKAGE_INSTALL,
-      payload: {
-        names,
-        packages: names,
-        package: names.length === 1 ? names[0] : undefined,
-        purge,
+    const task = await this.tasksService.create(
+      {
+        nodeId,
+        type: TASK_TYPES.PACKAGE_INSTALL,
+        payload: {
+          names,
+          packages: names,
+          package: names.length === 1 ? names[0] : undefined,
+          purge,
+        },
       },
-    }, workspaceId);
+      workspaceId,
+    );
 
     return this.buildAcceptedResponse(task.id, {
       nodeId,
@@ -111,16 +117,19 @@ export class PackagesService {
       ? TASK_TYPES.PACKAGE_PURGE
       : TASK_TYPES.PACKAGE_REMOVE;
     const queuedTaskType = TASK_TYPES.PACKAGE_REMOVE;
-    const task = await this.tasksService.create({
-      nodeId,
-      type: queuedTaskType,
-      payload: {
-        names: [name],
-        packages: [name],
-        package: name,
-        purge,
+    const task = await this.tasksService.create(
+      {
+        nodeId,
+        type: queuedTaskType,
+        payload: {
+          names: [name],
+          packages: [name],
+          package: name,
+          purge,
+        },
       },
-    }, workspaceId);
+      workspaceId,
+    );
 
     return this.buildAcceptedResponse(task.id, {
       nodeId,
@@ -434,21 +443,27 @@ export class PackagesService {
       return inFlightTask;
     }
 
-    return this.tasksService.create({
-      nodeId,
-      type: TASK_TYPES.PACKAGE_LIST,
-      payload: {},
-    }, workspaceId);
+    return this.tasksService.create(
+      {
+        nodeId,
+        type: TASK_TYPES.PACKAGE_LIST,
+        payload: {},
+      },
+      workspaceId,
+    );
   }
 
   private async findInFlightPackageListTask(
     nodeId: string,
     workspaceId?: string,
   ): Promise<TaskEntity | null> {
-    const tasks = await this.tasksService.findAll({
-      nodeId,
-      limit: PACKAGE_RECENT_TASK_SCAN_LIMIT,
-    }, workspaceId);
+    const tasks = await this.tasksService.findAll(
+      {
+        nodeId,
+        limit: PACKAGE_RECENT_TASK_SCAN_LIMIT,
+      },
+      workspaceId,
+    );
 
     const task = tasks.find(
       (candidate) =>
@@ -464,10 +479,13 @@ export class PackagesService {
     nodeId: string,
     workspaceId?: string,
   ): Promise<TaskEntity | null> {
-    const tasks = await this.tasksService.findAll({
-      nodeId,
-      limit: PACKAGE_RECENT_TASK_SCAN_LIMIT,
-    }, workspaceId);
+    const tasks = await this.tasksService.findAll(
+      {
+        nodeId,
+        limit: PACKAGE_RECENT_TASK_SCAN_LIMIT,
+      },
+      workspaceId,
+    );
 
     const task = tasks.find(
       (candidate) =>

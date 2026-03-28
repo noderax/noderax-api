@@ -1,6 +1,6 @@
 import {
-  BadRequestException,
   ConflictException,
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -12,13 +12,12 @@ import {
   DEFAULT_TIMEZONE,
 } from '../../common/utils/timezone.util';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
-import { CreateUserDto } from '../users/dto/create-user.dto';
 import { UserEntity } from '../users/entities/user.entity';
 import { UserRole } from '../users/entities/user-role.enum';
-import { UsersService } from '../users/users.service';
 import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
 import { computeNextScheduledRun } from '../tasks/scheduled-task.utils';
 import { AddTeamMemberDto } from './dto/add-team-member.dto';
+import { AssignableUserDto } from './dto/assignable-user.dto';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { CreateWorkspaceMemberDto } from './dto/create-workspace-member.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
@@ -46,7 +45,6 @@ export class WorkspacesService {
     private readonly usersRepository: Repository<UserEntity>,
     @InjectRepository(ScheduledTaskEntity)
     private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
-    private readonly usersService: UsersService,
   ) {}
 
   async findAccessibleWorkspaces(
@@ -308,8 +306,39 @@ export class WorkspacesService {
       const user = userLookup.get(membership.userId);
       membership.userName = user?.name ?? null;
       membership.userEmail = user?.email ?? null;
+      membership.userIsActive = user?.isActive ?? null;
       return membership;
     });
+  }
+
+  async listAssignableUsers(
+    workspaceId: string,
+    actor: AuthenticatedUser,
+  ): Promise<AssignableUserDto[]> {
+    await this.assertWorkspaceAdmin(workspaceId, actor);
+
+    const memberships = await this.membershipsRepository.find({
+      where: { workspaceId },
+      select: ['userId'],
+    });
+    const memberIds = new Set(
+      memberships.map((membership) => membership.userId),
+    );
+    const users = await this.usersRepository.find({
+      where: { isActive: true },
+      order: {
+        name: 'ASC',
+        email: 'ASC',
+      },
+    });
+
+    return users
+      .filter((user) => !memberIds.has(user.id))
+      .map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      }));
   }
 
   async addMember(
@@ -318,30 +347,18 @@ export class WorkspacesService {
     dto: CreateWorkspaceMemberDto,
   ): Promise<WorkspaceMembershipEntity> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
-
-    const email = dto.email.trim().toLowerCase();
-    let user = await this.usersService.findByEmail(email);
+    const user = await this.usersRepository.findOne({
+      where: { id: dto.userId },
+    });
 
     if (!user) {
-      if (!dto.name?.trim() || !dto.password?.trim()) {
-        throw new BadRequestException(
-          'Name and password are required when creating a new global user.',
-        );
-      }
-
-      const createUserDto: CreateUserDto = {
-        email,
-        name: dto.name.trim(),
-        password: dto.password,
-        role: UserRole.USER,
-      };
-
-      await this.usersService.create(createUserDto);
-      user = await this.usersService.findByEmail(email);
+      throw new NotFoundException(`User ${dto.userId} was not found.`);
     }
 
-    if (!user) {
-      throw new NotFoundException('User could not be created.');
+    if (!user.isActive) {
+      throw new BadRequestException(
+        'Inactive users cannot be added to a workspace.',
+      );
     }
 
     const existing = await this.membershipsRepository.findOne({
@@ -362,6 +379,7 @@ export class WorkspacesService {
     const saved = await this.membershipsRepository.save(membership);
     saved.userName = user.name;
     saved.userEmail = user.email;
+    saved.userIsActive = user.isActive;
     return saved;
   }
 
@@ -389,6 +407,7 @@ export class WorkspacesService {
     });
     saved.userName = user?.name ?? null;
     saved.userEmail = user?.email ?? null;
+    saved.userIsActive = user?.isActive ?? null;
     return saved;
   }
 
@@ -398,17 +417,33 @@ export class WorkspacesService {
     actor: AuthenticatedUser,
   ): Promise<{ deleted: true; id: string }> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
-    const membership = await this.membershipsRepository.findOne({
-      where: { id: membershipId, workspaceId },
+
+    await this.workspacesRepository.manager.transaction(async (manager) => {
+      const membership = await manager.findOne(WorkspaceMembershipEntity, {
+        where: { id: membershipId, workspaceId },
+      });
+
+      if (!membership) {
+        throw new NotFoundException(
+          `Workspace membership ${membershipId} was not found`,
+        );
+      }
+
+      const teams = await manager.find(TeamEntity, {
+        where: { workspaceId },
+        select: ['id'],
+      });
+
+      if (teams.length > 0) {
+        await manager.delete(TeamMembershipEntity, {
+          userId: membership.userId,
+          teamId: In(teams.map((team) => team.id)),
+        });
+      }
+
+      await manager.remove(WorkspaceMembershipEntity, membership);
     });
 
-    if (!membership) {
-      throw new NotFoundException(
-        `Workspace membership ${membershipId} was not found`,
-      );
-    }
-
-    await this.membershipsRepository.remove(membership);
     return {
       deleted: true,
       id: membershipId,
@@ -509,6 +544,7 @@ export class WorkspacesService {
       const user = lookup.get(membership.userId);
       membership.userName = user?.name ?? null;
       membership.userEmail = user?.email ?? null;
+      membership.userIsActive = user?.isActive ?? null;
       return membership;
     });
   }
@@ -531,16 +567,36 @@ export class WorkspacesService {
       );
     }
 
+    const user = await this.usersRepository.findOne({
+      where: { id: dto.userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User ${dto.userId} was not found.`);
+    }
+
+    if (!user.isActive) {
+      throw new BadRequestException(
+        'Only active workspace members can be added to a team.',
+      );
+    }
+
+    const existingMembership = await this.teamMembershipsRepository.findOne({
+      where: { teamId, userId: dto.userId },
+    });
+
+    if (existingMembership) {
+      throw new ConflictException('This user is already a member of the team.');
+    }
+
     const membership = this.teamMembershipsRepository.create({
       teamId,
       userId: dto.userId,
     });
     const saved = await this.teamMembershipsRepository.save(membership);
-    const user = await this.usersRepository.findOne({
-      where: { id: dto.userId },
-    });
-    saved.userName = user?.name ?? null;
-    saved.userEmail = user?.email ?? null;
+    saved.userName = user.name;
+    saved.userEmail = user.email;
+    saved.userIsActive = user.isActive;
     return saved;
   }
 

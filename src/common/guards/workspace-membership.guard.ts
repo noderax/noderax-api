@@ -21,8 +21,10 @@ export class WorkspaceMembershipGuard implements CanActivate {
       throw new NotFoundException('Workspace context was not provided.');
     }
 
-    const workspace =
-      await this.workspacesService.findWorkspaceForUserOrFail(workspaceId, user);
+    const workspace = await this.workspacesService.findWorkspaceForUserOrFail(
+      workspaceId,
+      user,
+    );
 
     request.workspace = workspace;
     request.workspaceMembership =

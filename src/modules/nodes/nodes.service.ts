@@ -110,7 +110,10 @@ export class NodesService {
     return { deleted: true, id };
   }
 
-  async ensureExists(nodeId: string, workspaceId?: string): Promise<NodeEntity> {
+  async ensureExists(
+    nodeId: string,
+    workspaceId?: string,
+  ): Promise<NodeEntity> {
     return this.findOneOrFail(nodeId, workspaceId);
   }
 
@@ -164,8 +167,8 @@ export class NodesService {
     }
 
     const node = this.nodesRepository.create({
-      workspaceId:
-        (await this.workspacesService.getDefaultWorkspaceOrFail()).id,
+      workspaceId: (await this.workspacesService.getDefaultWorkspaceOrFail())
+        .id,
       name: input.hostname,
       hostname: input.hostname,
       os: input.os,

@@ -1,29 +1,14 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsEnum, IsUUID } from 'class-validator';
 import { WorkspaceMembershipRole } from '../entities/workspace-membership-role.enum';
 
 export class CreateWorkspaceMemberDto {
   @ApiProperty({
-    example: 'ops@example.com',
+    format: 'uuid',
+    example: '4d2d2219-5d3e-4761-a79b-3c09ae88d6d3',
   })
-  @IsEmail()
-  email: string;
-
-  @ApiPropertyOptional({
-    example: 'Platform Operator',
-  })
-  @IsOptional()
-  @IsString()
-  @MinLength(2)
-  name?: string;
-
-  @ApiPropertyOptional({
-    example: 'StrongPassword123!',
-  })
-  @IsOptional()
-  @IsString()
-  @MinLength(8)
-  password?: string;
+  @IsUUID()
+  userId: string;
 
   @ApiProperty({
     enum: WorkspaceMembershipRole,
