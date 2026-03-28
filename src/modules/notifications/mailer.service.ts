@@ -49,20 +49,40 @@ export class MailerService {
     }
 
     const transporter = this.getTransporter(settings);
-    const info = await transporter.sendMail({
-      from: `${settings.fromName} <${settings.fromEmail}>`,
-      to: input.to.join(', '),
-      subject: input.subject,
-      text: input.text,
-      html: input.html,
-    });
 
-    this.deliveries.push(input);
-    this.logger.log(
-      `Delivered email "${input.subject}" to ${input.to.join(', ')}`,
-    );
+    try {
+      const info = await transporter.sendMail({
+        from: `${settings.fromName} <${settings.fromEmail}>`,
+        to: input.to.join(', '),
+        subject: input.subject,
+        text: input.text,
+        html: input.html,
+      });
 
-    return info;
+      this.deliveries.push(input);
+      this.logger.log(
+        `Delivered email "${input.subject}" to ${input.to.join(', ')}`,
+      );
+
+      return info;
+    } catch (error) {
+      const smtpError = error as Error & {
+        code?: string;
+        responseCode?: number;
+        command?: string;
+      };
+
+      this.logger.error(
+        `Email delivery failed via ${settings.smtpHost}:${settings.smtpPort} (${smtpError.code ?? 'unknown'})${
+          smtpError.responseCode ? ` response=${smtpError.responseCode}` : ''
+        }${smtpError.command ? ` command=${smtpError.command}` : ''}`,
+        smtpError.stack ?? smtpError.message,
+      );
+
+      throw new ServiceUnavailableException(
+        'Email delivery failed. Check SMTP credentials or SMTP connectivity.',
+      );
+    }
   }
 
   private getTransporter(settings: ConfigType<typeof mailConfig>): Transporter {
