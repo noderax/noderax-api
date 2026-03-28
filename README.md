@@ -47,6 +47,7 @@ src/
 ## Platform Surface
 
 - Installer-managed first-run setup with `setup`, `installed`, `legacy`, and `restart_required` modes
+- Global user directory with platform-admin-only CRUD
 - Workspace-aware control plane with:
   - workspace listing and detail
   - members and teams
@@ -54,6 +55,11 @@ src/
   - default-workspace selection
   - protected workspace deletion rules
 - Platform-level admin role: `platform_admin`
+- User-centric membership rules:
+  - users are created globally first
+  - workspace memberships point to existing users
+  - teams are composed from workspace members only
+  - inactive users cannot log in or receive new assignments
 - Node inventory with online and offline detection
 - Agent enrollment with approval flow plus legacy registration compatibility
 - Metrics ingestion and node telemetry persistence
@@ -169,9 +175,22 @@ If the state directory is not writable, setup and platform-settings flows will w
 
 Key rules:
 
-- `platform_admin` can create workspaces and manage platform settings.
-- Workspace `owner` and `admin` can update workspace settings, members, teams, and delete the workspace.
+- `platform_admin` can create workspaces, manage platform settings, and manage global users.
+- Workspace `owner` and `admin` can update workspace settings, assign existing users as members, manage teams, and delete the workspace.
 - The current default workspace cannot be deleted until another workspace is selected as default.
+- Workspace member creation is reference-based: `POST /workspaces/:workspaceId/members` accepts `userId` plus role.
+- Team membership creation is constrained to active users who already belong to the same workspace.
+- Removing a workspace membership also removes that user from teams inside the same workspace.
+- Deleting a user is blocked while that user still owns workspace memberships, team memberships, or scheduled tasks.
+
+## User, Member, And Team Model
+
+- `Users` is the single source of truth for operator identities.
+- `GET /users` remains platform-admin only.
+- `GET /workspaces/:workspaceId/assignable-users` returns active users not yet attached to the workspace, for workspace `owner` and `admin` plus platform admins.
+- `PATCH /users/:userId` supports profile, role, and active-state updates with last-active-admin protections.
+- `DELETE /users/:userId` performs hard delete only when the user has no blocking assignments.
+- Bootstrap now repairs orphaned team memberships that no longer have a matching workspace membership.
 
 ## Task Delivery Model
 
@@ -216,12 +235,18 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 
 ### Authenticated Control Plane
 
+- `GET /users`
 - `GET /users/me`
+- `POST /users`
+- `PATCH /users/:userId`
+- `DELETE /users/:userId`
 - `PATCH /users/me/preferences`
 - `GET /workspaces`
 - `GET /workspaces/:workspaceId`
 - `GET /workspaces/:workspaceId/members`
+- `GET /workspaces/:workspaceId/assignable-users`
 - `GET /workspaces/:workspaceId/teams`
+- `GET /workspaces/:workspaceId/teams/:teamId/members`
 - `GET /workspaces/:workspaceId/nodes`
 - `GET /workspaces/:workspaceId/tasks`
 - `GET /workspaces/:workspaceId/scheduled-tasks`
@@ -269,6 +294,7 @@ Recommended checks:
 pnpm build
 pnpm lint
 pnpm test
+pnpm test:e2e
 ```
 
 ## Notes
