@@ -10,6 +10,7 @@ import {
   type Transporter,
 } from 'nodemailer';
 import { MAIL_CONFIG_KEY, mailConfig } from '../../config';
+import { createSmtpTransporter } from '../../common/utils/smtp.util';
 
 export interface MailDeliveryRecord {
   to: string[];
@@ -94,16 +95,12 @@ export class MailerService {
       ? createTransport({
           jsonTransport: true,
         })
-      : createTransport({
-          host: settings.smtpHost,
-          port: settings.smtpPort,
-          secure: settings.smtpSecure,
-          auth: settings.smtpUsername.trim()
-            ? {
-                user: settings.smtpUsername,
-                pass: settings.smtpPassword,
-              }
-            : undefined,
+      : createSmtpTransporter({
+          smtpHost: settings.smtpHost,
+          smtpPort: settings.smtpPort,
+          smtpSecure: settings.smtpSecure,
+          smtpUsername: settings.smtpUsername,
+          smtpPassword: settings.smtpPassword,
         });
 
     return this.transporter;

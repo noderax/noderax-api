@@ -10,6 +10,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MailSettingsDto } from '../../../common/dto/mail-settings.dto';
 
 export class PlatformAppSettingsDto {
   @ApiProperty({ example: '*' })
@@ -189,6 +190,8 @@ export class PlatformAgentSettingsDto {
   highCpuThreshold: number;
 }
 
+export class PlatformMailSettingsDto extends MailSettingsDto {}
+
 export class PlatformSettingsValuesDto {
   @ApiProperty({ type: PlatformAppSettingsDto })
   @Type(() => PlatformAppSettingsDto)
@@ -214,6 +217,11 @@ export class PlatformSettingsValuesDto {
   @Type(() => PlatformAgentSettingsDto)
   @ValidateNested()
   agents: PlatformAgentSettingsDto;
+
+  @ApiProperty({ type: PlatformMailSettingsDto })
+  @Type(() => PlatformMailSettingsDto)
+  @ValidateNested()
+  mail: PlatformMailSettingsDto;
 }
 
 export class PlatformSettingsResponseDto extends PlatformSettingsValuesDto {

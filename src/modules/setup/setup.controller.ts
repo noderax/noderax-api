@@ -14,7 +14,9 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
 import { InstallSetupDto } from './dto/install-setup.dto';
 import { InstallSetupResponseDto } from './dto/install-setup-response.dto';
 import { SetupStatusResponseDto } from './dto/setup-status-response.dto';
@@ -81,6 +83,24 @@ export class SetupController {
   })
   validateRedis(@Body() dto: ValidateRedisConnectionDto) {
     return this.setupService.validateRedis(dto);
+  }
+
+  @Post('validate/smtp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Validate SMTP connectivity for first-time setup',
+  })
+  @ApiOkResponse({
+    type: ValidateSmtpResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'SMTP connection failed or mail settings are invalid.',
+  })
+  @ApiConflictResponse({
+    description: 'Setup already completed.',
+  })
+  validateSmtp(@Body() dto: MailSettingsDto) {
+    return this.setupService.validateSmtp(dto);
   }
 
   @Post('install')

@@ -1,10 +1,17 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
+import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
+import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
 import {
   INSTALLER_MANAGED_FLAG,
   readInstallState,
   type InstallState,
   writeInstallState,
 } from '../../install/install-state';
+import { verifySmtpConnection } from '../../common/utils/smtp.util';
 import {
   PlatformSettingsResponseDto,
   type PlatformSettingsValuesDto,
@@ -33,6 +40,14 @@ const PLATFORM_SETTINGS_ENV_KEYS = [
   'JWT_SECRET',
   'JWT_EXPIRES_IN',
   'BCRYPT_SALT_ROUNDS',
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_SECURE',
+  'SMTP_USERNAME',
+  'SMTP_PASSWORD',
+  'SMTP_FROM_EMAIL',
+  'SMTP_FROM_NAME',
+  'WEB_APP_URL',
   'AGENT_HEARTBEAT_TIMEOUT_SECONDS',
   'AGENT_OFFLINE_CHECK_INTERVAL_SECONDS',
   'AGENT_REALTIME_PING_TIMEOUT_SECONDS',
@@ -95,6 +110,26 @@ export class PlatformSettingsService {
       message:
         'Changes were written to installer state. Restart the API container to apply them.',
     });
+  }
+
+  async validateSmtp(dto: MailSettingsDto): Promise<ValidateSmtpResponseDto> {
+    try {
+      await verifySmtpConnection({
+        smtpHost: dto.smtpHost,
+        smtpPort: dto.smtpPort,
+        smtpSecure: dto.smtpSecure,
+        smtpUsername: dto.smtpUsername,
+        smtpPassword: dto.smtpPassword,
+      });
+    } catch (error) {
+      throw new BadRequestException(
+        `SMTP validation failed: ${(error as Error).message}`,
+      );
+    }
+
+    return {
+      success: true,
+    };
   }
 
   private buildResponse(input?: {
@@ -176,6 +211,16 @@ export class PlatformSettingsService {
         jwtExpiresIn: env.JWT_EXPIRES_IN || '1d',
         bcryptSaltRounds: this.parseInteger(env.BCRYPT_SALT_ROUNDS, 12),
       },
+      mail: {
+        smtpHost: env.SMTP_HOST || '',
+        smtpPort: this.parseInteger(env.SMTP_PORT, 587),
+        smtpSecure: this.parseBoolean(env.SMTP_SECURE, false),
+        smtpUsername: env.SMTP_USERNAME || '',
+        smtpPassword: env.SMTP_PASSWORD || '',
+        fromEmail: env.SMTP_FROM_EMAIL || 'noreply@noderax.local',
+        fromName: env.SMTP_FROM_NAME || 'Noderax',
+        webAppUrl: env.WEB_APP_URL || 'http://localhost:3001',
+      },
       agents: {
         heartbeatTimeoutSeconds: this.parseInteger(
           env.AGENT_HEARTBEAT_TIMEOUT_SECONDS,
@@ -244,6 +289,14 @@ export class PlatformSettingsService {
       JWT_SECRET: settings.auth.jwtSecret,
       JWT_EXPIRES_IN: settings.auth.jwtExpiresIn,
       BCRYPT_SALT_ROUNDS: String(settings.auth.bcryptSaltRounds),
+      SMTP_HOST: settings.mail.smtpHost,
+      SMTP_PORT: String(settings.mail.smtpPort),
+      SMTP_SECURE: String(settings.mail.smtpSecure),
+      SMTP_USERNAME: settings.mail.smtpUsername,
+      SMTP_PASSWORD: settings.mail.smtpPassword,
+      SMTP_FROM_EMAIL: settings.mail.fromEmail,
+      SMTP_FROM_NAME: settings.mail.fromName,
+      WEB_APP_URL: settings.mail.webAppUrl,
       AGENT_HEARTBEAT_TIMEOUT_SECONDS: String(
         settings.agents.heartbeatTimeoutSeconds,
       ),

@@ -7,6 +7,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { MailSettingsDto } from '../../../common/dto/mail-settings.dto';
 import { ValidatePostgresConnectionDto } from './validate-postgres-connection.dto';
 import { ValidateRedisConnectionDto } from './validate-redis-connection.dto';
 
@@ -84,4 +85,11 @@ export class InstallSetupDto {
   @ValidateNested()
   @Type(() => SetupWorkspaceDto)
   workspace: SetupWorkspaceDto;
+
+  @ApiProperty({
+    type: () => MailSettingsDto,
+  })
+  @ValidateNested()
+  @Type(() => MailSettingsDto)
+  mail: MailSettingsDto;
 }

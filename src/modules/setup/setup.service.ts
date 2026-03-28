@@ -19,6 +19,9 @@ import {
   writeInstallState,
 } from '../../install/install-state';
 import { assertValidTimeZone } from '../../common/utils/timezone.util';
+import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
+import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
+import { verifySmtpConnection } from '../../common/utils/smtp.util';
 import { UserRole } from '../users/entities/user-role.enum';
 import { UserEntity } from '../users/entities/user.entity';
 import { UserInvitationStatus } from '../users/entities/user-invitation.entity';
@@ -101,6 +104,14 @@ export class SetupService {
     this.assertSetupOpen();
 
     await this.probeRedis(dto);
+
+    return { success: true };
+  }
+
+  async validateSmtp(dto: MailSettingsDto): Promise<ValidateSmtpResponseDto> {
+    this.assertSetupOpen();
+
+    await this.probeSmtp(dto);
 
     return { success: true };
   }
@@ -359,6 +370,14 @@ export class SetupService {
       REDIS_DB: String(dto.redis.db ?? 0),
       REDIS_URL: '',
       REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX ?? 'noderax:',
+      SMTP_HOST: dto.mail.smtpHost,
+      SMTP_PORT: String(dto.mail.smtpPort),
+      SMTP_SECURE: dto.mail.smtpSecure ? 'true' : 'false',
+      SMTP_USERNAME: dto.mail.smtpUsername,
+      SMTP_PASSWORD: dto.mail.smtpPassword,
+      SMTP_FROM_EMAIL: dto.mail.fromEmail,
+      SMTP_FROM_NAME: dto.mail.fromName,
+      WEB_APP_URL: dto.mail.webAppUrl,
       JWT_SECRET: this.generateSecret(),
       JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '1d',
       BCRYPT_SALT_ROUNDS:
@@ -447,6 +466,22 @@ export class SetupService {
       return false;
     } finally {
       await client.end().catch(() => undefined);
+    }
+  }
+
+  private async probeSmtp(dto: MailSettingsDto) {
+    try {
+      await verifySmtpConnection({
+        smtpHost: dto.smtpHost,
+        smtpPort: dto.smtpPort,
+        smtpSecure: dto.smtpSecure,
+        smtpUsername: dto.smtpUsername,
+        smtpPassword: dto.smtpPassword,
+      });
+    } catch (error) {
+      throw new BadRequestException(
+        `SMTP validation failed: ${(error as Error).message}`,
+      );
     }
   }
 }

@@ -1,12 +1,24 @@
-import { Body, Controller, Get, Header, Patch } from '@nestjs/common';
 import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
+import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user-role.enum';
 import {
@@ -57,5 +69,24 @@ export class PlatformSettingsController {
     @Body() dto: UpdatePlatformSettingsDto,
   ): PlatformSettingsResponseDto {
     return this.platformSettingsService.updateSettings(dto);
+  }
+
+  @Post('validate/smtp')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary: 'Validate SMTP connectivity',
+    description:
+      'Tests SMTP connectivity for the submitted draft settings without persisting any changes.',
+  })
+  @ApiOkResponse({
+    description: 'SMTP connectivity verified.',
+    type: ValidateSmtpResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'SMTP connection failed or mail settings are invalid.',
+  })
+  async validateSmtp(@Body() dto: MailSettingsDto) {
+    return this.platformSettingsService.validateSmtp(dto);
   }
 }
