@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
 import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import {
   INSTALLER_MANAGED_FLAG,
   readInstallState,
@@ -12,6 +13,7 @@ import {
   writeInstallState,
 } from '../../install/install-state';
 import { verifySmtpConnection } from '../../common/utils/smtp.util';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
   PlatformSettingsResponseDto,
   type PlatformSettingsValuesDto,
@@ -65,13 +67,18 @@ type PlatformSettingsEnvKey = (typeof PLATFORM_SETTINGS_ENV_KEYS)[number];
 
 @Injectable()
 export class PlatformSettingsService {
+  constructor(private readonly auditLogsService: AuditLogsService) {}
+
   getSettings(): PlatformSettingsResponseDto {
     return this.buildResponse({
       restartRequired: false,
     });
   }
 
-  updateSettings(dto: UpdatePlatformSettingsDto): PlatformSettingsResponseDto {
+  updateSettings(
+    dto: UpdatePlatformSettingsDto,
+    actor?: AuthenticatedUser,
+  ): PlatformSettingsResponseDto {
     const editable = this.isEditableDeployment();
 
     if (!editable) {
@@ -97,10 +104,30 @@ export class PlatformSettingsService {
       [INSTALLER_MANAGED_FLAG]: 'true',
     };
 
+    const previousSettings = this.mapEnvToSettings(currentEnv);
+
     writeInstallState({
       ...installState,
       runtimeEnv: nextEnv,
     });
+
+    if (actor) {
+      void this.auditLogsService.record({
+        scope: 'platform',
+        action: 'platform.settings.updated',
+        targetType: 'platform_settings',
+        targetLabel: 'runtime-env',
+        changes: {
+          before: previousSettings,
+          after: dto,
+        },
+        context: {
+          actorType: 'user',
+          actorUserId: actor.id,
+          actorEmailSnapshot: actor.email,
+        },
+      });
+    }
 
     return this.buildResponse({
       env: nextEnv,

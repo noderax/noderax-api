@@ -28,6 +28,7 @@ import {
   DEFAULT_TIMEZONE,
 } from '../../common/utils/timezone.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -68,6 +69,7 @@ export class UsersService {
     @InjectRepository(ScheduledTaskEntity)
     private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
     private readonly notificationsService: NotificationsService,
+    private readonly auditLogsService: AuditLogsService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -117,6 +119,22 @@ export class UsersService {
       },
     );
 
+    await this.auditLogsService.record({
+      scope: 'platform',
+      action: 'user.created',
+      targetType: 'user',
+      targetId: createdUser.id,
+      targetLabel: createdUser.email,
+      metadata: {
+        role: createdUser.role,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
+
     return this.toResponse(createdUser);
   }
 
@@ -156,6 +174,19 @@ export class UsersService {
         name: user.name,
         token: invite.token,
         expiresAt: invite.expiresAt,
+      });
+
+      await this.auditLogsService.record({
+        scope: 'platform',
+        action: 'user.invitation.resent',
+        targetType: 'user',
+        targetId: user.id,
+        targetLabel: user.email,
+        context: {
+          actorType: 'user',
+          actorUserId: actor.id,
+          actorEmailSnapshot: actor.email,
+        },
       });
 
       return {
@@ -228,7 +259,26 @@ export class UsersService {
 
     user.role = nextRole;
 
-    return this.toResponse(await this.usersRepository.save(user));
+    const saved = await this.usersRepository.save(user);
+
+    await this.auditLogsService.record({
+      scope: 'platform',
+      action: 'user.updated',
+      targetType: 'user',
+      targetId: saved.id,
+      targetLabel: saved.email,
+      metadata: {
+        role: saved.role,
+        isActive: saved.isActive,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
+
+    return this.toResponse(saved);
   }
 
   async delete(
@@ -243,6 +293,19 @@ export class UsersService {
     await this.assertDeletable(user);
 
     await this.usersRepository.remove(user);
+
+    await this.auditLogsService.record({
+      scope: 'platform',
+      action: 'user.deleted',
+      targetType: 'user',
+      targetId: deletedUserId,
+      targetLabel: user.email,
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
 
     return {
       deleted: true,
@@ -300,7 +363,27 @@ export class UsersService {
       return this.toResponse(user);
     }
 
-    return this.toResponse(await this.usersRepository.save(user));
+    const saved = await this.usersRepository.save(user);
+
+    await this.auditLogsService.record({
+      scope: 'platform',
+      action: 'user.preferences.updated',
+      targetType: 'user',
+      targetId: saved.id,
+      targetLabel: saved.email,
+      metadata: {
+        timezone: saved.timezone,
+        criticalEventEmailsEnabled: saved.criticalEventEmailsEnabled,
+        enrollmentEmailsEnabled: saved.enrollmentEmailsEnabled,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: saved.id,
+        actorEmailSnapshot: saved.email,
+      },
+    });
+
+    return this.toResponse(saved);
   }
 
   async changePassword(
@@ -327,6 +410,19 @@ export class UsersService {
     user.passwordHash = await this.hashPassword(dto.newPassword);
     user.sessionVersion += 1;
     await this.usersRepository.save(user);
+
+    await this.auditLogsService.record({
+      scope: 'platform',
+      action: 'user.password.changed',
+      targetType: 'user',
+      targetId: user.id,
+      targetLabel: user.email,
+      context: {
+        actorType: 'user',
+        actorUserId: user.id,
+        actorEmailSnapshot: user.email,
+      },
+    });
 
     return { success: true };
   }
@@ -547,6 +643,7 @@ export class UsersService {
       activatedAt: user.activatedAt,
       criticalEventEmailsEnabled: user.criticalEventEmailsEnabled,
       enrollmentEmailsEnabled: user.enrollmentEmailsEnabled,
+      mfaEnabled: user.mfaEnabled,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

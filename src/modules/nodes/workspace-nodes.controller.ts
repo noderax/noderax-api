@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -17,12 +18,17 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { WorkspaceRoles } from '../../common/decorators/workspace-roles.decorator';
 import { WorkspaceMembershipGuard } from '../../common/guards/workspace-membership.guard';
 import { WorkspaceRolesGuard } from '../../common/guards/workspace-roles.guard';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { Request } from 'express';
 import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-membership-role.enum';
 import { CreateNodeDto } from './dto/create-node.dto';
+import { EnableNodeMaintenanceDto } from './dto/enable-node-maintenance.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
+import { UpdateNodeTeamDto } from './dto/update-node-team.dto';
 import { NodeEntity } from './entities/node.entity';
 import { NodesService } from './nodes.service';
 
@@ -76,6 +82,74 @@ export class WorkspaceNodesController {
     @Body() createNodeDto: CreateNodeDto,
   ) {
     return this.nodesService.create(createNodeDto, workspaceId);
+  }
+
+  @Post(':id/team')
+  @UseGuards(WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  assignTeam(
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateNodeTeamDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.updateTeamAssignment(
+      id,
+      workspaceId,
+      actor,
+      dto.teamId,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+  }
+
+  @Post(':id/maintenance/enable')
+  @UseGuards(WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  enableMaintenance(
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Body() dto: EnableNodeMaintenanceDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.enableMaintenance(
+      id,
+      workspaceId,
+      actor,
+      dto.reason,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+  }
+
+  @Post(':id/maintenance/disable')
+  @UseGuards(WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  disableMaintenance(
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.disableMaintenance(id, workspaceId, actor, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Delete(':id')

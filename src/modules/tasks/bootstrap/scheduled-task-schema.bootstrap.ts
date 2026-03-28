@@ -17,8 +17,11 @@ export class ScheduledTaskSchemaBootstrap implements OnModuleInit {
       await this.dataSource.query(`
         CREATE TABLE IF NOT EXISTS "scheduled_tasks" (
           "id" uuid NOT NULL DEFAULT gen_random_uuid(),
-          "nodeId" uuid NOT NULL,
+          "nodeId" uuid NULL,
           "ownerUserId" uuid NULL,
+          "targetTeamId" uuid NULL,
+          "templateId" uuid NULL,
+          "templateName" varchar(160) NULL,
           "name" varchar(160) NOT NULL,
           "command" text NOT NULL,
           "cadence" varchar(24) NOT NULL,
@@ -47,6 +50,9 @@ export class ScheduledTaskSchemaBootstrap implements OnModuleInit {
     await this.dataSource.query(`
       ALTER TABLE "scheduled_tasks"
       ADD COLUMN IF NOT EXISTS "ownerUserId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "targetTeamId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "templateId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "templateName" varchar(160) NULL,
       ADD COLUMN IF NOT EXISTS "name" varchar(160) NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS "command" text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS "cadence" varchar(24) NOT NULL DEFAULT 'hourly',
@@ -70,6 +76,15 @@ export class ScheduledTaskSchemaBootstrap implements OnModuleInit {
       ALTER COLUMN "timezone" TYPE varchar(80)
     `);
 
+    await this.dataSource
+      .query(
+        `
+      ALTER TABLE "scheduled_tasks"
+      ALTER COLUMN "nodeId" DROP NOT NULL
+    `,
+      )
+      .catch(() => undefined);
+
     if (!(await this.hasConstraint('FK_scheduled_tasks_owner'))) {
       await this.dataSource.query(`
         ALTER TABLE "scheduled_tasks"
@@ -91,6 +106,11 @@ export class ScheduledTaskSchemaBootstrap implements OnModuleInit {
     await this.dataSource.query(`
       CREATE INDEX IF NOT EXISTS "IDX_scheduled_tasks_owner_user"
       ON "scheduled_tasks" ("ownerUserId")
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_scheduled_tasks_target_team_enabled_next_run"
+      ON "scheduled_tasks" ("targetTeamId", "enabled", "nextRunAt")
     `);
 
     this.logger.log('Ensured scheduled task schema exists');

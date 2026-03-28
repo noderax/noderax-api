@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkspaceMembershipGuard } from '../../common/guards/workspace-membership.guard';
 import { WorkspaceRolesGuard } from '../../common/guards/workspace-roles.guard';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { EventEntity } from '../events/entities/event.entity';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { TaskEntity } from '../tasks/entities/task.entity';
@@ -30,7 +31,8 @@ import { WorkspacesService } from './workspaces.service';
       EventEntity,
       ScheduledTaskEntity,
     ]),
-    UsersModule,
+    forwardRef(() => AuditLogsModule),
+    forwardRef(() => UsersModule),
   ],
   controllers: [WorkspacesController],
   providers: [

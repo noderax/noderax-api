@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -16,11 +17,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { WorkspaceRoles } from '../../common/decorators/workspace-roles.decorator';
 import { WorkspaceMembershipGuard } from '../../common/guards/workspace-membership.guard';
 import { WorkspaceRolesGuard } from '../../common/guards/workspace-roles.guard';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { Request } from 'express';
 import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-membership-role.enum';
 import { CreateBatchTaskDto } from './dto/create-batch-task.dto';
+import { CreateTeamTaskDto } from './dto/create-team-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskLogsDto } from './dto/query-task-logs.dto';
 import { QueryTasksDto } from './dto/query-tasks.dto';
@@ -70,6 +75,23 @@ export class WorkspaceTasksController {
     @Body() createBatchTaskDto: CreateBatchTaskDto,
   ) {
     return this.tasksService.createBatch(createBatchTaskDto, workspaceId);
+  }
+
+  @Post('teams/:teamId')
+  @UseGuards(WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  createForTeam(
+    @Param('workspaceId') workspaceId: string,
+    @Param('teamId') teamId: string,
+    @Body() dto: CreateTeamTaskDto,
+  ) {
+    return this.tasksService.createForTeam({
+      workspaceId,
+      teamId,
+      type: dto.type,
+      payload: dto.payload ?? {},
+      templateId: dto.templateId,
+    });
   }
 
   @Get()

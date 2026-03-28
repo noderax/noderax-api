@@ -67,6 +67,11 @@ export class UserResponseDto {
   enrollmentEmailsEnabled: boolean;
 
   @ApiProperty({
+    example: false,
+  })
+  mfaEnabled: boolean;
+
+  @ApiProperty({
     format: 'date-time',
     example: '2026-03-17T12:30:00.000Z',
   })

@@ -115,7 +115,16 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
   private async ensureResourceWorkspaceColumns(): Promise<void> {
     await this.dataSource.query(`
       ALTER TABLE "nodes"
-      ADD COLUMN IF NOT EXISTS "workspaceId" uuid NULL
+      ADD COLUMN IF NOT EXISTS "workspaceId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "teamId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "maintenanceMode" boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "maintenanceReason" text NULL,
+      ADD COLUMN IF NOT EXISTS "maintenanceStartedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "maintenanceByUserId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "agentVersion" varchar(64) NULL,
+      ADD COLUMN IF NOT EXISTS "platformVersion" varchar(120) NULL,
+      ADD COLUMN IF NOT EXISTS "kernelVersion" varchar(120) NULL,
+      ADD COLUMN IF NOT EXISTS "lastVersionReportedAt" TIMESTAMPTZ NULL
     `);
 
     await this.dataSource.query(`
@@ -162,6 +171,11 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
     await this.dataSource.query(`
       CREATE INDEX IF NOT EXISTS "IDX_nodes_workspace_id"
       ON "nodes" ("workspaceId")
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_nodes_team_id"
+      ON "nodes" ("teamId")
     `);
 
     await this.dataSource.query(`
@@ -297,6 +311,16 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
       ALTER TABLE "scheduled_tasks"
       ADD CONSTRAINT "FK_scheduled_tasks_workspace"
       FOREIGN KEY ("workspaceId") REFERENCES "workspaces"("id") ON DELETE CASCADE
+    `,
+      )
+      .catch(() => undefined);
+
+    await this.dataSource
+      .query(
+        `
+      ALTER TABLE "nodes"
+      ADD CONSTRAINT "FK_nodes_team"
+      FOREIGN KEY ("teamId") REFERENCES "teams"("id") ON DELETE SET NULL
     `,
       )
       .catch(() => undefined);

@@ -38,7 +38,12 @@ export class UserPreferencesSchemaBootstrap implements OnModuleInit {
       ADD COLUMN IF NOT EXISTS "activatedAt" TIMESTAMPTZ NULL,
       ADD COLUMN IF NOT EXISTS "criticalEventEmailsEnabled" boolean NOT NULL DEFAULT true,
       ADD COLUMN IF NOT EXISTS "enrollmentEmailsEnabled" boolean NOT NULL DEFAULT true,
-      ADD COLUMN IF NOT EXISTS "sessionVersion" integer NOT NULL DEFAULT 0
+      ADD COLUMN IF NOT EXISTS "sessionVersion" integer NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS "mfaEnabled" boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "mfaSecretEncrypted" text NULL,
+      ADD COLUMN IF NOT EXISTS "mfaPendingSecretEncrypted" text NULL,
+      ADD COLUMN IF NOT EXISTS "mfaRecoveryCodes" jsonb NULL,
+      ADD COLUMN IF NOT EXISTS "mfaEnabledAt" TIMESTAMPTZ NULL
     `);
 
     await this.ensureTokenTables();

@@ -12,6 +12,7 @@ import {
   DEFAULT_TIMEZONE,
 } from '../../common/utils/timezone.util';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { EventEntity } from '../events/entities/event.entity';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { TaskEntity } from '../tasks/entities/task.entity';
@@ -56,6 +57,7 @@ export class WorkspacesService {
     private readonly eventsRepository: Repository<EventEntity>,
     @InjectRepository(ScheduledTaskEntity)
     private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async findAccessibleWorkspaces(
@@ -201,6 +203,23 @@ export class WorkspacesService {
       }),
     );
 
+    await this.auditLogsService.record({
+      scope: 'platform',
+      action: 'workspace.created',
+      targetType: 'workspace',
+      targetId: saved.id,
+      targetLabel: saved.name,
+      metadata: {
+        slug: saved.slug,
+        defaultTimezone: saved.defaultTimezone,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
+
     if (shouldBecomeDefault) {
       await this.setDefaultWorkspace(saved.id);
       return this.findWorkspaceOrFail(saved.id);
@@ -216,6 +235,13 @@ export class WorkspacesService {
   ): Promise<WorkspaceEntity> {
     const workspace = await this.findWorkspaceForUserOrFail(workspaceId, actor);
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    const before = {
+      name: workspace.name,
+      slug: workspace.slug,
+      defaultTimezone: workspace.defaultTimezone,
+      isArchived: workspace.isArchived,
+      isDefault: workspace.isDefault,
+    };
 
     if (workspace.isArchived && !this.isUnarchiveOnlyRequest(dto)) {
       throw new ConflictException(
@@ -289,8 +315,56 @@ export class WorkspacesService {
 
     if (dto.isDefault) {
       await this.setDefaultWorkspace(saved.id);
-      return this.findWorkspaceOrFail(saved.id);
+      const defaultedWorkspace = await this.findWorkspaceOrFail(saved.id);
+      await this.auditLogsService.record({
+        scope: 'workspace',
+        workspaceId: saved.id,
+        action: 'workspace.updated',
+        targetType: 'workspace',
+        targetId: saved.id,
+        targetLabel: saved.name,
+        changes: {
+          before,
+          after: {
+            name: defaultedWorkspace.name,
+            slug: defaultedWorkspace.slug,
+            defaultTimezone: defaultedWorkspace.defaultTimezone,
+            isArchived: defaultedWorkspace.isArchived,
+            isDefault: defaultedWorkspace.isDefault,
+          },
+        },
+        context: {
+          actorType: 'user',
+          actorUserId: actor.id,
+          actorEmailSnapshot: actor.email,
+        },
+      });
+      return defaultedWorkspace;
     }
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: saved.id,
+      action: 'workspace.updated',
+      targetType: 'workspace',
+      targetId: saved.id,
+      targetLabel: saved.name,
+      changes: {
+        before,
+        after: {
+          name: saved.name,
+          slug: saved.slug,
+          defaultTimezone: saved.defaultTimezone,
+          isArchived: saved.isArchived,
+          isDefault: saved.isDefault,
+        },
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
 
     return saved;
   }
@@ -310,6 +384,20 @@ export class WorkspacesService {
     }
 
     await this.workspacesRepository.remove(workspace);
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: workspace.id,
+      action: 'workspace.deleted',
+      targetType: 'workspace',
+      targetId: workspace.id,
+      targetLabel: workspace.name,
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
 
     return {
       deleted: true,
@@ -417,6 +505,23 @@ export class WorkspacesService {
     saved.userName = user.name;
     saved.userEmail = user.email;
     saved.userIsActive = user.isActive;
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId,
+      action: 'workspace.member.added',
+      targetType: 'user',
+      targetId: user.id,
+      targetLabel: user.email,
+      metadata: {
+        role: saved.role,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
     return saved;
   }
 
@@ -446,6 +551,23 @@ export class WorkspacesService {
     saved.userName = user?.name ?? null;
     saved.userEmail = user?.email ?? null;
     saved.userIsActive = user?.isActive ?? null;
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId,
+      action: 'workspace.member.updated',
+      targetType: 'user',
+      targetId: membership.userId,
+      targetLabel: user?.email ?? membership.userId,
+      metadata: {
+        role: saved.role,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
     return saved;
   }
 
@@ -483,6 +605,19 @@ export class WorkspacesService {
       await manager.remove(WorkspaceMembershipEntity, membership);
     });
 
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId,
+      action: 'workspace.member.removed',
+      targetType: 'workspace_membership',
+      targetId: membershipId,
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
+
     return {
       deleted: true,
       id: membershipId,
@@ -509,7 +644,23 @@ export class WorkspacesService {
       description: dto.description?.trim() || null,
     });
 
-    return this.teamsRepository.save(team);
+    const saved = await this.teamsRepository.save(team);
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId,
+      action: 'team.created',
+      targetType: 'team',
+      targetId: saved.id,
+      targetLabel: saved.name,
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
+
+    return saved;
   }
 
   async updateTeam(
@@ -536,7 +687,26 @@ export class WorkspacesService {
       team.description = dto.description?.trim() || null;
     }
 
-    return this.teamsRepository.save(team);
+    const saved = await this.teamsRepository.save(team);
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId,
+      action: 'team.updated',
+      targetType: 'team',
+      targetId: saved.id,
+      targetLabel: saved.name,
+      metadata: {
+        description: saved.description,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
+
+    return saved;
   }
 
   async deleteTeam(
@@ -554,7 +724,42 @@ export class WorkspacesService {
       throw new NotFoundException(`Team ${teamId} was not found`);
     }
 
+    const [assignedNodeCount, targetedScheduleCount] = await Promise.all([
+      this.nodesRepository.count({
+        where: { workspaceId, teamId },
+      }),
+      this.scheduledTasksRepository.count({
+        where: { workspaceId, targetTeamId: teamId },
+      }),
+    ]);
+
+    if (assignedNodeCount > 0) {
+      throw new BadRequestException(
+        'Reassign or clear team-owned nodes before deleting this team.',
+      );
+    }
+
+    if (targetedScheduleCount > 0) {
+      throw new BadRequestException(
+        'Delete or retarget team schedules before deleting this team.',
+      );
+    }
+
     await this.teamsRepository.remove(team);
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId,
+      action: 'team.deleted',
+      targetType: 'team',
+      targetId: team.id,
+      targetLabel: team.name,
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
     return {
       deleted: true,
       id: teamId,
@@ -640,6 +845,23 @@ export class WorkspacesService {
     saved.userName = user.name;
     saved.userEmail = user.email;
     saved.userIsActive = user.isActive;
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId,
+      action: 'team.member.added',
+      targetType: 'user',
+      targetId: user.id,
+      targetLabel: user.email,
+      metadata: {
+        teamId,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
     return saved;
   }
 
@@ -663,6 +885,22 @@ export class WorkspacesService {
     }
 
     await this.teamMembershipsRepository.remove(membership);
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId,
+      action: 'team.member.removed',
+      targetType: 'user',
+      targetId: userId,
+      metadata: {
+        teamId,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+      },
+    });
     return {
       deleted: true,
       userId,
@@ -886,7 +1124,7 @@ export class WorkspacesService {
     await this.scheduledTasksRepository.save(schedules);
   }
 
-  private async findTeamOrFail(
+  async findTeamOrFail(
     workspaceId: string,
     teamId: string,
   ): Promise<TeamEntity> {

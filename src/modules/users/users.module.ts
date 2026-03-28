@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
 import { PasswordResetTokenEntity } from './entities/password-reset-token.entity';
@@ -22,6 +23,7 @@ import { UsersService } from './users.service';
       TeamMembershipEntity,
       ScheduledTaskEntity,
     ]),
+    forwardRef(() => AuditLogsModule),
     NotificationsModule,
   ],
   controllers: [UsersController],

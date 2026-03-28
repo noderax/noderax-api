@@ -38,6 +38,31 @@ export class TaskEntity {
   @Column({ type: 'uuid' })
   nodeId: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  targetTeamId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+  })
+  targetTeamName?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  templateId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+  })
+  @Column({ length: 160, nullable: true })
+  templateName?: string | null;
+
   @ApiProperty({
     example: 'shell.exec',
   })

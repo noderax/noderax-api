@@ -43,4 +43,12 @@ export class CreateBatchTaskDto {
   @IsOptional()
   @IsObject()
   payload?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsUUID()
+  templateId?: string;
 }

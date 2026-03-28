@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -22,6 +23,7 @@ import { WorkspaceRoles } from '../../common/decorators/workspace-roles.decorato
 import { WorkspaceMembershipGuard } from '../../common/guards/workspace-membership.guard';
 import { WorkspaceRolesGuard } from '../../common/guards/workspace-roles.guard';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { Request } from 'express';
 import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-membership-role.enum';
 import { CreateBatchScheduledTaskDto } from './dto/create-batch-scheduled-task.dto';
 import { CreateScheduledTaskDto } from './dto/create-scheduled-task.dto';
@@ -52,8 +54,15 @@ export class WorkspaceScheduledTasksController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('workspaceId') workspaceId: string,
     @Body() dto: CreateScheduledTaskDto,
+    @Req() request: Request,
   ) {
-    return this.scheduledTasksService.create(user.id, workspaceId, dto);
+    return this.scheduledTasksService.create(user.id, workspaceId, dto, {
+      actorType: 'user',
+      actorUserId: user.id,
+      actorEmailSnapshot: user.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Post('batch')
@@ -67,8 +76,15 @@ export class WorkspaceScheduledTasksController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('workspaceId') workspaceId: string,
     @Body() dto: CreateBatchScheduledTaskDto,
+    @Req() request: Request,
   ) {
-    return this.scheduledTasksService.createBatch(user.id, workspaceId, dto);
+    return this.scheduledTasksService.createBatch(user.id, workspaceId, dto, {
+      actorType: 'user',
+      actorUserId: user.id,
+      actorEmailSnapshot: user.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Get()

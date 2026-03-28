@@ -12,12 +12,14 @@ function createService(): TasksService {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
     {
       getOrThrow: jest.fn().mockReturnValue({
         enableRealtimeTaskDispatch: false,
         taskClaimLeaseSeconds: 60,
       }),
     } as never,
+    {} as never,
     {} as never,
   );
 }
@@ -192,8 +194,10 @@ describe('TasksService.createScheduledShellTask', () => {
     const tasksService = new TasksService(
       taskRepository as never,
       {} as never,
+      {} as never,
       nodesService as never,
       eventsService as never,
+      {} as never,
       realtimeGateway as never,
       redisService as never,
       agentRealtimeService as never,

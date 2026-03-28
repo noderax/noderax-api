@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { EventsModule } from '../events/events.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
@@ -12,6 +13,7 @@ import { WorkspaceNodesController } from './workspace-nodes.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([NodeEntity]),
+    AuditLogsModule,
     EventsModule,
     RealtimeModule,
     WorkspacesModule,

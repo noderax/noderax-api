@@ -47,6 +47,14 @@ export class CreateBatchScheduledTaskDto {
   @MinLength(1)
   command: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsUUID()
+  templateId?: string;
+
   @ApiProperty({
     enum: SCHEDULED_TASK_CADENCES,
     example: 'daily',

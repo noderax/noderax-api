@@ -31,7 +31,7 @@ describe('PlatformSettingsService', () => {
     process.env = { ...envSnapshot };
     delete process.env[INSTALLER_MANAGED_FLAG];
     jest.clearAllMocks();
-    service = new PlatformSettingsService();
+    service = new PlatformSettingsService({ record: jest.fn() } as never);
   });
 
   afterAll(() => {

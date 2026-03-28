@@ -43,10 +43,12 @@ describe('ScheduledTasksService', () => {
   const service = new ScheduledTasksService(
     repository as never,
     usersRepository as never,
+    {} as never,
     nodesService as never,
     eventsService as never,
     tasksService as never,
     workspacesService as never,
+    {} as never,
   );
 
   beforeEach(() => {

@@ -8,6 +8,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { In, Repository } from 'typeorm';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
+import { RequestAuditContext } from '../../common/types/request-audit-context.type';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodesService } from '../nodes/nodes.service';
@@ -17,6 +19,7 @@ import { CreateBatchScheduledTaskDto } from './dto/create-batch-scheduled-task.d
 import { CreateScheduledTaskDto } from './dto/create-scheduled-task.dto';
 import { UpdateScheduledTaskDto } from './dto/update-scheduled-task.dto';
 import { ScheduledTaskEntity } from './entities/scheduled-task.entity';
+import { TaskTemplateEntity } from './entities/task-template.entity';
 import {
   computeNextScheduledRun,
   describeScheduledTask,
@@ -33,26 +36,41 @@ export class ScheduledTasksService {
     private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
+    @InjectRepository(TaskTemplateEntity)
+    private readonly taskTemplatesRepository: Repository<TaskTemplateEntity>,
     private readonly nodesService: NodesService,
     private readonly eventsService: EventsService,
     private readonly tasksService: TasksService,
     private readonly workspacesService: WorkspacesService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async create(
     ownerUserId: string,
     workspaceId: string | undefined,
     createScheduledTaskDto: CreateScheduledTaskDto,
+    context?: RequestAuditContext,
   ): Promise<ScheduledTaskEntity> {
     const owner = await this.findOwnerOrFail(ownerUserId);
     const workspace = await this.resolveWorkspace(workspaceId, ownerUserId);
     const normalized = this.normalizeScheduleInput(createScheduledTaskDto);
-    const [saved] = await this.createSchedulesForNodes(
-      owner,
-      workspace,
-      [createScheduledTaskDto.nodeId],
-      normalized,
-    );
+    const [saved] = createScheduledTaskDto.teamId
+      ? await this.createSchedulesForTeam(
+          owner,
+          workspace,
+          createScheduledTaskDto.teamId,
+          normalized,
+          createScheduledTaskDto.templateId,
+          context,
+        )
+      : await this.createSchedulesForNodes(
+          owner,
+          workspace,
+          [createScheduledTaskDto.nodeId!],
+          normalized,
+          createScheduledTaskDto.templateId,
+          context,
+        );
 
     return saved;
   }
@@ -61,6 +79,7 @@ export class ScheduledTasksService {
     ownerUserId: string,
     workspaceId: string | undefined,
     createBatchScheduledTaskDto: CreateBatchScheduledTaskDto,
+    context?: RequestAuditContext,
   ): Promise<ScheduledTaskEntity[]> {
     const owner = await this.findOwnerOrFail(ownerUserId);
     const workspace = await this.resolveWorkspace(workspaceId, ownerUserId);
@@ -71,6 +90,8 @@ export class ScheduledTasksService {
       workspace,
       createBatchScheduledTaskDto.nodeIds,
       normalized,
+      createBatchScheduledTaskDto.templateId,
+      context,
     );
   }
 
@@ -86,7 +107,7 @@ export class ScheduledTasksService {
       .addOrderBy('schedule.createdAt', 'ASC')
       .getMany();
 
-    return this.populateOwnerMetadata(schedules);
+    return this.populateScheduleMetadata(schedules);
   }
 
   async findOneOrFail(
@@ -101,7 +122,7 @@ export class ScheduledTasksService {
       throw new NotFoundException(`Scheduled task ${id} was not found`);
     }
 
-    const [decoratedSchedule] = await this.populateOwnerMetadata([
+    const [decoratedSchedule] = await this.populateScheduleMetadata([
       scheduledTask,
     ]);
     return decoratedSchedule;
@@ -148,6 +169,7 @@ export class ScheduledTasksService {
         ownerUserId: saved.ownerUserId,
         timezone: saved.timezone,
         nextRunAt: saved.nextRunAt?.toISOString() ?? null,
+        targetTeamId: saved.targetTeamId,
       },
     });
 
@@ -172,6 +194,7 @@ export class ScheduledTasksService {
       metadata: {
         scheduleId: scheduledTask.id,
         scheduleName: scheduledTask.name,
+        targetTeamId: scheduledTask.targetTeamId,
       },
     });
 
@@ -251,13 +274,56 @@ export class ScheduledTasksService {
     scheduledTask: ScheduledTaskEntity,
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
-      const createdTask = await this.tasksService.createScheduledShellTask({
-        nodeId: scheduledTask.nodeId,
-        workspaceId: scheduledTask.workspaceId,
-        scheduleId: scheduledTask.id,
-        scheduleName: scheduledTask.name,
-        command: scheduledTask.command,
-      });
+      const createdTaskIds: string[] = [];
+      const targets = scheduledTask.targetTeamId
+        ? (await this.nodesService.listTeamOwnedNodes(
+            scheduledTask.workspaceId,
+            scheduledTask.targetTeamId,
+          )).filter((node) => !node.maintenanceMode)
+        : scheduledTask.nodeId
+          ? [await this.nodesService.findOneOrFail(
+              scheduledTask.nodeId,
+              scheduledTask.workspaceId,
+            )]
+          : [];
+
+      if (targets.length === 0) {
+        const nextRunAt = scheduledTask.nextRunAt
+          ? computeNextScheduledRun(scheduledTask, scheduledTask.nextRunAt)
+          : computeNextScheduledRun(scheduledTask, new Date());
+
+        await this.scheduledTasksRepository.update(
+          {
+            id: scheduledTask.id,
+            claimToken: scheduledTask.claimToken,
+          },
+          {
+            lastError:
+              'No eligible nodes matched the scheduled task target at execution time.',
+            nextRunAt,
+            claimToken: null,
+            claimedBy: null,
+            leaseUntil: null,
+          },
+        );
+
+        return { ok: true };
+      }
+
+      for (const target of targets) {
+        const createdTask = await this.tasksService.createScheduledShellTask({
+          nodeId: target.id,
+          workspaceId: scheduledTask.workspaceId,
+          scheduleId: scheduledTask.id,
+          scheduleName: scheduledTask.name,
+          command: scheduledTask.command,
+          targetTeamId: scheduledTask.targetTeamId,
+          targetTeamName: scheduledTask.targetTeamName ?? null,
+          templateId: scheduledTask.templateId,
+          templateName: scheduledTask.templateName,
+        });
+        createdTaskIds.push(createdTask.id);
+      }
 
       const nextRunAt = scheduledTask.nextRunAt
         ? computeNextScheduledRun(scheduledTask, scheduledTask.nextRunAt)
@@ -270,7 +336,7 @@ export class ScheduledTasksService {
         },
         {
           lastRunAt: new Date(),
-          lastRunTaskId: createdTask.id,
+          lastRunTaskId: createdTaskIds[0] ?? null,
           lastError: null,
           nextRunAt,
           claimToken: null,
@@ -280,6 +346,7 @@ export class ScheduledTasksService {
       );
 
       await this.eventsService.record({
+        workspaceId: scheduledTask.workspaceId,
         nodeId: scheduledTask.nodeId,
         type: SYSTEM_EVENT_TYPES.TASK_SCHEDULE_TRIGGERED,
         severity: EventSeverity.INFO,
@@ -287,9 +354,10 @@ export class ScheduledTasksService {
         metadata: {
           scheduleId: scheduledTask.id,
           scheduleName: scheduledTask.name,
-          taskId: createdTask.id,
+          taskIds: createdTaskIds,
           timezone: scheduledTask.timezone,
           nextRunAt: nextRunAt.toISOString(),
+          targetTeamId: scheduledTask.targetTeamId,
         },
       });
 
@@ -316,6 +384,7 @@ export class ScheduledTasksService {
       );
 
       await this.eventsService.record({
+        workspaceId: scheduledTask.workspaceId,
         nodeId: scheduledTask.nodeId,
         type: SYSTEM_EVENT_TYPES.TASK_SCHEDULE_FAILED,
         severity: EventSeverity.WARNING,
@@ -324,6 +393,7 @@ export class ScheduledTasksService {
           scheduleId: scheduledTask.id,
           scheduleName: scheduledTask.name,
           error: message,
+          targetTeamId: scheduledTask.targetTeamId,
         },
       });
 
@@ -334,7 +404,7 @@ export class ScheduledTasksService {
     }
   }
 
-  private async populateOwnerMetadata(
+  private async populateScheduleMetadata(
     schedules: ScheduledTaskEntity[],
   ): Promise<ScheduledTaskEntity[]> {
     const ownerIds = Array.from(
@@ -513,8 +583,13 @@ export class ScheduledTasksService {
     workspace: Awaited<ReturnType<WorkspacesService['findWorkspaceOrFail']>>,
     rawNodeIds: string[],
     normalized: NormalizedScheduleInput,
+    templateId?: string,
+    context?: RequestAuditContext,
   ): Promise<ScheduledTaskEntity[]> {
     const nodeIds = this.normalizeNodeIds(rawNodeIds);
+    const template = templateId
+      ? await this.resolveTemplateOrFail(templateId, workspace.id)
+      : null;
     await Promise.all(
       nodeIds.map((nodeId) =>
         this.nodesService.ensureExists(nodeId, workspace.id),
@@ -535,6 +610,9 @@ export class ScheduledTasksService {
       const scheduledTask = this.scheduledTasksRepository.create({
         workspaceId: workspace.id,
         nodeId,
+        targetTeamId: null,
+        templateId: template?.id ?? null,
+        templateName: template?.name ?? null,
         ownerUserId: owner.id,
         name: normalized.name,
         command: normalized.command,
@@ -573,13 +651,110 @@ export class ScheduledTasksService {
           workspaceId: saved.workspaceId,
           timezone: saved.timezone,
           nextRunAt: saved.nextRunAt?.toISOString() ?? null,
+          templateId: saved.templateId,
         },
+      });
+
+      await this.auditLogsService.record({
+        scope: 'workspace',
+        workspaceId: saved.workspaceId,
+        action: 'task-schedule.created',
+        targetType: 'scheduled-task',
+        targetId: saved.id,
+        targetLabel: saved.name,
+        metadata: {
+          nodeId: saved.nodeId,
+          templateId: saved.templateId,
+        },
+        context,
       });
 
       schedules.push(saved);
     }
 
     return schedules;
+  }
+
+  private async createSchedulesForTeam(
+    owner: UserEntity,
+    workspace: Awaited<ReturnType<WorkspacesService['findWorkspaceOrFail']>>,
+    teamId: string,
+    normalized: NormalizedScheduleInput,
+    templateId?: string,
+    context?: RequestAuditContext,
+  ): Promise<ScheduledTaskEntity[]> {
+    const team = await this.workspacesService.findTeamOrFail(workspace.id, teamId);
+    const template = templateId
+      ? await this.resolveTemplateOrFail(templateId, workspace.id)
+      : null;
+    const nextRunAt = computeNextScheduledRun(
+      {
+        ...normalized,
+        timezone: workspace.defaultTimezone,
+      },
+      new Date(),
+    );
+    const scheduledTask = this.scheduledTasksRepository.create({
+      workspaceId: workspace.id,
+      nodeId: null,
+      targetTeamId: team.id,
+      targetTeamName: team.name,
+      templateId: template?.id ?? null,
+      templateName: template?.name ?? null,
+      ownerUserId: owner.id,
+      name: normalized.name,
+      command: normalized.command,
+      cadence: normalized.cadence,
+      minute: normalized.minute,
+      hour: normalized.hour,
+      dayOfWeek: normalized.dayOfWeek,
+      intervalMinutes: normalized.intervalMinutes,
+      timezone: workspace.defaultTimezone,
+      timezoneSource: 'workspace',
+      enabled: true,
+      nextRunAt,
+      lastRunAt: null,
+      lastRunTaskId: null,
+      lastError: null,
+      leaseUntil: null,
+      claimedBy: null,
+      claimToken: null,
+    });
+    const saved = await this.scheduledTasksRepository.save(scheduledTask);
+    saved.ownerName = owner.name;
+    saved.isLegacy = false;
+
+    await this.eventsService.record({
+      workspaceId: saved.workspaceId,
+      nodeId: null,
+      type: SYSTEM_EVENT_TYPES.TASK_SCHEDULE_CREATED,
+      severity: EventSeverity.INFO,
+      message: `Scheduled task ${saved.name} created for team ${team.name}. ${describeScheduledTask(saved)}`,
+      metadata: {
+        scheduleId: saved.id,
+        scheduleName: saved.name,
+        targetTeamId: team.id,
+        targetTeamName: team.name,
+        templateId: saved.templateId,
+      },
+    });
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: saved.workspaceId,
+      action: 'task-schedule.team-created',
+      targetType: 'scheduled-task',
+      targetId: saved.id,
+      targetLabel: saved.name,
+      metadata: {
+        teamId: team.id,
+        teamName: team.name,
+        templateId: saved.templateId,
+      },
+      context,
+    });
+
+    return [saved];
   }
 
   private normalizeNodeIds(nodeIds: string[]): string[] {
@@ -617,6 +792,21 @@ export class ScheduledTasksService {
     }
 
     return defaultWorkspace;
+  }
+
+  private async resolveTemplateOrFail(
+    templateId: string,
+    workspaceId: string,
+  ): Promise<TaskTemplateEntity> {
+    const template = await this.taskTemplatesRepository.findOne({
+      where: { id: templateId, workspaceId },
+    });
+
+    if (!template) {
+      throw new NotFoundException(`Task template ${templateId} was not found`);
+    }
+
+    return template;
   }
 }
 

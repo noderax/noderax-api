@@ -8,7 +8,7 @@ import {
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import {
   isPackageTaskType,
   TASK_TYPES,
@@ -21,6 +21,7 @@ import { AuthenticatedAgent } from '../../common/types/authenticated-agent.type'
 import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodesService } from '../nodes/nodes.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -46,6 +47,7 @@ import { StartAgentTaskDto } from './dto/start-agent-task.dto';
 import { TaskLogEntity } from './entities/task-log.entity';
 import { TaskLogLevel } from './entities/task-log-level.enum';
 import { TaskEntity } from './entities/task.entity';
+import { TaskTemplateEntity } from './entities/task-template.entity';
 import { TaskStatus } from './entities/task-status.enum';
 import {
   NormalizedPackageDto,
@@ -72,8 +74,11 @@ export class TasksService {
     private readonly tasksRepository: Repository<TaskEntity>,
     @InjectRepository(TaskLogEntity)
     private readonly taskLogsRepository: Repository<TaskLogEntity>,
+    @InjectRepository(TaskTemplateEntity)
+    private readonly taskTemplatesRepository: Repository<TaskTemplateEntity>,
     private readonly nodesService: NodesService,
     private readonly eventsService: EventsService,
+    private readonly auditLogsService: AuditLogsService,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
     private readonly agentRealtimeService: AgentRealtimeService,
@@ -90,6 +95,7 @@ export class TasksService {
       type: createTaskDto.type,
       payload: createTaskDto.payload ?? {},
       workspaceId,
+      templateId: createTaskDto.templateId,
     });
   }
 
@@ -115,6 +121,7 @@ export class TasksService {
             type: createBatchTaskDto.type,
             payload: createBatchTaskDto.payload ?? {},
             workspaceId,
+            templateId: createBatchTaskDto.templateId,
           },
           node,
         ),
@@ -130,11 +137,19 @@ export class TasksService {
     scheduleName: string;
     command: string;
     workspaceId?: string;
+    targetTeamId?: string | null;
+    targetTeamName?: string | null;
+    templateId?: string | null;
+    templateName?: string | null;
   }): Promise<TaskEntity> {
     return this.queueTask({
       nodeId: input.nodeId,
       type: 'shell.exec',
       workspaceId: input.workspaceId,
+      targetTeamId: input.targetTeamId ?? null,
+      targetTeamName: input.targetTeamName ?? null,
+      templateId: input.templateId ?? null,
+      templateName: input.templateName ?? null,
       payload: {
         title: input.scheduleName,
         command: input.command,
@@ -142,6 +157,80 @@ export class TasksService {
         scheduleName: input.scheduleName,
       },
     });
+  }
+
+  async createForTeam(input: {
+    workspaceId: string;
+    teamId: string;
+    type: string;
+    payload: Record<string, unknown>;
+    templateId?: string;
+  }): Promise<TaskEntity[]> {
+    const workspace = await this.workspacesService.assertWorkspaceWritable(
+      input.workspaceId,
+    );
+    const team = await this.workspacesService.findTeamOrFail(
+      workspace.id,
+      input.teamId,
+    );
+    const template = input.templateId
+      ? await this.resolveTemplateOrFail(input.templateId, workspace.id)
+      : null;
+    const nodes = (await this.nodesService.listTeamOwnedNodes(
+      workspace.id,
+      team.id,
+    )).filter((node) => !node.maintenanceMode);
+
+    if (nodes.length === 0) {
+      throw new BadRequestException(
+        `Team ${team.name} does not currently have any eligible nodes.`,
+      );
+    }
+
+    const payload =
+      Object.keys(input.payload).length > 0
+        ? input.payload
+        : (template?.payloadTemplate ?? {});
+    const type = input.type.trim() || template?.taskType;
+
+    if (!type) {
+      throw new BadRequestException('Task type is required.');
+    }
+
+    const tasks: TaskEntity[] = [];
+    for (const node of nodes) {
+      tasks.push(
+        await this.queueTask(
+          {
+            nodeId: node.id,
+            type,
+            payload,
+            workspaceId: workspace.id,
+            targetTeamId: team.id,
+            targetTeamName: team.name,
+            templateId: template?.id ?? null,
+            templateName: template?.name ?? null,
+          },
+          node,
+        ),
+      );
+    }
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: workspace.id,
+      action: 'task.team-run.created',
+      targetType: 'team',
+      targetId: team.id,
+      targetLabel: team.name,
+      metadata: {
+        taskType: type,
+        taskCount: tasks.length,
+        taskIds: tasks.map((task) => task.id),
+      },
+    });
+
+    return tasks;
   }
 
   async findAll(
@@ -184,18 +273,35 @@ export class TasksService {
 
     const staleTasks = await this.tasksRepository
       .createQueryBuilder('task')
-      .where('task.status = :queuedStatus', {
-        queuedStatus: TaskStatus.QUEUED,
-      })
-      .andWhere('task.createdAt <= :queuedDeadline', {
-        queuedDeadline,
-      })
-      .orWhere(
-        'task.status = :runningStatus AND task.startedAt IS NOT NULL AND task.startedAt <= :runningDeadline',
-        {
-          runningStatus: TaskStatus.RUNNING,
-          runningDeadline,
-        },
+      .innerJoin('nodes', 'node', 'node.id = task."nodeId"')
+      .where(
+        new Brackets((builder) => {
+          builder
+            .where(
+              new Brackets((queuedBuilder) => {
+                queuedBuilder
+                  .where('task.status = :queuedStatus', {
+                    queuedStatus: TaskStatus.QUEUED,
+                  })
+                  .andWhere('task.createdAt <= :queuedDeadline', {
+                    queuedDeadline,
+                  })
+                  .andWhere('node."maintenanceMode" = false');
+              }),
+            )
+            .orWhere(
+              new Brackets((runningBuilder) => {
+                runningBuilder
+                  .where('task.status = :runningStatus', {
+                    runningStatus: TaskStatus.RUNNING,
+                  })
+                  .andWhere('task.startedAt IS NOT NULL')
+                  .andWhere('task.startedAt <= :runningDeadline', {
+                    runningDeadline,
+                  });
+              }),
+            );
+        }),
       )
       .getMany();
 
@@ -1310,6 +1416,10 @@ export class TasksService {
       type: string;
       payload: Record<string, unknown>;
       workspaceId?: string;
+      targetTeamId?: string | null;
+      targetTeamName?: string | null;
+      templateId?: string | null;
+      templateName?: string | null;
     },
     nodeOverride?: NodeEntity,
   ): Promise<TaskEntity> {
@@ -1317,12 +1427,20 @@ export class TasksService {
       nodeOverride ??
       (await this.nodesService.ensureExists(input.nodeId, input.workspaceId));
     await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+    this.nodesService.assertNodeAcceptingNewWork(node);
+    const template =
+      input.templateId && !input.templateName
+        ? await this.resolveTemplateOrFail(input.templateId, node.workspaceId)
+        : null;
 
     const task = this.tasksRepository.create({
       workspaceId: node.workspaceId,
       nodeId: input.nodeId,
       type: input.type,
       payload: input.payload,
+      targetTeamId: input.targetTeamId ?? null,
+      templateId: input.templateId ?? template?.id ?? null,
+      templateName: input.templateName ?? template?.name ?? null,
       status: TaskStatus.QUEUED,
       result: null,
       output: null,
@@ -1539,8 +1657,10 @@ export class TasksService {
         `id = (
           SELECT t.id
           FROM tasks t
+          INNER JOIN nodes n ON n.id = t."nodeId"
           WHERE t."nodeId" = :nodeId
             AND t."cancelRequestedAt" IS NULL
+            AND n."maintenanceMode" = false
             AND (
               t.status = :queuedStatus
               OR (
@@ -1589,11 +1709,21 @@ export class TasksService {
         claimedBy: null,
         updatedAt: now,
       })
-      .where('status IN (:...statuses)', {
+      .where(
+        `"id" IN (
+          SELECT t.id
+          FROM "tasks" t
+          INNER JOIN "nodes" n ON n.id = t."nodeId"
+          WHERE t.status IN (:...statuses)
+            AND t."leaseUntil" IS NOT NULL
+            AND t."leaseUntil" <= :now
+            AND n."maintenanceMode" = false
+        )`,
+      )
+      .setParameters({
         statuses: [TaskStatus.ACCEPTED, TaskStatus.CLAIMED],
+        now,
       })
-      .andWhere('leaseUntil IS NOT NULL')
-      .andWhere('leaseUntil <= :now', { now })
       .execute();
 
     const requeuedCount = updateResult.affected ?? 0;
@@ -1861,5 +1991,23 @@ export class TasksService {
 
   private isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  private async resolveTemplateOrFail(
+    templateId: string,
+    workspaceId: string,
+  ): Promise<TaskTemplateEntity> {
+    const template = await this.taskTemplatesRepository.findOne({
+      where: {
+        id: templateId,
+        workspaceId,
+      },
+    });
+
+    if (!template) {
+      throw new NotFoundException(`Task template ${templateId} was not found`);
+    }
+
+    return template;
   }
 }

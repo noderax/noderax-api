@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -9,10 +10,13 @@ import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, timingSafeEqual } from 'crypto';
 import { Repository } from 'typeorm';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
+import { RequestAuditContext } from '../../common/types/request-audit-context.type';
 import { RedisService } from '../../redis/redis.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -34,6 +38,7 @@ export class NodesService {
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
     private readonly workspacesService: WorkspacesService,
+    private readonly auditLogsService: AuditLogsService,
   ) {}
 
   async create(
@@ -46,6 +51,12 @@ export class NodesService {
       : await this.workspacesService.assertWorkspaceWritable(
           (await this.workspacesService.getDefaultWorkspaceOrFail()).id,
         );
+    const team = createNodeDto.teamId
+      ? await this.workspacesService.findTeamOrFail(
+          workspace.id,
+          createNodeDto.teamId,
+        )
+      : null;
 
     const node = this.nodesRepository.create({
       workspaceId: workspace.id,
@@ -55,9 +66,18 @@ export class NodesService {
       os: createNodeDto.os,
       arch: createNodeDto.arch,
       status: NodeStatus.OFFLINE,
+      teamId: team?.id ?? null,
+      maintenanceMode: false,
+      maintenanceReason: null,
+      maintenanceStartedAt: null,
+      maintenanceByUserId: null,
+      agentVersion: null,
+      platformVersion: null,
+      kernelVersion: null,
+      lastVersionReportedAt: null,
     });
 
-    return this.nodesRepository.save(node);
+    return this.populateTeamMetadata(await this.nodesRepository.save(node));
   }
 
   async findAll(
@@ -78,6 +98,16 @@ export class NodesService {
       nodesQuery.andWhere('node.status = :status', { status: query.status });
     }
 
+    if (query.teamId) {
+      nodesQuery.andWhere('node.teamId = :teamId', { teamId: query.teamId });
+    }
+
+    if (typeof query.maintenanceMode === 'boolean') {
+      nodesQuery.andWhere('node.maintenanceMode = :maintenanceMode', {
+        maintenanceMode: query.maintenanceMode,
+      });
+    }
+
     if (query.search) {
       nodesQuery.andWhere(
         '(node.name ILIKE :search OR node.hostname ILIKE :search)',
@@ -87,7 +117,7 @@ export class NodesService {
       );
     }
 
-    return nodesQuery.getMany();
+    return this.populateTeamMetadata(await nodesQuery.getMany());
   }
 
   async findOneOrFail(id: string, workspaceId?: string): Promise<NodeEntity> {
@@ -99,7 +129,7 @@ export class NodesService {
       throw new NotFoundException(`Node ${id} was not found`);
     }
 
-    return node;
+    return this.populateTeamMetadata(node);
   }
 
   async delete(
@@ -128,6 +158,9 @@ export class NodesService {
     os: string;
     arch: string;
     agentTokenHash: string;
+    agentVersion?: string | null;
+    platformVersion?: string | null;
+    kernelVersion?: string | null;
   }): Promise<NodeEntity> {
     await this.assertHostnameAvailable(input.hostname);
     await this.workspacesService.assertWorkspaceWritable(input.workspaceId);
@@ -142,6 +175,13 @@ export class NodesService {
       status: NodeStatus.OFFLINE,
       lastSeenAt: null,
       agentTokenHash: input.agentTokenHash,
+      agentVersion: input.agentVersion ?? null,
+      platformVersion: input.platformVersion ?? null,
+      kernelVersion: input.kernelVersion ?? null,
+      lastVersionReportedAt:
+        input.agentVersion || input.platformVersion || input.kernelVersion
+          ? new Date()
+          : null,
     });
 
     return this.nodesRepository.save(node);
@@ -152,6 +192,9 @@ export class NodesService {
     os: string;
     arch: string;
     agentTokenHash: string;
+    agentVersion?: string | null;
+    platformVersion?: string | null;
+    kernelVersion?: string | null;
   }): Promise<NodeEntity> {
     const existingNode = await this.nodesRepository.findOne({
       where: { hostname: input.hostname },
@@ -166,6 +209,14 @@ export class NodesService {
       existingNode.lastSeenAt = now;
       existingNode.agentTokenHash = input.agentTokenHash;
       existingNode.name = existingNode.name || existingNode.hostname;
+      existingNode.agentVersion = input.agentVersion ?? existingNode.agentVersion;
+      existingNode.platformVersion =
+        input.platformVersion ?? existingNode.platformVersion;
+      existingNode.kernelVersion = input.kernelVersion ?? existingNode.kernelVersion;
+      existingNode.lastVersionReportedAt =
+        input.agentVersion || input.platformVersion || input.kernelVersion
+          ? now
+          : existingNode.lastVersionReportedAt;
 
       return this.nodesRepository.save(existingNode);
     }
@@ -180,9 +231,190 @@ export class NodesService {
       status: NodeStatus.ONLINE,
       lastSeenAt: now,
       agentTokenHash: input.agentTokenHash,
+      agentVersion: input.agentVersion ?? null,
+      platformVersion: input.platformVersion ?? null,
+      kernelVersion: input.kernelVersion ?? null,
+      lastVersionReportedAt:
+        input.agentVersion || input.platformVersion || input.kernelVersion
+          ? now
+          : null,
     });
 
     return this.nodesRepository.save(node);
+  }
+
+  async updateTeamAssignment(
+    nodeId: string,
+    workspaceId: string | undefined,
+    actor: AuthenticatedUser,
+    teamId: string | undefined,
+    context?: RequestAuditContext,
+  ): Promise<NodeEntity> {
+    const node = await this.findOneOrFail(nodeId, workspaceId);
+    await this.workspacesService.assertWorkspaceAdmin(node.workspaceId, actor);
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+
+    const previousTeamId = node.teamId;
+    const team = teamId
+      ? await this.workspacesService.findTeamOrFail(node.workspaceId, teamId)
+      : null;
+
+    node.teamId = team?.id ?? null;
+
+    const saved = await this.populateTeamMetadata(
+      await this.nodesRepository.save(node),
+    );
+
+    await this.eventsService.record({
+      nodeId: saved.id,
+      type: 'node.team.updated',
+      severity: EventSeverity.INFO,
+      message: saved.teamId
+        ? `Node ${saved.hostname} assigned to team ${saved.teamName ?? saved.teamId}`
+        : `Node ${saved.hostname} team assignment cleared`,
+      metadata: {
+        previousTeamId,
+        nextTeamId: saved.teamId,
+        nextTeamName: saved.teamName ?? null,
+      },
+    });
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: saved.workspaceId,
+      action: 'node.team.updated',
+      targetType: 'node',
+      targetId: saved.id,
+      targetLabel: saved.hostname,
+      changes: {
+        before: { teamId: previousTeamId },
+        after: { teamId: saved.teamId, teamName: saved.teamName ?? null },
+      },
+      context,
+    });
+
+    return saved;
+  }
+
+  async enableMaintenance(
+    nodeId: string,
+    workspaceId: string | undefined,
+    actor: AuthenticatedUser,
+    reason: string | undefined,
+    context?: RequestAuditContext,
+  ): Promise<NodeEntity> {
+    const node = await this.findOneOrFail(nodeId, workspaceId);
+    await this.workspacesService.assertWorkspaceAdmin(node.workspaceId, actor);
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+
+    node.maintenanceMode = true;
+    node.maintenanceReason = reason?.trim() || null;
+    node.maintenanceStartedAt = new Date();
+    node.maintenanceByUserId = actor.id;
+
+    const saved = await this.populateTeamMetadata(
+      await this.nodesRepository.save(node),
+    );
+
+    await this.eventsService.record({
+      nodeId: saved.id,
+      type: 'node.maintenance.enabled',
+      severity: EventSeverity.WARNING,
+      message: saved.maintenanceReason
+        ? `Node ${saved.hostname} entered maintenance mode: ${saved.maintenanceReason}`
+        : `Node ${saved.hostname} entered maintenance mode`,
+      metadata: {
+        maintenanceReason: saved.maintenanceReason,
+      },
+    });
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: saved.workspaceId,
+      action: 'node.maintenance.enabled',
+      targetType: 'node',
+      targetId: saved.id,
+      targetLabel: saved.hostname,
+      metadata: {
+        maintenanceReason: saved.maintenanceReason,
+      },
+      context,
+    });
+
+    return saved;
+  }
+
+  async disableMaintenance(
+    nodeId: string,
+    workspaceId: string | undefined,
+    actor: AuthenticatedUser,
+    context?: RequestAuditContext,
+  ): Promise<NodeEntity> {
+    const node = await this.findOneOrFail(nodeId, workspaceId);
+    await this.workspacesService.assertWorkspaceAdmin(node.workspaceId, actor);
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+
+    const previousReason = node.maintenanceReason;
+    node.maintenanceMode = false;
+    node.maintenanceReason = null;
+    node.maintenanceStartedAt = null;
+    node.maintenanceByUserId = null;
+
+    const saved = await this.populateTeamMetadata(
+      await this.nodesRepository.save(node),
+    );
+
+    await this.eventsService.record({
+      nodeId: saved.id,
+      type: 'node.maintenance.disabled',
+      severity: EventSeverity.INFO,
+      message: `Node ${saved.hostname} left maintenance mode`,
+      metadata: {
+        previousReason,
+      },
+    });
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: saved.workspaceId,
+      action: 'node.maintenance.disabled',
+      targetType: 'node',
+      targetId: saved.id,
+      targetLabel: saved.hostname,
+      metadata: {
+        previousReason,
+      },
+      context,
+    });
+
+    return saved;
+  }
+
+  async listTeamOwnedNodes(
+    workspaceId: string,
+    teamId: string,
+  ): Promise<NodeEntity[]> {
+    await this.workspacesService.findTeamOrFail(workspaceId, teamId);
+
+    return this.populateTeamMetadata(
+      await this.nodesRepository.find({
+        where: {
+          workspaceId,
+          teamId,
+        },
+        order: {
+          createdAt: 'ASC',
+        },
+      }),
+    );
+  }
+
+  assertNodeAcceptingNewWork(node: NodeEntity): void {
+    if (node.maintenanceMode) {
+      throw new BadRequestException(
+        `Node ${node.hostname} is in maintenance mode and cannot accept new work.`,
+      );
+    }
   }
 
   async authenticateAgent(
@@ -229,8 +461,22 @@ export class NodesService {
 
   async markOnline(
     nodeId: string,
+    updates?: {
+      agentVersion?: string | null;
+      platformVersion?: string | null;
+      kernelVersion?: string | null;
+    },
   ): Promise<{ node: NodeEntity; transitionedToOnline: boolean }> {
     const now = new Date();
+    const versionUpdate =
+      updates?.agentVersion || updates?.platformVersion || updates?.kernelVersion
+        ? {
+            agentVersion: updates.agentVersion ?? null,
+            platformVersion: updates.platformVersion ?? null,
+            kernelVersion: updates.kernelVersion ?? null,
+            lastVersionReportedAt: now,
+          }
+        : {};
     const updateResult = await this.nodesRepository
       .createQueryBuilder()
       .update(NodeEntity)
@@ -238,6 +484,7 @@ export class NodesService {
         status: NodeStatus.ONLINE,
         lastSeenAt: now,
         updatedAt: now,
+        ...versionUpdate,
       })
       .where('id = :nodeId', { nodeId })
       .andWhere('status = :status', { status: NodeStatus.OFFLINE })
@@ -258,6 +505,22 @@ export class NodesService {
 
     node.status = NodeStatus.ONLINE;
     node.lastSeenAt = now;
+    if (updates?.agentVersion) {
+      node.agentVersion = updates.agentVersion;
+    }
+    if (updates?.platformVersion) {
+      node.platformVersion = updates.platformVersion;
+    }
+    if (updates?.kernelVersion) {
+      node.kernelVersion = updates.kernelVersion;
+    }
+    if (
+      updates?.agentVersion ||
+      updates?.platformVersion ||
+      updates?.kernelVersion
+    ) {
+      node.lastVersionReportedAt = now;
+    }
 
     return {
       node: await this.nodesRepository.save(node),
@@ -395,5 +658,47 @@ export class NodesService {
     }
 
     return value instanceof Date ? value.toISOString() : value;
+  }
+
+  private async populateTeamMetadata<T extends NodeEntity | NodeEntity[]>(
+    input: T,
+  ): Promise<T> {
+    const nodes = Array.isArray(input) ? input : [input];
+    const teamIds = Array.from(
+      new Set(
+        nodes
+          .map((node) => node.teamId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+
+    if (teamIds.length === 0) {
+      nodes.forEach((node) => {
+        node.teamName = null;
+      });
+      return input;
+    }
+
+    const teams = await Promise.all(
+      teamIds.map(async (teamId) => {
+        const node = nodes.find((entry) => entry.teamId === teamId);
+        if (!node) {
+          return null;
+        }
+
+        return this.workspacesService.findTeamOrFail(node.workspaceId, teamId);
+      }),
+    );
+    const lookup = new Map(
+      teams
+        .filter((team): team is NonNullable<typeof team> => Boolean(team))
+        .map((team) => [team.id, team.name] as const),
+    );
+
+    nodes.forEach((node) => {
+      node.teamName = node.teamId ? lookup.get(node.teamId) ?? null : null;
+    });
+
+    return input;
   }
 }

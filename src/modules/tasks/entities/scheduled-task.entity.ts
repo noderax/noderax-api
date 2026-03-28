@@ -44,13 +44,39 @@ export class ScheduledTaskEntity {
   @ApiProperty({
     format: 'uuid',
     example: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
+    nullable: true,
   })
-  @Column({ type: 'uuid' })
-  nodeId: string;
+  @Column({ type: 'uuid', nullable: true })
+  nodeId: string | null;
 
   @ManyToOne(() => NodeEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'nodeId' })
   node?: NodeEntity;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  targetTeamId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+  })
+  targetTeamName?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  templateId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+  })
+  @Column({ length: 160, nullable: true })
+  templateName?: string | null;
 
   @ApiPropertyOptional({
     format: 'uuid',

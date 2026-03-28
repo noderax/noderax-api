@@ -36,6 +36,26 @@ export class AgentHeartbeatDto {
   agentVersion?: string;
 
   @ApiPropertyOptional({
+    example: '24.04',
+    description:
+      'Optional host platform version reported with the heartbeat for fleet observability.',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  platformVersion?: string;
+
+  @ApiPropertyOptional({
+    example: '6.8.0',
+    description:
+      'Optional host kernel version reported with the heartbeat for fleet observability.',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  kernelVersion?: string;
+
+  @ApiPropertyOptional({
     format: 'date-time',
     example: '2026-03-18T10:15:00.000Z',
     description:

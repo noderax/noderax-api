@@ -78,6 +78,75 @@ export class NodeEntity {
   status: NodeStatus;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Operational owner team for the node.',
+  })
+  @Column({ type: 'uuid', nullable: true })
+  teamId?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'SRE',
+    nullable: true,
+  })
+  teamName?: string | null;
+
+  @ApiPropertyOptional({
+    example: false,
+    nullable: true,
+  })
+  @Column({ type: 'boolean', default: false })
+  maintenanceMode?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+  })
+  @Column({ type: 'text', nullable: true })
+  maintenanceReason?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  maintenanceStartedAt?: Date | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  maintenanceByUserId?: string | null;
+
+  @ApiPropertyOptional({
+    example: '1.2.3',
+    nullable: true,
+  })
+  @Column({ length: 64, nullable: true })
+  agentVersion?: string | null;
+
+  @ApiPropertyOptional({
+    example: '24.04',
+    nullable: true,
+  })
+  @Column({ length: 120, nullable: true })
+  platformVersion?: string | null;
+
+  @ApiPropertyOptional({
+    example: '6.8.0',
+    nullable: true,
+  })
+  @Column({ length: 120, nullable: true })
+  kernelVersion?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  lastVersionReportedAt?: Date | null;
+
+  @ApiPropertyOptional({
     format: 'date-time',
     example: '2026-03-17T12:32:10.000Z',
     nullable: true,

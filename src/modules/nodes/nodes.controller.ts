@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -18,10 +19,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { Request } from 'express';
 import { UserRole } from '../users/entities/user-role.enum';
 import { CreateNodeDto } from './dto/create-node.dto';
+import { EnableNodeMaintenanceDto } from './dto/enable-node-maintenance.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
+import { UpdateNodeTeamDto } from './dto/update-node-team.dto';
 import { NodeEntity } from './entities/node.entity';
 import { NodesService } from './nodes.service';
 
@@ -82,6 +88,68 @@ export class NodesController {
   })
   create(@Body() createNodeDto: CreateNodeDto) {
     return this.nodesService.create(createNodeDto);
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Post(':id/team')
+  assignTeam(
+    @Param('id') id: string,
+    @Body() dto: UpdateNodeTeamDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.updateTeamAssignment(
+      id,
+      undefined,
+      actor,
+      dto.teamId,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Post(':id/maintenance/enable')
+  enableMaintenance(
+    @Param('id') id: string,
+    @Body() dto: EnableNodeMaintenanceDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.enableMaintenance(
+      id,
+      undefined,
+      actor,
+      dto.reason,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Post(':id/maintenance/disable')
+  disableMaintenance(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.disableMaintenance(id, undefined, actor, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Roles(UserRole.PLATFORM_ADMIN)

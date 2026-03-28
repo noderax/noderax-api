@@ -18,8 +18,10 @@ import {
 } from '@nestjs/swagger';
 import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { UserRole } from '../users/entities/user-role.enum';
 import {
   PlatformSettingsResponseDto,
@@ -66,9 +68,10 @@ export class PlatformSettingsController {
     type: PlatformSettingsResponseDto,
   })
   updateSettings(
+    @CurrentUser() actor: AuthenticatedUser,
     @Body() dto: UpdatePlatformSettingsDto,
   ): PlatformSettingsResponseDto {
-    return this.platformSettingsService.updateSettings(dto);
+    return this.platformSettingsService.updateSettings(dto, actor);
   }
 
   @Post('validate/smtp')

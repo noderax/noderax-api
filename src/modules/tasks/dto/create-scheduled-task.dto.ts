@@ -15,12 +15,20 @@ import {
 } from '../scheduled-task.utils';
 
 export class CreateScheduledTaskDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     format: 'uuid',
     example: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
   })
+  @IsOptional()
   @IsUUID()
-  nodeId: string;
+  nodeId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID()
+  teamId?: string;
 
   @ApiProperty({
     example: 'Daily hostname check',
@@ -35,6 +43,14 @@ export class CreateScheduledTaskDto {
   @IsString()
   @MinLength(1)
   command: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsUUID()
+  templateId?: string;
 
   @ApiProperty({
     enum: SCHEDULED_TASK_CADENCES,

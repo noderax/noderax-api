@@ -1,6 +1,15 @@
 import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 import { clampInteger } from '../../../common/utils/clamp-integer.util';
 import { NodeStatus } from '../entities/node-status.enum';
 
@@ -21,6 +30,21 @@ export class QueryNodesDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID()
+  teamId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter nodes currently in maintenance mode.',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  maintenanceMode?: boolean;
 
   @ApiPropertyOptional({
     minimum: 1,

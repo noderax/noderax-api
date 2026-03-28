@@ -59,6 +59,9 @@ export class AgentsService {
       os,
       arch,
       agentTokenHash,
+      agentVersion: agentRegisterDto.agentVersion ?? null,
+      platformVersion: agentRegisterDto.platformVersion ?? null,
+      kernelVersion: agentRegisterDto.kernelVersion ?? null,
     });
 
     await this.eventsService.record({
@@ -99,7 +102,11 @@ export class AgentsService {
       agentHeartbeatDto.agentToken,
     );
     const { node: updatedNode, transitionedToOnline } =
-      await this.nodesService.markOnline(node.id);
+      await this.nodesService.markOnline(node.id, {
+        agentVersion: agentHeartbeatDto.agentVersion ?? null,
+        platformVersion: agentHeartbeatDto.platformVersion ?? null,
+        kernelVersion: agentHeartbeatDto.kernelVersion ?? null,
+      });
 
     if (transitionedToOnline) {
       await this.eventsService.record({

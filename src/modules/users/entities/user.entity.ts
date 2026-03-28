@@ -54,6 +54,21 @@ export class UserEntity {
   @Column({ type: 'integer', default: 0 })
   sessionVersion: number;
 
+  @Column({ type: 'boolean', default: false })
+  mfaEnabled: boolean;
+
+  @Column({ type: 'text', nullable: true, select: false })
+  mfaSecretEncrypted: string | null;
+
+  @Column({ type: 'text', nullable: true, select: false })
+  mfaPendingSecretEncrypted: string | null;
+
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  mfaRecoveryCodes: string[] | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  mfaEnabledAt: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

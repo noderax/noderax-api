@@ -21,6 +21,7 @@ Current stable release: `1.0.0`
 ```text
 src/
   modules/
+    audit-logs/
     agent-realtime/
     agents/
     auth/
@@ -47,9 +48,12 @@ src/
 ## Platform Surface
 
 - Installer-managed first-run setup with `setup`, `installed`, `legacy`, and `restart_required` modes
+- Setup-time PostgreSQL, Redis, and optional SMTP validation
 - Global user directory with platform-admin-only CRUD
 - Invite-only operator onboarding with transactional email delivery
 - Forgot/reset password lifecycle and authenticated password change
+- TOTP MFA with recovery codes and short-lived MFA challenge tokens
+- OIDC provider management with Google, Microsoft, and generic discovery-based SSO
 - Workspace-aware control plane with:
   - workspace listing and detail
   - members and teams
@@ -57,6 +61,7 @@ src/
   - default-workspace selection
   - archive / restore with read-only enforcement
   - protected workspace deletion rules
+- Append-only platform and workspace audit logs
 - Platform-level admin role: `platform_admin`
 - User-centric membership rules:
   - users are created globally first
@@ -65,13 +70,14 @@ src/
   - teams are composed from workspace members only
   - inactive users cannot log in or receive new assignments
 - Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
-- Node inventory with online and offline detection
+- Node inventory with online/offline detection, maintenance mode, team ownership, and fleet telemetry
 - Agent enrollment with approval flow plus legacy registration compatibility
 - Metrics ingestion and node telemetry persistence
-- Task creation, batch dispatch, long-poll task claiming, lifecycle updates, and logs
-- Scheduled task creation with workspace timezone support
+- Task creation, team-targeted dispatch, batch dispatch, long-poll task claiming, lifecycle updates, and logs
+- Workspace-scoped task templates
+- Scheduled task creation with workspace timezone support and team targeting
 - Package operations through the shared task pipeline
-- Platform settings persistence through installer state
+- Platform settings persistence through installer state, including SMTP settings validation
 - Realtime updates for node state, metrics, tasks, and events
 
 ## Local Setup
@@ -106,10 +112,12 @@ Important values:
 - `SMTP_PASSWORD`
 - `SMTP_FROM_EMAIL`
 - `SMTP_FROM_NAME`
+- `WEB_APP_URL`
+- `SECRETS_ENCRYPTION_KEY`
 
 For installer-managed deployments, `NODERAX_STATE_DIR` should point to a writable application-data path. For Docker, use a mounted path such as `/data/noderax`.
 
-Invite and password-reset flows now require mail delivery to be configured. In tests, the API uses JSON transport and exposes captured deliveries through the in-memory mailer service.
+If `SMTP_HOST` is left blank, mail delivery remains disabled. Invite, reset-password, and operational email flows only send when SMTP is configured. In tests, the API uses JSON transport and exposes captured deliveries through the in-memory mailer service.
 
 If you want the API to create the first platform admin automatically, set:
 
@@ -212,6 +220,37 @@ Key rules:
 - `DELETE /users/:userId` performs hard delete only when the user has no blocking assignments.
 - Session invalidation is version-based. Invite accept, password reset, password change, deactivate, and role-sensitive mutations rotate `sessionVersion`.
 - Bootstrap now repairs orphaned team memberships that no longer have a matching workspace membership.
+- Teams are no longer organizational only. Nodes can be assigned to teams, and tasks can be broadcast to every eligible node currently owned by a team.
+
+## Audit, Fleet, And Maintenance
+
+- `GET /audit-logs` exposes platform-wide append-only audit entries for platform admins.
+- `GET /workspaces/:workspaceId/audit-logs` exposes workspace-scoped audit entries for workspace owners/admins.
+- Nodes support maintenance mode with:
+  - `POST /nodes/:id/maintenance/enable`
+  - `POST /nodes/:id/maintenance/disable`
+  - workspace-scoped equivalents under `/workspaces/:workspaceId/nodes/:id/*`
+- Fleet is now an inventory and telemetry surface only:
+  - `GET /fleet/nodes`
+  - includes `agentVersion`, `platformVersion`, `kernelVersion`, maintenance state, and team ownership
+  - staged rollout command orchestration is intentionally not part of the current API surface
+
+## Security Model
+
+- `POST /auth/login` may return either a normal session token or `requiresMfa=true` with a short-lived challenge token.
+- MFA enrollment is QR-compatible through `POST /auth/mfa/setup/initiate`, then confirmed with `POST /auth/mfa/setup/confirm`.
+- Recovery code flows are supported through `POST /auth/mfa/recovery/verify` and `POST /auth/mfa/recovery/regenerate`.
+- MFA disable requires authenticated confirmation through `DELETE /auth/mfa`.
+- OIDC providers are managed through:
+  - `GET /auth/providers` for public login buttons
+  - `GET /auth/providers/admin`
+  - `POST /auth/providers`
+  - `PATCH /auth/providers/:providerId`
+  - `DELETE /auth/providers/:providerId`
+  - `POST /auth/providers/test`
+- Public OIDC handoff routes are:
+  - `GET /auth/oidc/:provider/start`
+  - `GET /auth/oidc/:provider/callback`
 
 ## Task Delivery Model
 
@@ -235,6 +274,11 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 
 - `GET /health`
 - `POST /auth/login`
+- `GET /auth/providers`
+- `GET /auth/oidc/:provider/start`
+- `GET /auth/oidc/:provider/callback`
+- `POST /auth/mfa/challenge/verify`
+- `POST /auth/mfa/recovery/verify`
 - `GET /auth/invitations/:token`
 - `POST /auth/invitations/:token/accept`
 - `POST /auth/password/forgot`
@@ -243,6 +287,7 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 - `GET /setup/status`
 - `POST /setup/validate/postgres`
 - `POST /setup/validate/redis`
+- `POST /setup/validate/smtp`
 - `POST /setup/install`
 - `POST /enrollments/initiate`
 - `GET /enrollments/:token`
@@ -258,6 +303,32 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 - `POST /agent/tasks/:taskId/started`
 - `POST /agent/tasks/:taskId/logs`
 - `POST /agent/tasks/:taskId/completed`
+
+### Authenticated Admin / Workspace
+
+- `GET /audit-logs`
+- `GET /workspaces/:workspaceId/audit-logs`
+- `GET /platform-settings`
+- `PATCH /platform-settings`
+- `POST /platform-settings/validate/smtp`
+- `GET /fleet/nodes`
+- `POST /auth/mfa/setup/initiate`
+- `POST /auth/mfa/setup/confirm`
+- `POST /auth/mfa/recovery/regenerate`
+- `DELETE /auth/mfa`
+- `GET /auth/providers/admin`
+- `POST /auth/providers`
+- `PATCH /auth/providers/:providerId`
+- `DELETE /auth/providers/:providerId`
+- `POST /auth/providers/test`
+- `POST /workspaces/:workspaceId/tasks/teams/:teamId`
+- `GET /workspaces/:workspaceId/task-templates`
+- `POST /workspaces/:workspaceId/task-templates`
+- `PATCH /workspaces/:workspaceId/task-templates/:id`
+- `DELETE /workspaces/:workspaceId/task-templates/:id`
+- `POST /workspaces/:workspaceId/nodes/:id/team`
+- `POST /workspaces/:workspaceId/nodes/:id/maintenance/enable`
+- `POST /workspaces/:workspaceId/nodes/:id/maintenance/disable`
 
 ### Authenticated Control Plane
 

@@ -32,6 +32,9 @@ export const validationSchema = Joi.object({
   JWT_SECRET: Joi.string().required(),
   JWT_EXPIRES_IN: Joi.string().default('1d'),
   BCRYPT_SALT_ROUNDS: Joi.number().integer().min(10).default(12),
+  SECRETS_ENCRYPTION_KEY: Joi.string()
+    .min(16)
+    .default('noderax-local-secrets-key-change-me'),
 
   // Agents
   AGENT_HEARTBEAT_TIMEOUT_SECONDS: Joi.number().integer().min(1).default(90),
