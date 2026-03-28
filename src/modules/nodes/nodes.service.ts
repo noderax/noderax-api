@@ -41,12 +41,14 @@ export class NodesService {
     workspaceId?: string,
   ): Promise<NodeEntity> {
     await this.assertHostnameAvailable(createNodeDto.hostname);
-    const resolvedWorkspaceId =
-      workspaceId ??
-      (await this.workspacesService.getDefaultWorkspaceOrFail()).id;
+    const workspace = workspaceId
+      ? await this.workspacesService.assertWorkspaceWritable(workspaceId)
+      : await this.workspacesService.assertWorkspaceWritable(
+          (await this.workspacesService.getDefaultWorkspaceOrFail()).id,
+        );
 
     const node = this.nodesRepository.create({
-      workspaceId: resolvedWorkspaceId,
+      workspaceId: workspace.id,
       name: createNodeDto.name ?? createNodeDto.hostname,
       description: createNodeDto.description ?? null,
       hostname: createNodeDto.hostname,
@@ -105,6 +107,7 @@ export class NodesService {
     workspaceId?: string,
   ): Promise<{ deleted: true; id: string }> {
     const node = await this.findOneOrFail(id, workspaceId);
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
     await this.nodesRepository.remove(node);
 
     return { deleted: true, id };
@@ -127,6 +130,7 @@ export class NodesService {
     agentTokenHash: string;
   }): Promise<NodeEntity> {
     await this.assertHostnameAvailable(input.hostname);
+    await this.workspacesService.assertWorkspaceWritable(input.workspaceId);
 
     const node = this.nodesRepository.create({
       workspaceId: input.workspaceId,

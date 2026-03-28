@@ -21,6 +21,7 @@ import {
 import { assertValidTimeZone } from '../../common/utils/timezone.util';
 import { UserRole } from '../users/entities/user-role.enum';
 import { UserEntity } from '../users/entities/user.entity';
+import { UserInvitationStatus } from '../users/entities/user-invitation.entity';
 import { EnrollmentSchemaBootstrap } from '../enrollments/bootstrap/enrollment-schema.bootstrap';
 import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-membership-role.enum';
 import { WorkspaceEntity } from '../workspaces/entities/workspace.entity';
@@ -206,6 +207,12 @@ export class SetupService {
           role: UserRole.PLATFORM_ADMIN,
           timezone: normalizedTimezone,
           isActive: true,
+          inviteStatus: UserInvitationStatus.ACCEPTED,
+          lastInvitedAt: null,
+          activatedAt: new Date(),
+          criticalEventEmailsEnabled: true,
+          enrollmentEmailsEnabled: true,
+          sessionVersion: 0,
         }),
       );
 

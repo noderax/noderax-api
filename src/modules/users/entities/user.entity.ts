@@ -27,14 +27,32 @@ export class UserEntity {
   })
   role: UserRole;
 
-  @Column({ select: false })
-  passwordHash: string;
+  @Column({ select: false, nullable: true })
+  passwordHash: string | null;
 
   @Column({ default: true })
   isActive: boolean;
 
   @Column({ length: 80, default: DEFAULT_TIMEZONE })
   timezone: string;
+
+  @Column({ length: 24, default: 'accepted' })
+  inviteStatus: 'pending' | 'accepted' | 'revoked';
+
+  @Column({ type: 'timestamptz', nullable: true })
+  lastInvitedAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  activatedAt: Date | null;
+
+  @Column({ type: 'boolean', default: true })
+  criticalEventEmailsEnabled: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  enrollmentEmailsEnabled: boolean;
+
+  @Column({ type: 'integer', default: 0 })
+  sessionVersion: number;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

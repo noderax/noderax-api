@@ -25,6 +25,13 @@ export class ScheduledTaskRunnerService
   ) {}
 
   onModuleInit(): void {
+    if (process.env.DISABLE_SCHEDULED_TASK_RUNNER === 'true') {
+      this.logger.log(
+        'Skipping scheduled task runner interval because DISABLE_SCHEDULED_TASK_RUNNER=true',
+      );
+      return;
+    }
+
     const interval = setInterval(() => {
       void this.runDueSchedules();
     }, SCHEDULED_TASK_RUNNER_INTERVAL_MS);

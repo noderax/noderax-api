@@ -4,6 +4,7 @@ import {
   authConfig,
   bootstrapConfig,
   databaseConfig,
+  mailConfig,
   redisConfig,
 } from '.';
 
@@ -14,6 +15,7 @@ const configuration = [
   redisConfig,
   agentsConfig,
   bootstrapConfig,
+  mailConfig,
 ];
 
 export default configuration;

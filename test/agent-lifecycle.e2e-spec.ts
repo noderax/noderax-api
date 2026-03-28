@@ -2,8 +2,10 @@ import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { TASK_TYPES } from '../src/common/constants/task-types.constants';
+import { MailerService } from '../src/modules/notifications/mailer.service';
 import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
+import { createAcceptedUser } from './helpers/user-lifecycle';
 
 function configureTestEnv() {
   process.env.NODE_ENV = 'test';
@@ -187,6 +189,7 @@ describe('Agent Lifecycle (e2e)', () => {
   let app: INestApplication;
   let adminToken: string;
   let userToken: string;
+  let mailerService: MailerService;
   let nodeId: string;
   let agentToken: string;
   let secondNodeId: string;
@@ -196,6 +199,7 @@ describe('Agent Lifecycle (e2e)', () => {
   beforeAll(async () => {
     configureTestEnv();
     app = await createE2eApp();
+    mailerService = app.get(MailerService);
   }, 30000);
 
   afterAll(async () => {
@@ -232,22 +236,17 @@ describe('Agent Lifecycle (e2e)', () => {
   });
 
   it('creates and logs in a standard user for read-only package access', async () => {
-    await request(app.getHttpServer())
-      .post(apiPath('/users'))
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        email: 'user@example.com',
-        name: 'Read Only User',
-        password: 'ChangeMe123!',
-        role: 'user',
-      })
-      .expect(201);
+    const user = await createAcceptedUser(app, mailerService, {
+      adminToken,
+      email: 'user@example.com',
+      name: 'Read Only User',
+    });
 
     const response = await request(app.getHttpServer())
       .post(apiPath('/auth/login'))
       .send({
-        email: 'user@example.com',
-        password: 'ChangeMe123!',
+        email: user.email,
+        password: user.password,
       })
       .expect(200);
 

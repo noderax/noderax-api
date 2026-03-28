@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  GoneException,
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -17,18 +19,36 @@ import {
   bootstrapConfig,
 } from '../../config';
 import {
+  createOpaqueTokenLookupHash,
+  issueOpaqueToken,
+  verifyOpaqueToken,
+} from '../../common/utils/opaque-token.util';
+import {
   assertValidTimeZone,
   DEFAULT_TIMEZONE,
 } from '../../common/utils/timezone.util';
+import { NotificationsService } from '../notifications/notifications.service';
 import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { UserResponseDto } from './dto/user-response.dto';
+import {
+  PasswordResetTokenEntity,
+  PasswordResetTokenStatus,
+} from './entities/password-reset-token.entity';
 import { UserEntity } from './entities/user.entity';
+import {
+  UserInvitationEntity,
+  UserInvitationStatus,
+} from './entities/user-invitation.entity';
 import { UserRole } from './entities/user-role.enum';
 import { WorkspaceMembershipEntity } from '../workspaces/entities/workspace-membership.entity';
 import { TeamMembershipEntity } from '../workspaces/entities/team-membership.entity';
+
+const INVITATION_TTL_HOURS = 72;
+const PASSWORD_RESET_TTL_HOURS = 1;
 
 @Injectable()
 export class UsersService {
@@ -37,16 +57,24 @@ export class UsersService {
   constructor(
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
+    @InjectRepository(UserInvitationEntity)
+    private readonly userInvitationsRepository: Repository<UserInvitationEntity>,
+    @InjectRepository(PasswordResetTokenEntity)
+    private readonly passwordResetTokensRepository: Repository<PasswordResetTokenEntity>,
     @InjectRepository(WorkspaceMembershipEntity)
     private readonly workspaceMembershipsRepository: Repository<WorkspaceMembershipEntity>,
     @InjectRepository(TeamMembershipEntity)
     private readonly teamMembershipsRepository: Repository<TeamMembershipEntity>,
     @InjectRepository(ScheduledTaskEntity)
     private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
+    private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService,
   ) {}
 
-  async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
+  async create(
+    actor: AuthenticatedUser,
+    createUserDto: CreateUserDto,
+  ): Promise<UserResponseDto> {
     const email = this.normalizeEmail(createUserDto.email);
     const existingUser = await this.findByEmail(email);
 
@@ -54,18 +82,88 @@ export class UsersService {
       throw new ConflictException('A user with this email already exists');
     }
 
-    const passwordHash = await this.hashPassword(createUserDto.password);
+    const createdUser = await this.usersRepository.manager.transaction(
+      async (manager) => {
+        const now = new Date();
+        const user = manager.create(UserEntity, {
+          email,
+          name: this.normalizeName(createUserDto.name),
+          role: createUserDto.role ?? UserRole.USER,
+          passwordHash: null,
+          timezone: DEFAULT_TIMEZONE,
+          isActive: false,
+          inviteStatus: UserInvitationStatus.PENDING,
+          lastInvitedAt: now,
+          activatedAt: null,
+          criticalEventEmailsEnabled: true,
+          enrollmentEmailsEnabled: true,
+          sessionVersion: 0,
+        });
+        const savedUser = await manager.save(UserEntity, user);
+        const invite = await this.createInvitationRecord(manager, {
+          userId: savedUser.id,
+          createdByUserId: actor.id,
+          issuedAt: now,
+        });
 
-    const user = this.usersRepository.create({
-      email,
-      name: this.normalizeName(createUserDto.name),
-      role: createUserDto.role ?? UserRole.USER,
-      passwordHash,
-      timezone: DEFAULT_TIMEZONE,
+        await this.notificationsService.sendUserInvitation({
+          email: savedUser.email,
+          name: savedUser.name,
+          token: invite.token,
+          expiresAt: invite.expiresAt,
+        });
+
+        return savedUser;
+      },
+    );
+
+    return this.toResponse(createdUser);
+  }
+
+  async resendInvite(
+    actor: AuthenticatedUser,
+    userId: string,
+  ): Promise<{ sent: true; userId: string; expiresAt: Date }> {
+    const user = await this.findOneOrFail(userId);
+
+    if (
+      user.inviteStatus === UserInvitationStatus.ACCEPTED &&
+      user.activatedAt
+    ) {
+      throw new ConflictException(
+        'Only pending invited users can receive another invitation.',
+      );
+    }
+
+    return this.usersRepository.manager.transaction(async (manager) => {
+      const now = new Date();
+      await manager.update(
+        UserEntity,
+        { id: user.id },
+        {
+          inviteStatus: UserInvitationStatus.PENDING,
+          lastInvitedAt: now,
+        },
+      );
+      const invite = await this.createInvitationRecord(manager, {
+        userId: user.id,
+        createdByUserId: actor.id,
+        issuedAt: now,
+      });
+
+      await this.notificationsService.sendUserInvitation({
+        email: user.email,
+        name: user.name,
+        token: invite.token,
+        expiresAt: invite.expiresAt,
+      });
+
+      return {
+        sent: true as const,
+        userId: user.id,
+        expiresAt: invite.expiresAt,
+      };
     });
-
-    const savedUser = await this.usersRepository.save(user);
-    return this.toResponse(savedUser);
   }
 
   async findAll(): Promise<UserResponseDto[]> {
@@ -106,8 +204,29 @@ export class UsersService {
       user.name = this.normalizeName(dto.name);
     }
 
+    if (nextIsActive && user.inviteStatus !== UserInvitationStatus.ACCEPTED) {
+      throw new ConflictException(
+        'Pending invited users can only become active after accepting their invitation.',
+      );
+    }
+
+    if (nextRole !== user.role || nextIsActive !== user.isActive) {
+      user.sessionVersion += 1;
+    }
+
+    if (!nextIsActive) {
+      user.isActive = false;
+    } else {
+      user.isActive = true;
+      if (
+        user.inviteStatus === UserInvitationStatus.ACCEPTED &&
+        !user.activatedAt
+      ) {
+        user.activatedAt = new Date();
+      }
+    }
+
     user.role = nextRole;
-    user.isActive = nextIsActive;
 
     return this.toResponse(await this.usersRepository.save(user));
   }
@@ -146,23 +265,224 @@ export class UsersService {
     dto: UpdateUserPreferencesDto,
   ): Promise<UserResponseDto> {
     const user = await this.findOneOrFail(userId);
-    const timezone = assertValidTimeZone(dto.timezone);
+    let changed = false;
 
-    if (!timezone) {
-      throw new BadRequestException('Timezone is required.');
+    if (dto.timezone !== undefined) {
+      const timezone = assertValidTimeZone(dto.timezone);
+
+      if (!timezone) {
+        throw new BadRequestException('Timezone is required.');
+      }
+
+      if (user.timezone !== timezone) {
+        user.timezone = timezone;
+        changed = true;
+      }
     }
 
-    if (user.timezone === timezone) {
+    if (
+      dto.criticalEventEmailsEnabled !== undefined &&
+      user.criticalEventEmailsEnabled !== dto.criticalEventEmailsEnabled
+    ) {
+      user.criticalEventEmailsEnabled = dto.criticalEventEmailsEnabled;
+      changed = true;
+    }
+
+    if (
+      dto.enrollmentEmailsEnabled !== undefined &&
+      user.enrollmentEmailsEnabled !== dto.enrollmentEmailsEnabled
+    ) {
+      user.enrollmentEmailsEnabled = dto.enrollmentEmailsEnabled;
+      changed = true;
+    }
+
+    if (!changed) {
       return this.toResponse(user);
     }
 
-    user.timezone = timezone;
     return this.toResponse(await this.usersRepository.save(user));
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ success: true }> {
+    const user = await this.findByIdWithPasswordOrFail(userId);
+
+    if (!user.passwordHash) {
+      throw new BadRequestException(
+        'This account must finish invitation activation before changing the password.',
+      );
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+
+    if (!passwordMatches) {
+      throw new UnauthorizedException('Current password is incorrect.');
+    }
+
+    user.passwordHash = await this.hashPassword(dto.newPassword);
+    user.sessionVersion += 1;
+    await this.usersRepository.save(user);
+
+    return { success: true };
+  }
+
+  async getInvitationPreview(token: string): Promise<{
+    email: string;
+    name: string;
+    expiresAt: Date;
+  }> {
+    const invitation = await this.findInvitationByTokenOrThrow(token);
+    this.assertInvitationAvailable(invitation);
+
+    const user = await this.findOneOrFail(invitation.userId);
+
+    return {
+      email: user.email,
+      name: user.name,
+      expiresAt: invitation.expiresAt,
+    };
+  }
+
+  async acceptInvitation(
+    token: string,
+    password: string,
+  ): Promise<{ success: true }> {
+    await this.usersRepository.manager.transaction(async (manager) => {
+      const invitation = await this.findInvitationByTokenOrThrow(
+        token,
+        manager,
+      );
+      this.assertInvitationAvailable(invitation);
+      const user = await manager.findOne(UserEntity, {
+        where: { id: invitation.userId },
+      });
+
+      if (!user) {
+        throw new NotFoundException(`User ${invitation.userId} was not found`);
+      }
+
+      if (
+        user.inviteStatus === UserInvitationStatus.ACCEPTED &&
+        user.activatedAt
+      ) {
+        throw new ConflictException('Invitation token has already been used.');
+      }
+
+      user.passwordHash = await this.hashPassword(password);
+      user.isActive = true;
+      user.inviteStatus = UserInvitationStatus.ACCEPTED;
+      user.activatedAt = new Date();
+      user.sessionVersion += 1;
+      await manager.save(UserEntity, user);
+
+      invitation.status = UserInvitationStatus.ACCEPTED;
+      invitation.consumedAt = new Date();
+      await manager.save(UserInvitationEntity, invitation);
+
+      await this.revokePendingInvitations(manager, user.id, invitation.id);
+    });
+
+    return { success: true };
+  }
+
+  async requestPasswordReset(email: string): Promise<{ success: true }> {
+    const user = await this.findByEmailWithPassword(email);
+
+    if (
+      !user ||
+      !user.isActive ||
+      user.inviteStatus !== UserInvitationStatus.ACCEPTED ||
+      !user.passwordHash
+    ) {
+      return { success: true };
+    }
+
+    return this.usersRepository.manager.transaction(async (manager) => {
+      const issuedAt = new Date();
+      const resetToken = await this.createPasswordResetRecord(manager, {
+        userId: user.id,
+        issuedAt,
+      });
+
+      await this.notificationsService.sendPasswordReset({
+        email: user.email,
+        name: user.name,
+        token: resetToken.token,
+        expiresAt: resetToken.expiresAt,
+      });
+
+      return { success: true as const };
+    });
+  }
+
+  async getPasswordResetPreview(token: string): Promise<{
+    email: string;
+    expiresAt: Date;
+  }> {
+    const resetToken = await this.findPasswordResetTokenOrThrow(token);
+    this.assertPasswordResetAvailable(resetToken);
+
+    const user = await this.findOneOrFail(resetToken.userId);
+
+    return {
+      email: user.email,
+      expiresAt: resetToken.expiresAt,
+    };
+  }
+
+  async resetPassword(
+    token: string,
+    password: string,
+  ): Promise<{ success: true }> {
+    await this.usersRepository.manager.transaction(async (manager) => {
+      const resetToken = await this.findPasswordResetTokenOrThrow(
+        token,
+        manager,
+      );
+      this.assertPasswordResetAvailable(resetToken);
+      const user = await manager.findOne(UserEntity, {
+        where: { id: resetToken.userId },
+      });
+
+      if (!user) {
+        throw new NotFoundException(`User ${resetToken.userId} was not found`);
+      }
+
+      if (
+        !user.isActive ||
+        user.inviteStatus !== UserInvitationStatus.ACCEPTED
+      ) {
+        throw new ConflictException(
+          'Only active accepted accounts can reset their password.',
+        );
+      }
+
+      user.passwordHash = await this.hashPassword(password);
+      user.sessionVersion += 1;
+      await manager.save(UserEntity, user);
+
+      resetToken.status = PasswordResetTokenStatus.USED;
+      resetToken.consumedAt = new Date();
+      await manager.save(PasswordResetTokenEntity, resetToken);
+
+      await this.revokePendingPasswordResetTokens(
+        manager,
+        user.id,
+        resetToken.id,
+      );
+    });
+
+    return { success: true };
   }
 
   async findByEmail(email: string) {
     return this.usersRepository.findOne({
-      where: { email: email.toLowerCase() },
+      where: { email: email.toLowerCase().trim() },
     });
   }
 
@@ -193,6 +513,7 @@ export class UsersService {
     }
 
     const passwordHash = await this.hashPassword(bootstrap.adminPassword);
+    const now = new Date();
 
     const adminUser = this.usersRepository.create({
       email: bootstrap.adminEmail.toLowerCase(),
@@ -200,6 +521,13 @@ export class UsersService {
       role: UserRole.PLATFORM_ADMIN,
       passwordHash,
       timezone: DEFAULT_TIMEZONE,
+      isActive: true,
+      inviteStatus: UserInvitationStatus.ACCEPTED,
+      lastInvitedAt: null,
+      activatedAt: now,
+      criticalEventEmailsEnabled: true,
+      enrollmentEmailsEnabled: true,
+      sessionVersion: 0,
     });
 
     await this.usersRepository.save(adminUser);
@@ -214,6 +542,11 @@ export class UsersService {
       role: user.role,
       isActive: user.isActive,
       timezone: user.timezone,
+      inviteStatus: user.inviteStatus,
+      lastInvitedAt: user.lastInvitedAt,
+      activatedAt: user.activatedAt,
+      criticalEventEmailsEnabled: user.criticalEventEmailsEnabled,
+      enrollmentEmailsEnabled: user.enrollmentEmailsEnabled,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -225,6 +558,15 @@ export class UsersService {
         AUTH_CONFIG_KEY,
       );
     return bcrypt.hash(password, auth.bcryptSaltRounds);
+  }
+
+  private getSaltRounds() {
+    const auth =
+      this.configService.getOrThrow<ConfigType<typeof authConfig>>(
+        AUTH_CONFIG_KEY,
+      );
+
+    return auth.bcryptSaltRounds;
   }
 
   private normalizeEmail(email: string) {
@@ -260,6 +602,22 @@ export class UsersService {
     }
 
     return query.getOne();
+  }
+
+  private async findByIdWithPasswordOrFail(
+    userId: string,
+  ): Promise<UserEntity> {
+    const user = await this.usersRepository
+      .createQueryBuilder('user')
+      .addSelect('user.passwordHash')
+      .where('user.id = :userId', { userId })
+      .getOne();
+
+    if (!user) {
+      throw new NotFoundException(`User ${userId} was not found`);
+    }
+
+    return user;
   }
 
   private async assertDeletable(user: UserEntity) {
@@ -352,6 +710,223 @@ export class UsersService {
   ) {
     if (actor.id === user.id) {
       throw new BadRequestException('You cannot delete your own account.');
+    }
+  }
+
+  private async createInvitationRecord(
+    manager: Repository<UserEntity>['manager'],
+    input: {
+      userId: string;
+      createdByUserId: string | null;
+      issuedAt: Date;
+    },
+  ) {
+    await this.revokePendingInvitations(manager, input.userId);
+
+    const issuedToken = await issueOpaqueToken(this.getSaltRounds());
+    const expiresAt = new Date(
+      input.issuedAt.getTime() + INVITATION_TTL_HOURS * 60 * 60 * 1000,
+    );
+
+    const invitation = manager.create(UserInvitationEntity, {
+      userId: input.userId,
+      createdByUserId: input.createdByUserId,
+      tokenHash: issuedToken.tokenHash,
+      tokenLookupHash: issuedToken.tokenLookupHash,
+      status: UserInvitationStatus.PENDING,
+      expiresAt,
+      consumedAt: null,
+      revokedAt: null,
+    });
+
+    await manager.save(UserInvitationEntity, invitation);
+
+    return {
+      token: issuedToken.token,
+      expiresAt,
+    };
+  }
+
+  private async createPasswordResetRecord(
+    manager: Repository<UserEntity>['manager'],
+    input: {
+      userId: string;
+      issuedAt: Date;
+    },
+  ) {
+    await this.revokePendingPasswordResetTokens(manager, input.userId);
+
+    const issuedToken = await issueOpaqueToken(this.getSaltRounds());
+    const expiresAt = new Date(
+      input.issuedAt.getTime() + PASSWORD_RESET_TTL_HOURS * 60 * 60 * 1000,
+    );
+
+    const resetToken = manager.create(PasswordResetTokenEntity, {
+      userId: input.userId,
+      tokenHash: issuedToken.tokenHash,
+      tokenLookupHash: issuedToken.tokenLookupHash,
+      status: PasswordResetTokenStatus.PENDING,
+      expiresAt,
+      consumedAt: null,
+      revokedAt: null,
+    });
+
+    await manager.save(PasswordResetTokenEntity, resetToken);
+
+    return {
+      token: issuedToken.token,
+      expiresAt,
+    };
+  }
+
+  private async revokePendingInvitations(
+    manager: Repository<UserEntity>['manager'],
+    userId: string,
+    excludeInvitationId?: string,
+  ) {
+    const invitations = await manager.find(UserInvitationEntity, {
+      where: { userId, status: UserInvitationStatus.PENDING },
+    });
+
+    if (!invitations.length) {
+      return;
+    }
+
+    for (const invitation of invitations) {
+      if (excludeInvitationId && invitation.id === excludeInvitationId) {
+        continue;
+      }
+
+      invitation.status = UserInvitationStatus.REVOKED;
+      invitation.revokedAt = new Date();
+    }
+
+    await manager.save(UserInvitationEntity, invitations);
+  }
+
+  private async revokePendingPasswordResetTokens(
+    manager: Repository<UserEntity>['manager'],
+    userId: string,
+    excludeTokenId?: string,
+  ) {
+    const tokens = await manager.find(PasswordResetTokenEntity, {
+      where: { userId, status: PasswordResetTokenStatus.PENDING },
+    });
+
+    if (!tokens.length) {
+      return;
+    }
+
+    for (const token of tokens) {
+      if (excludeTokenId && token.id === excludeTokenId) {
+        continue;
+      }
+
+      token.status = PasswordResetTokenStatus.REVOKED;
+      token.revokedAt = new Date();
+    }
+
+    await manager.save(PasswordResetTokenEntity, tokens);
+  }
+
+  private async findInvitationByTokenOrThrow(
+    token: string,
+    manager?: Repository<UserEntity>['manager'],
+  ): Promise<UserInvitationEntity> {
+    const repository =
+      manager?.getRepository(UserInvitationEntity) ??
+      this.userInvitationsRepository;
+
+    const candidate = await repository
+      .createQueryBuilder('invitation')
+      .addSelect('invitation.tokenHash')
+      .addSelect('invitation.tokenLookupHash')
+      .where('invitation.tokenLookupHash = :tokenLookupHash', {
+        tokenLookupHash: createOpaqueTokenLookupHash(token),
+      })
+      .getOne();
+
+    if (!candidate) {
+      throw new NotFoundException('Invitation token was not found.');
+    }
+
+    const isValid = await verifyOpaqueToken({
+      token,
+      tokenHash: candidate.tokenHash,
+      tokenLookupHash: candidate.tokenLookupHash,
+    });
+
+    if (!isValid) {
+      throw new NotFoundException('Invitation token was not found.');
+    }
+
+    return candidate;
+  }
+
+  private async findPasswordResetTokenOrThrow(
+    token: string,
+    manager?: Repository<UserEntity>['manager'],
+  ): Promise<PasswordResetTokenEntity> {
+    const repository =
+      manager?.getRepository(PasswordResetTokenEntity) ??
+      this.passwordResetTokensRepository;
+    const candidate = await repository
+      .createQueryBuilder('reset')
+      .addSelect('reset.tokenHash')
+      .addSelect('reset.tokenLookupHash')
+      .where('reset.tokenLookupHash = :tokenLookupHash', {
+        tokenLookupHash: createOpaqueTokenLookupHash(token),
+      })
+      .getOne();
+
+    if (!candidate) {
+      throw new NotFoundException('Password reset token was not found.');
+    }
+
+    const isValid = await verifyOpaqueToken({
+      token,
+      tokenHash: candidate.tokenHash,
+      tokenLookupHash: candidate.tokenLookupHash,
+    });
+
+    if (!isValid) {
+      throw new NotFoundException('Password reset token was not found.');
+    }
+
+    return candidate;
+  }
+
+  private assertInvitationAvailable(invitation: UserInvitationEntity) {
+    if (invitation.status === UserInvitationStatus.ACCEPTED) {
+      throw new ConflictException('Invitation token has already been used.');
+    }
+
+    if (invitation.status === UserInvitationStatus.REVOKED) {
+      throw new GoneException('Invitation token has expired or was revoked.');
+    }
+
+    if (invitation.expiresAt.getTime() <= Date.now()) {
+      throw new GoneException('Invitation token has expired or was revoked.');
+    }
+  }
+
+  private assertPasswordResetAvailable(token: PasswordResetTokenEntity) {
+    if (token.status === PasswordResetTokenStatus.USED) {
+      throw new ConflictException(
+        'Password reset token has already been used.',
+      );
+    }
+
+    if (token.status === PasswordResetTokenStatus.REVOKED) {
+      throw new GoneException(
+        'Password reset token has expired or was revoked.',
+      );
+    }
+
+    if (token.expiresAt.getTime() <= Date.now()) {
+      throw new GoneException(
+        'Password reset token has expired or was revoked.',
+      );
     }
   }
 }

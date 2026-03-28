@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -22,6 +24,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { CreateUserDto } from './dto/create-user.dto';
 import { DeleteUserResponseDto } from './dto/delete-user-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ResendUserInviteResponseDto } from './dto/resend-user-invite-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { UserResponseDto } from './dto/user-response.dto';
@@ -82,6 +86,25 @@ export class UsersController {
     return this.usersService.updatePreferences(user.id, dto);
   }
 
+  @Post('me/password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Change current user password',
+  })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        success: true,
+      },
+    },
+  })
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.usersService.changePassword(user.id, dto);
+  }
+
   @Roles(UserRole.PLATFORM_ADMIN)
   @Post()
   @ApiOperation({
@@ -94,8 +117,28 @@ export class UsersController {
   @ApiForbiddenResponse({
     description: 'Admin role required.',
   })
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+  create(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() createUserDto: CreateUserDto,
+  ) {
+    return this.usersService.create(actor, createUserDto);
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Post(':userId/resend-invite')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Resend user invitation',
+  })
+  @ApiCreatedResponse({
+    description: 'A fresh invitation was sent.',
+    type: ResendUserInviteResponseDto,
+  })
+  resendInvite(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.usersService.resendInvite(actor, userId);
   }
 
   @Roles(UserRole.PLATFORM_ADMIN)

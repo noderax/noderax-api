@@ -1,9 +1,11 @@
 import { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import * as request from 'supertest';
+import { MailerService } from '../src/modules/notifications/mailer.service';
 import { ScheduledTaskEntity } from '../src/modules/tasks/entities/scheduled-task.entity';
 import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
+import { createAcceptedUser, loginUser } from './helpers/user-lifecycle';
 
 jest.setTimeout(90_000);
 
@@ -56,11 +58,13 @@ describe('Scheduled Tasks (e2e)', () => {
   let workspaceId: string;
   let nodeId: string;
   let secondaryNodeId: string;
+  let mailerService: MailerService;
 
   beforeAll(async () => {
     configureTestEnv();
     app = await createE2eApp();
     dataSource = app.get(DataSource);
+    mailerService = app.get(MailerService);
 
     const adminLogin = await request(app.getHttpServer())
       .post(apiPath('/auth/login'))
@@ -80,26 +84,13 @@ describe('Scheduled Tasks (e2e)', () => {
 
     workspaceId = workspacesResponse.body[0].id;
 
-    await request(app.getHttpServer())
-      .post(apiPath('/users'))
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        email: 'user@example.com',
-        name: 'Standard User',
-        password: 'ChangeMe123!',
-        role: 'user',
-      })
-      .expect(201);
+    const user = await createAcceptedUser(app, mailerService, {
+      adminToken,
+      email: 'user@example.com',
+      name: 'Standard User',
+    });
 
-    const userLogin = await request(app.getHttpServer())
-      .post(apiPath('/auth/login'))
-      .send({
-        email: 'user@example.com',
-        password: 'ChangeMe123!',
-      })
-      .expect(200);
-
-    userToken = userLogin.body.accessToken;
+    userToken = await loginUser(app, user.email, user.password);
 
     const nodeResponse = await request(app.getHttpServer())
       .post(apiPath('/nodes'))

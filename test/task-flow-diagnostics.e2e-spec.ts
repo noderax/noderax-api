@@ -1,7 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
+import { MailerService } from '../src/modules/notifications/mailer.service';
 import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
+import { createAcceptedUser, loginUser } from './helpers/user-lifecycle';
 
 function configureTestEnv() {
   process.env.NODE_ENV = 'test';
@@ -47,10 +49,12 @@ describe('Task Flow Diagnostics (e2e)', () => {
   let app: INestApplication;
   let adminToken: string;
   let userToken: string;
+  let mailerService: MailerService;
 
   beforeAll(async () => {
     configureTestEnv();
     app = await createE2eApp();
+    mailerService = app.get(MailerService);
 
     const adminLogin = await request(app.getHttpServer())
       .post(apiPath('/auth/login'))
@@ -62,26 +66,13 @@ describe('Task Flow Diagnostics (e2e)', () => {
 
     adminToken = adminLogin.body.accessToken;
 
-    await request(app.getHttpServer())
-      .post(apiPath('/users'))
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        email: 'diag-user@example.com',
-        name: 'Diagnostics User',
-        password: 'ChangeMe123!',
-        role: 'user',
-      })
-      .expect(201);
+    const user = await createAcceptedUser(app, mailerService, {
+      adminToken,
+      email: 'diag-user@example.com',
+      name: 'Diagnostics User',
+    });
 
-    const userLogin = await request(app.getHttpServer())
-      .post(apiPath('/auth/login'))
-      .send({
-        email: 'diag-user@example.com',
-        password: 'ChangeMe123!',
-      })
-      .expect(200);
-
-    userToken = userLogin.body.accessToken;
+    userToken = await loginUser(app, user.email, user.password);
   });
 
   afterAll(async () => {

@@ -113,6 +113,9 @@ export class ScheduledTasksService {
     workspaceId?: string,
   ): Promise<ScheduledTaskEntity> {
     const scheduledTask = await this.findOneOrFail(id, workspaceId);
+    await this.workspacesService.assertWorkspaceWritable(
+      scheduledTask.workspaceId,
+    );
     scheduledTask.enabled = dto.enabled;
     scheduledTask.claimToken = null;
     scheduledTask.claimedBy = null;
@@ -156,6 +159,9 @@ export class ScheduledTasksService {
     workspaceId?: string,
   ): Promise<{ deleted: true; id: string }> {
     const scheduledTask = await this.findOneOrFail(id, workspaceId);
+    await this.workspacesService.assertWorkspaceWritable(
+      scheduledTask.workspaceId,
+    );
     await this.scheduledTasksRepository.remove(scheduledTask);
 
     await this.eventsService.record({
@@ -180,48 +186,65 @@ export class ScheduledTasksService {
   ): Promise<ScheduledTaskEntity | null> {
     const now = new Date();
     const leaseUntil = new Date(now.getTime() + SCHEDULED_TASK_RUNNER_LEASE_MS);
-    const claimToken = randomUUID();
+    while (true) {
+      const candidate = await this.scheduledTasksRepository
+        .createQueryBuilder('schedule')
+        .select('schedule.id', 'id')
+        .innerJoin(
+          'workspaces',
+          'workspace',
+          'workspace.id = schedule.workspaceId',
+        )
+        .where('schedule.enabled = true')
+        .andWhere('schedule.nextRunAt IS NOT NULL')
+        .andWhere('schedule.nextRunAt <= :now', { now })
+        .andWhere('workspace.isArchived = false')
+        .andWhere(
+          '(schedule.leaseUntil IS NULL OR schedule.leaseUntil <= :now)',
+          {
+            now,
+          },
+        )
+        .orderBy('schedule.nextRunAt', 'ASC')
+        .addOrderBy('schedule.createdAt', 'ASC')
+        .limit(1)
+        .getRawOne<{ id: string }>();
 
-    const updateResult = await this.scheduledTasksRepository
-      .createQueryBuilder()
-      .update(ScheduledTaskEntity)
-      .set({
-        claimedBy,
-        claimToken,
-        leaseUntil,
-        updatedAt: now,
-      })
-      .where(
-        `id = (
-          SELECT s.id
-          FROM scheduled_tasks s
-          WHERE s.enabled = true
-            AND s."nextRunAt" IS NOT NULL
-            AND s."nextRunAt" <= :now
-            AND (
-              s."leaseUntil" IS NULL
-              OR s."leaseUntil" <= :now
-            )
-          ORDER BY s."nextRunAt" ASC, s."createdAt" ASC
-          LIMIT 1
-        )`,
-      )
-      .setParameters({ now })
-      .returning('*')
-      .execute();
+      if (!candidate?.id) {
+        return null;
+      }
 
-    if ((updateResult.affected ?? 0) === 0) {
-      return null;
+      const claimToken = randomUUID();
+      const updateResult = await this.scheduledTasksRepository
+        .createQueryBuilder()
+        .update(ScheduledTaskEntity)
+        .set({
+          claimedBy,
+          claimToken,
+          leaseUntil,
+          updatedAt: now,
+        })
+        .where('id = :id', { id: candidate.id })
+        .andWhere('enabled = true')
+        .andWhere('nextRunAt IS NOT NULL')
+        .andWhere('nextRunAt <= :now', { now })
+        .andWhere('(leaseUntil IS NULL OR leaseUntil <= :now)', { now })
+        .returning('*')
+        .execute();
+
+      if ((updateResult.affected ?? 0) === 0) {
+        continue;
+      }
+
+      const row = updateResult.raw?.[0] as ScheduledTaskEntity | undefined;
+      if (row?.id) {
+        return row;
+      }
+
+      return this.scheduledTasksRepository.findOne({
+        where: { claimToken },
+      });
     }
-
-    const row = updateResult.raw?.[0] as ScheduledTaskEntity | undefined;
-    if (row?.id) {
-      return row;
-    }
-
-    return this.scheduledTasksRepository.findOne({
-      where: { claimToken },
-    });
   }
 
   async triggerClaimedSchedule(
@@ -576,11 +599,12 @@ export class ScheduledTasksService {
     ownerUserId: string,
   ) {
     if (workspaceId) {
-      return this.workspacesService.findWorkspaceOrFail(workspaceId);
+      return this.workspacesService.assertWorkspaceWritable(workspaceId);
     }
 
     const defaultWorkspace =
       await this.workspacesService.getDefaultWorkspaceOrFail();
+    await this.workspacesService.assertWorkspaceWritable(defaultWorkspace.id);
     const membership = await this.workspacesService.findMembershipForUser(
       defaultWorkspace.id,
       ownerUserId,

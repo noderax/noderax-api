@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkspaceMembershipGuard } from '../../common/guards/workspace-membership.guard';
 import { WorkspaceRolesGuard } from '../../common/guards/workspace-roles.guard';
+import { EventEntity } from '../events/entities/event.entity';
+import { NodeEntity } from '../nodes/entities/node.entity';
+import { TaskEntity } from '../tasks/entities/task.entity';
 import { UsersModule } from '../users/users.module';
 import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
 import { UserEntity } from '../users/entities/user.entity';
@@ -22,6 +25,9 @@ import { WorkspacesService } from './workspaces.service';
       TeamEntity,
       TeamMembershipEntity,
       UserEntity,
+      NodeEntity,
+      TaskEntity,
+      EventEntity,
       ScheduledTaskEntity,
     ]),
     UsersModule,

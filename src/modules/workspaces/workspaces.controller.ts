@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -30,9 +31,11 @@ import { AssignableUserDto } from './dto/assignable-user.dto';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { CreateWorkspaceMemberDto } from './dto/create-workspace-member.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { QueryWorkspaceSearchDto } from './dto/query-workspace-search.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
 import { UpdateWorkspaceMemberDto } from './dto/update-workspace-member.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
+import { WorkspaceSearchResponseDto } from './dto/workspace-search-response.dto';
 import { WorkspaceMembershipRole } from './entities/workspace-membership-role.enum';
 import { TeamEntity } from './entities/team.entity';
 import { WorkspaceMembershipEntity } from './entities/workspace-membership.entity';
@@ -160,6 +163,25 @@ export class WorkspacesController {
     @Param('workspaceId') workspaceId: string,
   ) {
     return this.workspacesService.listAssignableUsers(workspaceId, user);
+  }
+
+  @Get(':workspaceId/search')
+  @UseGuards(WorkspaceMembershipGuard)
+  @ApiOperation({
+    summary: 'Search across workspace resources',
+  })
+  @ApiOkResponse({
+    type: WorkspaceSearchResponseDto,
+  })
+  searchWorkspace(
+    @Param('workspaceId') workspaceId: string,
+    @Query() query: QueryWorkspaceSearchDto,
+  ) {
+    return this.workspacesService.searchWorkspace(
+      workspaceId,
+      query.q,
+      query.limit,
+    );
   }
 
   @Post(':workspaceId/members')

@@ -12,7 +12,11 @@ import {
   DEFAULT_TIMEZONE,
 } from '../../common/utils/timezone.util';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { EventEntity } from '../events/entities/event.entity';
+import { NodeEntity } from '../nodes/entities/node.entity';
+import { TaskEntity } from '../tasks/entities/task.entity';
 import { UserEntity } from '../users/entities/user.entity';
+import { UserInvitationStatus } from '../users/entities/user-invitation.entity';
 import { UserRole } from '../users/entities/user-role.enum';
 import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
 import { computeNextScheduledRun } from '../tasks/scheduled-task.utils';
@@ -21,6 +25,7 @@ import { AssignableUserDto } from './dto/assignable-user.dto';
 import { CreateTeamDto } from './dto/create-team.dto';
 import { CreateWorkspaceMemberDto } from './dto/create-workspace-member.dto';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
+import { WorkspaceSearchResponseDto } from './dto/workspace-search-response.dto';
 import { UpdateTeamDto } from './dto/update-team.dto';
 import { UpdateWorkspaceMemberDto } from './dto/update-workspace-member.dto';
 import { UpdateWorkspaceDto } from './dto/update-workspace.dto';
@@ -43,6 +48,12 @@ export class WorkspacesService {
     private readonly teamMembershipsRepository: Repository<TeamMembershipEntity>,
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
+    @InjectRepository(NodeEntity)
+    private readonly nodesRepository: Repository<NodeEntity>,
+    @InjectRepository(TaskEntity)
+    private readonly tasksRepository: Repository<TaskEntity>,
+    @InjectRepository(EventEntity)
+    private readonly eventsRepository: Repository<EventEntity>,
     @InjectRepository(ScheduledTaskEntity)
     private readonly scheduledTasksRepository: Repository<ScheduledTaskEntity>,
   ) {}
@@ -206,6 +217,12 @@ export class WorkspacesService {
     const workspace = await this.findWorkspaceForUserOrFail(workspaceId, actor);
     await this.assertWorkspaceAdmin(workspaceId, actor);
 
+    if (workspace.isArchived && !this.isUnarchiveOnlyRequest(dto)) {
+      throw new ConflictException(
+        'Archived workspaces are read-only. Restore the workspace before changing settings.',
+      );
+    }
+
     if (dto.isDefault !== undefined) {
       this.assertPlatformAdmin(actor);
 
@@ -214,6 +231,21 @@ export class WorkspacesService {
           'Default workspace cannot be unset directly. Select another workspace as default first.',
         );
       }
+    }
+
+    if (dto.isArchived === true && workspace.isDefault) {
+      throw new ConflictException(
+        'Default workspace cannot be archived. Select another default workspace first.',
+      );
+    }
+
+    if (
+      dto.isDefault === true &&
+      (workspace.isArchived || dto.isArchived === true)
+    ) {
+      throw new ConflictException(
+        'Archived workspaces cannot become the default workspace.',
+      );
     }
 
     if (dto.name !== undefined) {
@@ -269,6 +301,7 @@ export class WorkspacesService {
   ): Promise<{ deleted: true; id: string; slug: string }> {
     const workspace = await this.findWorkspaceForUserOrFail(workspaceId, actor);
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
 
     if (workspace.isDefault) {
       throw new ConflictException(
@@ -325,7 +358,10 @@ export class WorkspacesService {
       memberships.map((membership) => membership.userId),
     );
     const users = await this.usersRepository.find({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        inviteStatus: UserInvitationStatus.ACCEPTED,
+      },
       order: {
         name: 'ASC',
         email: 'ASC',
@@ -347,6 +383,7 @@ export class WorkspacesService {
     dto: CreateWorkspaceMemberDto,
   ): Promise<WorkspaceMembershipEntity> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
     const user = await this.usersRepository.findOne({
       where: { id: dto.userId },
     });
@@ -355,9 +392,9 @@ export class WorkspacesService {
       throw new NotFoundException(`User ${dto.userId} was not found.`);
     }
 
-    if (!user.isActive) {
+    if (!user.isActive || user.inviteStatus !== UserInvitationStatus.ACCEPTED) {
       throw new BadRequestException(
-        'Inactive users cannot be added to a workspace.',
+        'Only active accepted users can be added to a workspace.',
       );
     }
 
@@ -390,6 +427,7 @@ export class WorkspacesService {
     dto: UpdateWorkspaceMemberDto,
   ): Promise<WorkspaceMembershipEntity> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
     const membership = await this.membershipsRepository.findOne({
       where: { id: membershipId, workspaceId },
     });
@@ -417,6 +455,7 @@ export class WorkspacesService {
     actor: AuthenticatedUser,
   ): Promise<{ deleted: true; id: string }> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
 
     await this.workspacesRepository.manager.transaction(async (manager) => {
       const membership = await manager.findOne(WorkspaceMembershipEntity, {
@@ -463,6 +502,7 @@ export class WorkspacesService {
     dto: CreateTeamDto,
   ): Promise<TeamEntity> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
     const team = this.teamsRepository.create({
       workspaceId,
       name: dto.name.trim(),
@@ -479,6 +519,7 @@ export class WorkspacesService {
     dto: UpdateTeamDto,
   ): Promise<TeamEntity> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
     const team = await this.teamsRepository.findOne({
       where: { id: teamId, workspaceId },
     });
@@ -504,6 +545,7 @@ export class WorkspacesService {
     actor: AuthenticatedUser,
   ): Promise<{ deleted: true; id: string }> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
     const team = await this.teamsRepository.findOne({
       where: { id: teamId, workspaceId },
     });
@@ -556,6 +598,7 @@ export class WorkspacesService {
     dto: AddTeamMemberDto,
   ): Promise<TeamMembershipEntity> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
     await this.findTeamOrFail(workspaceId, teamId);
     const workspaceMembership = await this.membershipsRepository.findOne({
       where: { workspaceId, userId: dto.userId },
@@ -575,7 +618,7 @@ export class WorkspacesService {
       throw new NotFoundException(`User ${dto.userId} was not found.`);
     }
 
-    if (!user.isActive) {
+    if (!user.isActive || user.inviteStatus !== UserInvitationStatus.ACCEPTED) {
       throw new BadRequestException(
         'Only active workspace members can be added to a team.',
       );
@@ -607,6 +650,7 @@ export class WorkspacesService {
     actor: AuthenticatedUser,
   ): Promise<{ deleted: true; userId: string }> {
     await this.assertWorkspaceAdmin(workspaceId, actor);
+    await this.assertWorkspaceWritable(workspaceId);
     await this.findTeamOrFail(workspaceId, teamId);
     const membership = await this.teamMembershipsRepository.findOne({
       where: { teamId, userId },
@@ -662,6 +706,154 @@ export class WorkspacesService {
         'Workspace owner or admin access is required.',
       );
     }
+  }
+
+  async assertWorkspaceWritable(workspaceId: string): Promise<WorkspaceEntity> {
+    const workspace = await this.findWorkspaceOrFail(workspaceId);
+
+    if (workspace.isArchived) {
+      throw new ConflictException(
+        'Archived workspaces are read-only. Restore the workspace before making changes.',
+      );
+    }
+
+    return workspace;
+  }
+
+  async searchWorkspace(
+    workspaceId: string,
+    query: string | undefined,
+    limit = 5,
+  ): Promise<WorkspaceSearchResponseDto> {
+    const normalizedQuery = query?.trim();
+
+    if (!normalizedQuery) {
+      return {
+        nodes: [],
+        tasks: [],
+        scheduledTasks: [],
+        events: [],
+        members: [],
+        teams: [],
+      };
+    }
+
+    const search = `%${normalizedQuery}%`;
+    const safeLimit = Math.min(Math.max(limit, 1), 10);
+
+    const [nodes, tasks, scheduledTasks, events, members, teams] =
+      await Promise.all([
+        this.nodesRepository
+          .createQueryBuilder('node')
+          .select('node.id', 'id')
+          .addSelect('node.name', 'title')
+          .addSelect(
+            `CONCAT(node.hostname, ' · ', node.os, '/', node.arch)`,
+            'subtitle',
+          )
+          .where('node.workspaceId = :workspaceId', { workspaceId })
+          .andWhere(
+            '(node.name ILIKE :search OR node.hostname ILIKE :search OR node.os ILIKE :search OR node.arch ILIKE :search)',
+            { search },
+          )
+          .orderBy('node.createdAt', 'DESC')
+          .limit(safeLimit)
+          .getRawMany(),
+        this.tasksRepository
+          .createQueryBuilder('task')
+          .leftJoin(NodeEntity, 'node', 'node.id = task.nodeId')
+          .select('task.id', 'id')
+          .addSelect(
+            `COALESCE(task.payload->>'title', task.payload->>'name', task.payload->>'label', task.payload->>'command', task.type)`,
+            'title',
+          )
+          .addSelect(
+            `CONCAT(CAST(task.status AS text), ' · ', COALESCE(node.name, CAST(task."nodeId" AS text)))`,
+            'subtitle',
+          )
+          .where('task.workspaceId = :workspaceId', { workspaceId })
+          .andWhere(
+            `(task.type ILIKE :search
+              OR CAST(task.status AS text) ILIKE :search
+              OR COALESCE(task.payload->>'title', '') ILIKE :search
+              OR COALESCE(task.payload->>'name', '') ILIKE :search
+              OR COALESCE(task.payload->>'label', '') ILIKE :search
+              OR COALESCE(task.payload->>'command', '') ILIKE :search
+              OR COALESCE(node.name, '') ILIKE :search)`,
+            { search },
+          )
+          .orderBy('task.createdAt', 'DESC')
+          .limit(safeLimit)
+          .getRawMany(),
+        this.scheduledTasksRepository
+          .createQueryBuilder('schedule')
+          .leftJoin(NodeEntity, 'node', 'node.id = schedule.nodeId')
+          .select('schedule.id', 'id')
+          .addSelect('schedule.name', 'title')
+          .addSelect(
+            `CONCAT(CASE WHEN schedule.enabled THEN 'enabled' ELSE 'disabled' END, ' · ', COALESCE(node.name, CAST(schedule."nodeId" AS text)))`,
+            'subtitle',
+          )
+          .where('schedule.workspaceId = :workspaceId', { workspaceId })
+          .andWhere(
+            "(schedule.name ILIKE :search OR schedule.command ILIKE :search OR COALESCE(node.name, '') ILIKE :search)",
+            { search },
+          )
+          .orderBy('schedule.createdAt', 'DESC')
+          .limit(safeLimit)
+          .getRawMany(),
+        this.eventsRepository
+          .createQueryBuilder('event')
+          .select('event.id', 'id')
+          .addSelect('event.type', 'title')
+          .addSelect(`CONCAT(event.severity, ' · ', event.message)`, 'subtitle')
+          .where('event.workspaceId = :workspaceId', { workspaceId })
+          .andWhere(
+            '(event.type ILIKE :search OR CAST(event.severity AS text) ILIKE :search OR event.message ILIKE :search)',
+            { search },
+          )
+          .orderBy('event.createdAt', 'DESC')
+          .limit(safeLimit)
+          .getRawMany(),
+        this.membershipsRepository
+          .createQueryBuilder('membership')
+          .innerJoin(UserEntity, 'user', 'user.id = membership.userId')
+          .select('membership.id', 'id')
+          .addSelect('user.name', 'title')
+          .addSelect(`CONCAT(user.email, ' · ', membership.role)`, 'subtitle')
+          .where('membership.workspaceId = :workspaceId', { workspaceId })
+          .andWhere(
+            '(user.name ILIKE :search OR user.email ILIKE :search OR CAST(membership.role AS text) ILIKE :search)',
+            { search },
+          )
+          .orderBy('membership.createdAt', 'DESC')
+          .limit(safeLimit)
+          .getRawMany(),
+        this.teamsRepository
+          .createQueryBuilder('team')
+          .select('team.id', 'id')
+          .addSelect('team.name', 'title')
+          .addSelect('team.description', 'subtitle')
+          .where('team.workspaceId = :workspaceId', { workspaceId })
+          .andWhere(
+            "(team.name ILIKE :search OR COALESCE(team.description, '') ILIKE :search)",
+            {
+              search,
+            },
+          )
+          .orderBy('team.createdAt', 'DESC')
+          .limit(safeLimit)
+          .getRawMany(),
+      ]);
+
+    return {
+      nodes,
+      tasks,
+      scheduledTasks,
+      events,
+      members,
+      teams,
+    };
   }
 
   private async recomputeWorkspaceSchedules(
@@ -748,5 +940,17 @@ export class WorkspacesService {
       throw new BadRequestException('Workspace slug is required.');
     }
     return slug;
+  }
+
+  private isUnarchiveOnlyRequest(dto: UpdateWorkspaceDto): boolean {
+    const definedEntries = Object.entries(dto).filter(
+      ([, value]) => value !== undefined,
+    );
+
+    return (
+      definedEntries.length === 1 &&
+      definedEntries[0][0] === 'isArchived' &&
+      definedEntries[0][1] === false
+    );
   }
 }

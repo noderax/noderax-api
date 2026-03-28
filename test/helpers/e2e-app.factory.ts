@@ -42,6 +42,8 @@ import { TaskLogEntity } from '../../src/modules/tasks/entities/task-log.entity'
 import { ScheduledTaskEntity } from '../../src/modules/tasks/entities/scheduled-task.entity';
 import { TaskEntity } from '../../src/modules/tasks/entities/task.entity';
 import { TasksModule } from '../../src/modules/tasks/tasks.module';
+import { PasswordResetTokenEntity } from '../../src/modules/users/entities/password-reset-token.entity';
+import { UserInvitationEntity } from '../../src/modules/users/entities/user-invitation.entity';
 import { UserEntity } from '../../src/modules/users/entities/user.entity';
 import { UsersModule } from '../../src/modules/users/users.module';
 import { TeamMembershipEntity } from '../../src/modules/workspaces/entities/team-membership.entity';
@@ -53,6 +55,8 @@ import { RedisModule } from '../../src/redis/redis.module';
 
 const TEST_ENTITIES = [
   UserEntity,
+  UserInvitationEntity,
+  PasswordResetTokenEntity,
   EnrollmentEntity,
   NodeEntity,
   EventEntity,

@@ -69,4 +69,17 @@ export const validationSchema = Joi.object({
   ADMIN_NAME: Joi.string().default('Noderax Admin'),
   ADMIN_EMAIL: Joi.string().email().default('admin@example.com'),
   ADMIN_PASSWORD: Joi.string().min(8).default('ChangeMe123!'),
+
+  // Mail
+  SMTP_HOST: Joi.string().allow('').default(''),
+  SMTP_PORT: Joi.number().default(587),
+  SMTP_SECURE: Joi.boolean().default(false),
+  SMTP_USERNAME: Joi.string().allow('').default(''),
+  SMTP_PASSWORD: Joi.string().allow('').default(''),
+  SMTP_FROM_EMAIL: Joi.string()
+    .email({ tlds: { allow: false } })
+    .default('noreply@noderax.local'),
+  SMTP_FROM_NAME: Joi.string().default('Noderax'),
+  SMTP_JSON_TRANSPORT: Joi.boolean().default(false),
+  WEB_APP_URL: Joi.string().uri().default('http://localhost:3001'),
 });

@@ -44,6 +44,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       name: user.name,
+      sessionVersion: user.sessionVersion,
     });
     const authSettings =
       this.configService.getOrThrow<ConfigType<typeof authConfig>>(
@@ -72,7 +73,11 @@ export class AuthService {
       .findOneOrFail(payload.sub)
       .catch(() => null);
 
-    if (!user || !user.isActive) {
+    if (
+      !user ||
+      !user.isActive ||
+      user.sessionVersion !== payload.sessionVersion
+    ) {
       throw new UnauthorizedException('Invalid authentication token');
     }
 
@@ -81,7 +86,28 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      sessionVersion: user.sessionVersion,
     };
+  }
+
+  getInvitationPreview(token: string) {
+    return this.usersService.getInvitationPreview(token);
+  }
+
+  acceptInvitation(token: string, password: string) {
+    return this.usersService.acceptInvitation(token, password);
+  }
+
+  requestPasswordReset(email: string) {
+    return this.usersService.requestPasswordReset(email);
+  }
+
+  getPasswordResetPreview(token: string) {
+    return this.usersService.getPasswordResetPreview(token);
+  }
+
+  resetPassword(token: string, password: string) {
+    return this.usersService.resetPassword(token, password);
   }
 
   private createTokenVerificationException(

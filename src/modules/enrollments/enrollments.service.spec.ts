@@ -29,6 +29,7 @@ function buildEnrollment(
 ): EnrollmentEntity {
   return {
     id: '0f192eb9-9e54-44b8-bf82-0de5ba6ddf4f',
+    workspaceId: 'workspace-1',
     email: 'admin@example.com',
     tokenHash: 'token-hash',
     tokenLookupHash: 'lookup-hash',
@@ -88,6 +89,14 @@ describe('EnrollmentsService', () => {
       usersService,
       nodesService,
       notificationsService,
+      {
+        getDefaultWorkspaceOrFail: jest.fn().mockResolvedValue({
+          id: 'workspace-1',
+        }),
+        assertWorkspaceWritable: jest.fn().mockResolvedValue({
+          id: 'workspace-1',
+        }),
+      } as never,
     );
   });
 

@@ -18,12 +18,14 @@ function createService(): TasksService {
         taskClaimLeaseSeconds: 60,
       }),
     } as never,
+    {} as never,
   );
 }
 
 function buildTask(partial: Partial<TaskEntity>): TaskEntity {
   return {
     id: 'ec9f97f2-7b56-4a7e-a7cb-5c957e9d32d8',
+    workspaceId: 'workspace-1',
     nodeId: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
     type: TASK_TYPES.PACKAGE_LIST,
     payload: {},
@@ -201,6 +203,7 @@ describe('TasksService.createScheduledShellTask', () => {
           taskClaimLeaseSeconds: 60,
         }),
       } as never,
+      {} as never,
     );
 
     const task = await tasksService.createScheduledShellTask({

@@ -24,6 +24,7 @@ import { EventsService } from '../events/events.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodesService } from '../nodes/nodes.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { WorkspacesService } from '../workspaces/workspaces.service';
 import { AgentTaskAcceptedHttpDto } from './dto/agent-task-accepted-http.dto';
 import {
   AgentTaskCompletedHttpDto,
@@ -77,6 +78,7 @@ export class TasksService {
     private readonly redisService: RedisService,
     private readonly agentRealtimeService: AgentRealtimeService,
     private readonly configService: ConfigService,
+    private readonly workspacesService: WorkspacesService,
   ) {}
 
   async create(
@@ -271,6 +273,7 @@ export class TasksService {
     workspaceId?: string,
   ): Promise<TaskEntity> {
     const task = await this.findOneOrFail(taskId, workspaceId);
+    await this.workspacesService.assertWorkspaceWritable(task.workspaceId);
     const previousStatus = task.status;
     const now = new Date();
     const normalizedReason =
@@ -1313,6 +1316,7 @@ export class TasksService {
     const node =
       nodeOverride ??
       (await this.nodesService.ensureExists(input.nodeId, input.workspaceId));
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
 
     const task = this.tasksRepository.create({
       workspaceId: node.workspaceId,

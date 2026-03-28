@@ -48,18 +48,23 @@ src/
 
 - Installer-managed first-run setup with `setup`, `installed`, `legacy`, and `restart_required` modes
 - Global user directory with platform-admin-only CRUD
+- Invite-only operator onboarding with transactional email delivery
+- Forgot/reset password lifecycle and authenticated password change
 - Workspace-aware control plane with:
   - workspace listing and detail
   - members and teams
   - owner/admin/member/viewer roles
   - default-workspace selection
+  - archive / restore with read-only enforcement
   - protected workspace deletion rules
 - Platform-level admin role: `platform_admin`
 - User-centric membership rules:
   - users are created globally first
-  - workspace memberships point to existing users
+  - invited users activate through one-time links before they can sign in
+  - workspace memberships point to existing accepted active users
   - teams are composed from workspace members only
   - inactive users cannot log in or receive new assignments
+- Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
 - Node inventory with online and offline detection
 - Agent enrollment with approval flow plus legacy registration compatibility
 - Metrics ingestion and node telemetry persistence
@@ -95,8 +100,16 @@ Important values:
 - `REDIS_HOST`
 - `REDIS_PORT`
 - `NODERAX_STATE_DIR`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_FROM_EMAIL`
+- `SMTP_FROM_NAME`
 
 For installer-managed deployments, `NODERAX_STATE_DIR` should point to a writable application-data path. For Docker, use a mounted path such as `/data/noderax`.
+
+Invite and password-reset flows now require mail delivery to be configured. In tests, the API uses JSON transport and exposes captured deliveries through the in-memory mailer service.
 
 If you want the API to create the first platform admin automatically, set:
 
@@ -177,7 +190,9 @@ Key rules:
 
 - `platform_admin` can create workspaces, manage platform settings, and manage global users.
 - Workspace `owner` and `admin` can update workspace settings, assign existing users as members, manage teams, and delete the workspace.
+- Archived workspaces remain readable, but mutations, enrollment finalization, and schedule execution are blocked until restore.
 - The current default workspace cannot be deleted until another workspace is selected as default.
+- The current default workspace cannot be archived until another workspace becomes default.
 - Workspace member creation is reference-based: `POST /workspaces/:workspaceId/members` accepts `userId` plus role.
 - Team membership creation is constrained to active users who already belong to the same workspace.
 - Removing a workspace membership also removes that user from teams inside the same workspace.
@@ -186,10 +201,16 @@ Key rules:
 ## User, Member, And Team Model
 
 - `Users` is the single source of truth for operator identities.
+- `POST /users` creates a pending invited user and dispatches a one-time activation email.
+- `POST /users/:userId/resend-invite` rotates the prior invite token and sends a fresh activation email.
+- `GET /auth/invitations/:token` and `POST /auth/invitations/:token/accept` power account activation.
+- `POST /auth/password/forgot`, `GET /auth/password/reset/:token`, and `POST /auth/password/reset/:token` power the reset flow.
+- `POST /users/me/password` changes the authenticated password.
 - `GET /users` remains platform-admin only.
 - `GET /workspaces/:workspaceId/assignable-users` returns active users not yet attached to the workspace, for workspace `owner` and `admin` plus platform admins.
 - `PATCH /users/:userId` supports profile, role, and active-state updates with last-active-admin protections.
 - `DELETE /users/:userId` performs hard delete only when the user has no blocking assignments.
+- Session invalidation is version-based. Invite accept, password reset, password change, deactivate, and role-sensitive mutations rotate `sessionVersion`.
 - Bootstrap now repairs orphaned team memberships that no longer have a matching workspace membership.
 
 ## Task Delivery Model
@@ -214,6 +235,11 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 
 - `GET /health`
 - `POST /auth/login`
+- `GET /auth/invitations/:token`
+- `POST /auth/invitations/:token/accept`
+- `POST /auth/password/forgot`
+- `GET /auth/password/reset/:token`
+- `POST /auth/password/reset/:token`
 - `GET /setup/status`
 - `POST /setup/validate/postgres`
 - `POST /setup/validate/redis`
@@ -238,13 +264,16 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 - `GET /users`
 - `GET /users/me`
 - `POST /users`
+- `POST /users/:userId/resend-invite`
 - `PATCH /users/:userId`
 - `DELETE /users/:userId`
 - `PATCH /users/me/preferences`
+- `POST /users/me/password`
 - `GET /workspaces`
 - `GET /workspaces/:workspaceId`
 - `GET /workspaces/:workspaceId/members`
 - `GET /workspaces/:workspaceId/assignable-users`
+- `GET /workspaces/:workspaceId/search`
 - `GET /workspaces/:workspaceId/teams`
 - `GET /workspaces/:workspaceId/teams/:teamId/members`
 - `GET /workspaces/:workspaceId/nodes`

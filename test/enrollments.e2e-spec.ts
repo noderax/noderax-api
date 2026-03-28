@@ -4,8 +4,10 @@ import * as request from 'supertest';
 import { EnrollmentEntity } from '../src/modules/enrollments/entities/enrollment.entity';
 import { EnrollmentTokensService } from '../src/modules/enrollments/enrollment-tokens.service';
 import { NodeEntity } from '../src/modules/nodes/entities/node.entity';
+import { MailerService } from '../src/modules/notifications/mailer.service';
 import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
+import { createAcceptedUser, loginUser } from './helpers/user-lifecycle';
 
 function configureTestEnv() {
   process.env.NODE_ENV = 'test';
@@ -53,12 +55,14 @@ describe('Enrollments (e2e)', () => {
   let userToken: string;
   let dataSource: DataSource;
   let enrollmentTokensService: EnrollmentTokensService;
+  let mailerService: MailerService;
 
   beforeAll(async () => {
     configureTestEnv();
     app = await createE2eApp();
     dataSource = app.get(DataSource);
     enrollmentTokensService = app.get(EnrollmentTokensService);
+    mailerService = app.get(MailerService);
 
     const adminLogin = await request(app.getHttpServer())
       .post(apiPath('/auth/login'))
@@ -70,26 +74,13 @@ describe('Enrollments (e2e)', () => {
 
     adminToken = adminLogin.body.accessToken;
 
-    await request(app.getHttpServer())
-      .post(apiPath('/users'))
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        email: 'user@example.com',
-        name: 'Standard User',
-        password: 'ChangeMe123!',
-        role: 'user',
-      })
-      .expect(201);
+    const user = await createAcceptedUser(app, mailerService, {
+      adminToken,
+      email: 'user@example.com',
+      name: 'Standard User',
+    });
 
-    const userLogin = await request(app.getHttpServer())
-      .post(apiPath('/auth/login'))
-      .send({
-        email: 'user@example.com',
-        password: 'ChangeMe123!',
-      })
-      .expect(200);
-
-    userToken = userLogin.body.accessToken;
+    userToken = await loginUser(app, user.email, user.password);
   });
 
   afterAll(async () => {

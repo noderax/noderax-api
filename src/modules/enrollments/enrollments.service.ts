@@ -117,6 +117,7 @@ export class EnrollmentsService {
     const resolvedWorkspaceId =
       workspaceId ??
       (await this.workspacesService.getDefaultWorkspaceOrFail()).id;
+    await this.workspacesService.assertWorkspaceWritable(resolvedWorkspaceId);
     const agentToken = this.enrollmentTokensService.issueAgentToken();
     const node = await this.nodesService.createFromEnrollment({
       workspaceId: resolvedWorkspaceId,

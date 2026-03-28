@@ -37,6 +37,36 @@ export class UserResponseDto {
   timezone: string;
 
   @ApiProperty({
+    enum: ['pending', 'accepted', 'revoked'],
+    example: 'accepted',
+  })
+  inviteStatus: 'pending' | 'accepted' | 'revoked';
+
+  @ApiProperty({
+    format: 'date-time',
+    nullable: true,
+    example: '2026-03-17T12:30:00.000Z',
+  })
+  lastInvitedAt: Date | null;
+
+  @ApiProperty({
+    format: 'date-time',
+    nullable: true,
+    example: '2026-03-17T12:45:00.000Z',
+  })
+  activatedAt: Date | null;
+
+  @ApiProperty({
+    example: true,
+  })
+  criticalEventEmailsEnabled: boolean;
+
+  @ApiProperty({
+    example: true,
+  })
+  enrollmentEmailsEnabled: boolean;
+
+  @ApiProperty({
     format: 'date-time',
     example: '2026-03-17T12:30:00.000Z',
   })
