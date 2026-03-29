@@ -1,11 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsBoolean,
+  IsEnum,
   IsOptional,
   IsString,
   Matches,
   MinLength,
 } from 'class-validator';
+import { EventSeverity } from '../../events/entities/event-severity.enum';
 
 export class CreateWorkspaceDto {
   @ApiProperty({
@@ -74,4 +77,24 @@ export class CreateWorkspaceDto {
   @IsOptional()
   @IsString()
   automationTelegramChatId?: string;
+
+  @ApiPropertyOptional({
+    example: ['critical', 'warning'],
+    enum: EventSeverity,
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(EventSeverity, { each: true })
+  automationEmailLevels?: EventSeverity[];
+
+  @ApiPropertyOptional({
+    example: ['critical'],
+    enum: EventSeverity,
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(EventSeverity, { each: true })
+  automationTelegramLevels?: EventSeverity[];
 }

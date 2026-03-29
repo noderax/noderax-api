@@ -69,8 +69,8 @@ export class WorkspaceDataBootstrap implements OnApplicationBootstrap {
     const timezone = seededAdmin[0]?.timezone || DEFAULT_TIMEZONE;
     const rows = (await this.dataSource.query(
       `
-        INSERT INTO "workspaces" ("name", "slug", "defaultTimezone", "createdByUserId", "isArchived", "isDefault")
-        VALUES ($1, $2, $3, $4, false, true)
+        INSERT INTO "workspaces" ("name", "slug", "defaultTimezone", "createdByUserId", "isArchived", "isDefault", "automationEmailLevels", "automationTelegramLevels")
+        VALUES ($1, $2, $3, $4, false, true, 'critical', 'critical')
         ON CONFLICT DO NOTHING
         RETURNING "id"
       `,

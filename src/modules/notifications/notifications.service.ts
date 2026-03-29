@@ -128,18 +128,45 @@ export class NotificationsService {
       if (
         workspace.automationTelegramEnabled &&
         workspace.automationTelegramBotToken &&
-        workspace.automationTelegramChatId
+        workspace.automationTelegramChatId &&
+        workspace.automationTelegramLevels.includes(event.severity)
       ) {
         await this.sendTelegramMessage(workspace, event);
       }
 
       // 2. Email Automation
-      if (workspace.automationEmailEnabled || event.severity === EventSeverity.CRITICAL) {
-        const recipients = await this.findCriticalEventRecipients(
-          event.workspaceId,
-        );
+      const shouldSendEmail =
+        event.severity === EventSeverity.CRITICAL ||
+        (workspace.automationEmailEnabled &&
+          workspace.automationEmailLevels.includes(event.severity));
 
-        if (recipients.length > 0) {
+      if (shouldSendEmail) {
+        const [platformAdmins, workspaceAdminsWithPreference, allWorkspaceAdmins] =
+          await Promise.all([
+            this.usersRepository.find({
+              where: {
+                role: UserRole.PLATFORM_ADMIN,
+                isActive: true,
+                criticalEventEmailsEnabled: true,
+              },
+            }),
+            this.findWorkspaceAdmins(event.workspaceId, "criticalEventEmailsEnabled"),
+            this.findWorkspaceAdmins(event.workspaceId),
+          ]);
+
+        const recipientEmails: string[] = [];
+
+        if (event.severity === EventSeverity.CRITICAL) {
+          recipientEmails.push(...this.uniqueEmails([...platformAdmins, ...workspaceAdminsWithPreference]));
+        }
+
+        if (workspace.automationEmailEnabled) {
+          recipientEmails.push(...this.uniqueEmails(allWorkspaceAdmins));
+        }
+
+        const uniqueRecipientsList = Array.from(new Set(recipientEmails));
+
+        if (uniqueRecipientsList.length > 0) {
           const email = this.buildStyledEmail({
             eyebrow: 'Event notification',
             title: `Event detected: ${event.type}`,
@@ -162,7 +189,7 @@ export class NotificationsService {
           });
 
           await this.mailerService.sendMail({
-            to: recipients,
+            to: uniqueRecipientsList,
             subject: `[Noderax] ${event.severity.toUpperCase()} event: ${event.type}`,
             text: email.text,
             html: email.html,
@@ -189,14 +216,15 @@ export class NotificationsService {
             ? '🟠'
             : '🔵';
 
+      const dashboardUrl = this.buildFrontendUrl('');
       const text =
         `<b>${severityEmoji} Noderax Event</b>\n\n` +
-        `<b>Type:</b> ${this.escapeHtml(event.type)}\n` +
-        `<b>Workspace:</b> ${this.escapeHtml(workspace.name)}\n` +
-        `<b>Severity:</b> ${this.escapeHtml(event.severity.toUpperCase())}\n` +
-        `<b>Node:</b> ${this.escapeHtml(event.nodeId ?? 'n/a')}\n\n` +
-        `<code>${this.escapeHtmlWithBreaks(event.message)}</code>\n\n` +
-        `<a href="${this.buildFrontendUrl('')}">Open Dashboard</a>`;
+        `<b>Type:</b> ${this.escapeTelegramHtml(event.type)}\n` +
+        `<b>Workspace:</b> ${this.escapeTelegramHtml(workspace.name)}\n` +
+        `<b>Severity:</b> ${this.escapeTelegramHtml(event.severity.toUpperCase())}\n` +
+        `<b>Node:</b> ${this.escapeTelegramHtml(event.nodeId ?? 'n/a')}\n\n` +
+        `<code>${this.escapeTelegramHtml(event.message)}</code>\n\n` +
+        `<a href="${this.escapeTelegramHtml(dashboardUrl)}">Open Dashboard</a>`;
 
       const response = await fetch(
         `https://api.telegram.org/bot${workspace.automationTelegramBotToken}/sendMessage`,
@@ -223,6 +251,18 @@ export class NotificationsService {
         error instanceof Error ? error.message : String(error),
       );
     }
+  }
+
+  private escapeTelegramHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  private escapeMarkdown(value: string): string {
+    // Basic Markdown V1 escaping
+    return value.replace(/([_*`\[])/g, '\\$1');
   }
 
   async notifyEnrollmentInitiated(input: {
@@ -331,7 +371,7 @@ export class NotificationsService {
 
   private async findWorkspaceAdmins(
     workspaceId: string | string[],
-    preferenceKey: 'criticalEventEmailsEnabled' | 'enrollmentEmailsEnabled',
+    preferenceKey?: "criticalEventEmailsEnabled" | "enrollmentEmailsEnabled",
   ): Promise<UserEntity[]> {
     const workspaceIds = Array.isArray(workspaceId)
       ? workspaceId
@@ -356,7 +396,7 @@ export class NotificationsService {
       where: {
         id: In(userIds),
         isActive: true,
-        [preferenceKey]: true,
+        ...(preferenceKey ? { [preferenceKey]: true } : {}),
       },
     });
   }

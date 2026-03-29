@@ -82,6 +82,18 @@ export class WorkspaceEntity {
   @Column({ type: 'varchar', length: 255, nullable: true })
   automationTelegramChatId: string | null;
 
+  @ApiProperty({
+    example: ['critical', 'warning'],
+  })
+  @Column({ type: 'simple-array', default: 'critical' })
+  automationEmailLevels: string[];
+
+  @ApiProperty({
+    example: ['critical'],
+  })
+  @Column({ type: 'simple-array', default: 'critical' })
+  automationTelegramLevels: string[];
+
   @ApiPropertyOptional({
     enum: WorkspaceMembershipRole,
     enumName: 'WorkspaceMembershipRole',
