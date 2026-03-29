@@ -20,7 +20,7 @@ describe('AgentRealtimeService', () => {
   let nodesService: jest.Mocked<NodesService>;
   let redisService: jest.Mocked<RedisService>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     lifecycleRepository = {
       create: jest.fn((value) => value),
       save: jest.fn(),
@@ -62,6 +62,7 @@ describe('AgentRealtimeService', () => {
 
     const configService = {
       getOrThrow: jest.fn().mockReturnValue({
+        enableRealtimeTaskDispatch: true,
         realtimePingTimeoutSeconds: 45,
         realtimePingCheckIntervalSeconds: 5,
       }),
@@ -83,6 +84,8 @@ describe('AgentRealtimeService', () => {
       tasksService,
       metricsService,
     );
+
+    await service.onModuleInit();
   });
 
   it('deduplicates lifecycle events using unique key conflicts', async () => {

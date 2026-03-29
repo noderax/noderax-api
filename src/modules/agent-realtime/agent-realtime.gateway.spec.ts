@@ -2,6 +2,7 @@
 
 import { Server } from 'socket.io';
 import { TasksService } from '../tasks/tasks.service';
+import { TerminalSessionsService } from '../terminal-sessions/terminal-sessions.service';
 import { AgentRealtimeGateway } from './agent-realtime.gateway';
 import { AgentRealtimeService } from './agent-realtime.service';
 
@@ -9,6 +10,7 @@ describe('AgentRealtimeGateway', () => {
   let gateway: AgentRealtimeGateway;
   let tasksService: jest.Mocked<TasksService>;
   let agentRealtimeService: jest.Mocked<AgentRealtimeService>;
+  let terminalSessionsService: jest.Mocked<TerminalSessionsService>;
 
   beforeEach(() => {
     tasksService = {
@@ -34,7 +36,18 @@ describe('AgentRealtimeGateway', () => {
       ingestRealtimeMetrics: jest.fn(),
     } as unknown as jest.Mocked<AgentRealtimeService>;
 
-    gateway = new AgentRealtimeGateway(tasksService, agentRealtimeService);
+    terminalSessionsService = {
+      handleAgentOpened: jest.fn(),
+      handleAgentOutput: jest.fn(),
+      handleAgentExited: jest.fn(),
+      handleAgentError: jest.fn(),
+    } as unknown as jest.Mocked<TerminalSessionsService>;
+
+    gateway = new AgentRealtimeGateway(
+      tasksService,
+      agentRealtimeService,
+      terminalSessionsService,
+    );
     gateway.server = {
       sockets: {
         sockets: new Map(),

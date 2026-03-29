@@ -45,10 +45,11 @@ type AgentNodeRoute = {
   updatedAt: string;
 };
 
-type AgentTaskDispatchRouteMessage = {
+type RoutedAgentEventMessage = {
   targetInstanceId: string;
   nodeId: string;
-  task: AgentTaskDispatchPayload;
+  event: string;
+  payload: Record<string, unknown>;
 };
 
 @Injectable()
@@ -60,7 +61,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
   private readonly socketToSession = new Map<string, AgentSocketSession>();
   private readonly counters = new Map<string, number>();
 
-  private unsubscribeDispatchChannel: (() => Promise<void>) | null = null;
+  private readonly unsubscribeDispatchChannels: Array<() => Promise<void>> = [];
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private counterLogInterval: NodeJS.Timeout | null = null;
   private socketDisconnect: ((socketId: string) => boolean) | null = null;
@@ -83,17 +84,6 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    if (!this.redisService.isEnabled()) {
-      return;
-    }
-
-    this.unsubscribeDispatchChannel = await this.redisService.subscribe(
-      PUBSUB_CHANNELS.AGENT_REALTIME_TASK_DISPATCH,
-      (payload) => {
-        void this.handleDispatchRouteMessage(payload);
-      },
-    );
-
     const agents =
       this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
         AGENTS_CONFIG_KEY,
@@ -141,6 +131,25 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    if (!this.redisService.isEnabled()) {
+      return;
+    }
+
+    this.unsubscribeDispatchChannels.push(
+      await this.redisService.subscribe(
+        PUBSUB_CHANNELS.AGENT_REALTIME_TASK_DISPATCH,
+        (payload) => {
+          void this.handleRoutedEventMessage(payload);
+        },
+      ),
+      await this.redisService.subscribe(
+        PUBSUB_CHANNELS.AGENT_REALTIME_TERMINAL_CONTROL,
+        (payload) => {
+          void this.handleRoutedEventMessage(payload);
+        },
+      ),
+    );
+
     this.heartbeatInterval = setInterval(() => {
       void this.enforceHeartbeatTimeouts();
     }, this.realtimePingCheckIntervalSeconds * 1000);
@@ -167,10 +176,10 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       this.counterLogInterval = null;
     }
 
-    if (this.unsubscribeDispatchChannel) {
-      await this.unsubscribeDispatchChannel();
-      this.unsubscribeDispatchChannel = null;
+    for (const unsubscribe of this.unsubscribeDispatchChannels) {
+      await unsubscribe();
     }
+    this.unsubscribeDispatchChannels.length = 0;
   }
 
   bindSocketDisconnect(disconnect: (socketId: string) => boolean): void {
@@ -369,41 +378,107 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       return false;
     }
 
-    const localSocketId = this.nodeToSocketId.get(task.nodeId);
-    if (localSocketId && this.emitTaskDispatch(localSocketId, task)) {
-      this.incrementCounter('dispatch.local.success');
+    const payload = this.buildTaskDispatchPayload(task);
+    const delivered = await this.emitEventToNode(
+      task.nodeId,
+      AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH,
+      payload,
+    );
+    return delivered;
+  }
+
+  async startTerminalSession(
+    nodeId: string,
+    payload: {
+      sessionId: string;
+      cols: number;
+      rows: number;
+    },
+  ): Promise<boolean> {
+    return this.emitEventToNode(
+      nodeId,
+      AGENT_REALTIME_SERVER_EVENTS.TERMINAL_START,
+      {
+        type: AGENT_REALTIME_SERVER_EVENTS.TERMINAL_START,
+        sessionId: payload.sessionId,
+        cols: payload.cols,
+        rows: payload.rows,
+      },
+    );
+  }
+
+  async sendTerminalInput(
+    nodeId: string,
+    payload: {
+      sessionId: string;
+      payload: string;
+    },
+  ): Promise<boolean> {
+    return this.emitEventToNode(
+      nodeId,
+      AGENT_REALTIME_SERVER_EVENTS.TERMINAL_INPUT,
+      {
+        type: AGENT_REALTIME_SERVER_EVENTS.TERMINAL_INPUT,
+        sessionId: payload.sessionId,
+        payload: payload.payload,
+      },
+    );
+  }
+
+  async resizeTerminalSession(
+    nodeId: string,
+    payload: {
+      sessionId: string;
+      cols: number;
+      rows: number;
+    },
+  ): Promise<boolean> {
+    return this.emitEventToNode(
+      nodeId,
+      AGENT_REALTIME_SERVER_EVENTS.TERMINAL_RESIZE,
+      {
+        type: AGENT_REALTIME_SERVER_EVENTS.TERMINAL_RESIZE,
+        sessionId: payload.sessionId,
+        cols: payload.cols,
+        rows: payload.rows,
+      },
+    );
+  }
+
+  async stopTerminalSession(
+    nodeId: string,
+    payload: {
+      sessionId: string;
+      reason?: string | null;
+    },
+  ): Promise<boolean> {
+    return this.emitEventToNode(
+      nodeId,
+      AGENT_REALTIME_SERVER_EVENTS.TERMINAL_STOP,
+      {
+        type: AGENT_REALTIME_SERVER_EVENTS.TERMINAL_STOP,
+        sessionId: payload.sessionId,
+        reason: payload.reason ?? null,
+      },
+    );
+  }
+
+  async hasActiveNodeRoute(nodeId: string): Promise<boolean> {
+    const localSocketId = this.nodeToSocketId.get(nodeId);
+    if (localSocketId) {
       return true;
     }
 
-    const route = await this.getNodeRoute(task.nodeId);
-    if (!route || route.instanceId === this.instanceId) {
-      return false;
-    }
-
-    await this.redisService.publish(
-      PUBSUB_CHANNELS.AGENT_REALTIME_TASK_DISPATCH,
-      {
-        targetInstanceId: route.instanceId,
-        nodeId: task.nodeId,
-        task: this.buildTaskDispatchPayload(task),
-      },
-    );
-
-    this.incrementCounter('dispatch.routed');
-
-    return true;
+    const route = await this.getNodeRoute(nodeId);
+    return Boolean(route);
   }
 
-  private emitTaskDispatch(socketId: string, task: TaskEntity): boolean {
+  private emitRawEvent(socketId: string, event: string, payload: Record<string, unknown>): boolean {
     if (!this.socketEmitter) {
       return false;
     }
 
-    return this.socketEmitter(
-      socketId,
-      AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH,
-      this.buildTaskDispatchPayload(task),
-    );
+    return this.socketEmitter(socketId, event, payload);
   }
 
   private buildTaskDispatchPayload(task: TaskEntity): AgentTaskDispatchPayload {
@@ -424,10 +499,50 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async handleDispatchRouteMessage(
+  private async emitEventToNode(
+    nodeId: string,
+    event: string,
+    payload: Record<string, unknown>,
+  ): Promise<boolean> {
+    const localSocketId = this.nodeToSocketId.get(nodeId);
+    if (localSocketId && this.emitRawEvent(localSocketId, event, payload)) {
+      this.incrementCounter(
+        event === AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH
+          ? 'dispatch.local.success'
+          : 'terminal.local.success',
+      );
+      return true;
+    }
+
+    const route = await this.getNodeRoute(nodeId);
+    if (!route || route.instanceId === this.instanceId) {
+      return false;
+    }
+
+    await this.redisService.publish(
+      event === AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH
+        ? PUBSUB_CHANNELS.AGENT_REALTIME_TASK_DISPATCH
+        : PUBSUB_CHANNELS.AGENT_REALTIME_TERMINAL_CONTROL,
+      {
+        targetInstanceId: route.instanceId,
+        nodeId,
+        event,
+        payload,
+      },
+    );
+
+    this.incrementCounter(
+      event === AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH
+        ? 'dispatch.routed'
+        : 'terminal.routed',
+    );
+    return true;
+  }
+
+  private async handleRoutedEventMessage(
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const message = payload as AgentTaskDispatchRouteMessage;
+    const message = payload as RoutedAgentEventMessage;
     if (message.targetInstanceId !== this.instanceId || !message.nodeId) {
       return;
     }
@@ -437,16 +552,16 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const delivered = this.socketEmitter(
-      socketId,
-      AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH,
-      message.task,
-    );
+    const delivered = this.socketEmitter(socketId, message.event, message.payload);
 
     if (!delivered) {
-      this.incrementCounter('dispatch.routed.failed');
+      this.incrementCounter(
+        message.event === AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH
+          ? 'dispatch.routed.failed'
+          : 'terminal.routed.failed',
+      );
       this.logger.warn(
-        `Task dispatch routing failed for node ${message.nodeId} on ${this.instanceId}`,
+        `Realtime routing failed for node ${message.nodeId} on ${this.instanceId} event=${message.event}`,
       );
     }
   }

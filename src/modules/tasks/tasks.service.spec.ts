@@ -186,10 +186,17 @@ describe('TasksService.createScheduledShellTask', () => {
       ensureExists: jest.fn().mockResolvedValue({
         id: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
         hostname: 'srv-test-01',
+        workspaceId: 'workspace-1',
       }),
+      assertNodeAcceptingNewWork: jest.fn(),
     };
     const agentRealtimeService = {
       dispatchTaskToNode: jest.fn(),
+    };
+    const workspacesService = {
+      assertWorkspaceWritable: jest.fn().mockResolvedValue({
+        id: 'workspace-1',
+      }),
     };
     const tasksService = new TasksService(
       taskRepository as never,
@@ -207,7 +214,7 @@ describe('TasksService.createScheduledShellTask', () => {
           taskClaimLeaseSeconds: 60,
         }),
       } as never,
-      {} as never,
+      workspacesService as never,
     );
 
     const task = await tasksService.createScheduledShellTask({

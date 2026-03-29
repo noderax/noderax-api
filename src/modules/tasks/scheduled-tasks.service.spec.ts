@@ -1,5 +1,6 @@
 import { ScheduledTasksService } from './scheduled-tasks.service';
 import { ScheduledTaskEntity } from './entities/scheduled-task.entity';
+import { UserRole } from '../users/entities/user-role.enum';
 
 describe('ScheduledTasksService', () => {
   const save = jest.fn();
@@ -26,6 +27,8 @@ describe('ScheduledTasksService', () => {
 
   const nodesService = {
     ensureExists: jest.fn(),
+    findOneOrFail: jest.fn(),
+    listTeamOwnedNodes: jest.fn(),
   };
 
   const eventsService = {
@@ -38,6 +41,19 @@ describe('ScheduledTasksService', () => {
 
   const workspacesService = {
     findOneOrFail: jest.fn(),
+    assertWorkspaceWritable: jest.fn().mockResolvedValue({
+      id: 'workspace-1',
+      defaultTimezone: 'UTC',
+    }),
+    getDefaultWorkspaceOrFail: jest.fn().mockResolvedValue({
+      id: 'workspace-1',
+      defaultTimezone: 'UTC',
+    }),
+    findMembershipForUser: jest.fn(),
+  };
+
+  const auditLogsService = {
+    record: jest.fn(),
   };
 
   const service = new ScheduledTasksService(
@@ -48,7 +64,7 @@ describe('ScheduledTasksService', () => {
     eventsService as never,
     tasksService as never,
     workspacesService as never,
-    {} as never,
+    auditLogsService as never,
   );
 
   beforeEach(() => {
@@ -104,6 +120,10 @@ describe('ScheduledTasksService', () => {
       claimToken: 'claim-token',
       nextRunAt: new Date('2026-03-26T12:00:00.000Z'),
     });
+    nodesService.findOneOrFail.mockResolvedValue({
+      id: schedule.nodeId,
+      maintenanceMode: false,
+    });
     tasksService.createScheduledShellTask.mockResolvedValue({
       id: 'task-1',
     });
@@ -111,13 +131,15 @@ describe('ScheduledTasksService', () => {
     const result = await service.triggerClaimedSchedule(schedule);
 
     expect(result).toEqual({ ok: true });
-    expect(tasksService.createScheduledShellTask).toHaveBeenCalledWith({
-      nodeId: schedule.nodeId,
-      workspaceId: schedule.workspaceId,
-      scheduleId: schedule.id,
-      scheduleName: schedule.name,
-      command: schedule.command,
-    });
+    expect(tasksService.createScheduledShellTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: schedule.nodeId,
+        workspaceId: schedule.workspaceId,
+        scheduleId: schedule.id,
+        scheduleName: schedule.name,
+        command: schedule.command,
+      }),
+    );
     expect(update).toHaveBeenCalledWith(
       {
         id: schedule.id,
@@ -136,6 +158,10 @@ describe('ScheduledTasksService', () => {
   it('stores lastError when task queueing fails', async () => {
     const schedule = buildSchedule({
       claimToken: 'claim-token',
+    });
+    nodesService.findOneOrFail.mockResolvedValue({
+      id: schedule.nodeId,
+      maintenanceMode: false,
     });
     tasksService.createScheduledShellTask.mockRejectedValue(
       new Error('node missing'),
@@ -158,6 +184,41 @@ describe('ScheduledTasksService', () => {
         claimedBy: null,
         leaseUntil: null,
       }),
+    );
+  });
+
+  it('allows platform admins to create schedules in the default workspace without an explicit membership lookup', async () => {
+    usersRepository.findOne.mockResolvedValue({
+      id: 'owner-1',
+      role: UserRole.PLATFORM_ADMIN,
+      name: 'Platform Admin',
+    });
+    nodesService.ensureExists.mockResolvedValue({
+      id: 'node-1',
+      workspaceId: 'workspace-1',
+    });
+    save.mockImplementation(async (value) => ({
+      id: 'schedule-1',
+      createdAt: new Date('2026-03-26T10:00:00.000Z'),
+      updatedAt: new Date('2026-03-26T10:00:00.000Z'),
+      ...value,
+    }));
+
+    const result = await service.create('owner-1', undefined, {
+      nodeId: 'node-1',
+      name: 'Daily hostname check',
+      command: 'hostname',
+      cadence: 'daily',
+      minute: 15,
+      hour: 3,
+    });
+
+    expect(result.workspaceId).toBe('workspace-1');
+    expect(workspacesService.getDefaultWorkspaceOrFail).toHaveBeenCalled();
+    expect(workspacesService.findMembershipForUser).not.toHaveBeenCalled();
+    expect(nodesService.ensureExists).toHaveBeenCalledWith(
+      'node-1',
+      'workspace-1',
     );
   });
 });

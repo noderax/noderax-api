@@ -118,6 +118,7 @@ describe('EnrollmentsService', () => {
       tokenLookupHash: 'lookup-hash',
     });
     expect(nodesService.createFromEnrollment).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
       name: 'Enrollment Node',
       description: null,
       hostname: 'srv-enroll-01',

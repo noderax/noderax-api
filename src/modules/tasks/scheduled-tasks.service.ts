@@ -14,6 +14,7 @@ import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodesService } from '../nodes/nodes.service';
 import { UserEntity } from '../users/entities/user.entity';
+import { UserRole } from '../users/entities/user-role.enum';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateBatchScheduledTaskDto } from './dto/create-batch-scheduled-task.dto';
 import { CreateScheduledTaskDto } from './dto/create-scheduled-task.dto';
@@ -52,7 +53,7 @@ export class ScheduledTasksService {
     context?: RequestAuditContext,
   ): Promise<ScheduledTaskEntity> {
     const owner = await this.findOwnerOrFail(ownerUserId);
-    const workspace = await this.resolveWorkspace(workspaceId, ownerUserId);
+    const workspace = await this.resolveWorkspace(workspaceId, owner);
     const normalized = this.normalizeScheduleInput(createScheduledTaskDto);
     const [saved] = createScheduledTaskDto.teamId
       ? await this.createSchedulesForTeam(
@@ -82,7 +83,7 @@ export class ScheduledTasksService {
     context?: RequestAuditContext,
   ): Promise<ScheduledTaskEntity[]> {
     const owner = await this.findOwnerOrFail(ownerUserId);
-    const workspace = await this.resolveWorkspace(workspaceId, ownerUserId);
+    const workspace = await this.resolveWorkspace(workspaceId, owner);
     const normalized = this.normalizeScheduleInput(createBatchScheduledTaskDto);
 
     return this.createSchedulesForNodes(
@@ -771,7 +772,7 @@ export class ScheduledTasksService {
 
   private async resolveWorkspace(
     workspaceId: string | undefined,
-    ownerUserId: string,
+    owner: UserEntity,
   ) {
     if (workspaceId) {
       return this.workspacesService.assertWorkspaceWritable(workspaceId);
@@ -780,14 +781,19 @@ export class ScheduledTasksService {
     const defaultWorkspace =
       await this.workspacesService.getDefaultWorkspaceOrFail();
     await this.workspacesService.assertWorkspaceWritable(defaultWorkspace.id);
+
+    if (owner.role === UserRole.PLATFORM_ADMIN) {
+      return defaultWorkspace;
+    }
+
     const membership = await this.workspacesService.findMembershipForUser(
       defaultWorkspace.id,
-      ownerUserId,
+      owner.id,
     );
 
     if (!membership) {
       throw new NotFoundException(
-        `User ${ownerUserId} is not a member of the default workspace.`,
+        `User ${owner.id} is not a member of the default workspace.`,
       );
     }
 

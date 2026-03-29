@@ -30,6 +30,11 @@ import { AgentTaskLogMessageDto } from './dto/agent-task-log-message.dto';
 import { AgentTaskStartedMessageDto } from './dto/agent-task-started-message.dto';
 import { AgentRealtimeService } from './agent-realtime.service';
 import { TASK_OUTPUT_MAX_LENGTH } from '../tasks/dto/complete-agent-task.dto';
+import { AgentTerminalOpenedMessageDto } from './dto/agent-terminal-opened-message.dto';
+import { AgentTerminalOutputMessageDto } from './dto/agent-terminal-output-message.dto';
+import { AgentTerminalExitedMessageDto } from './dto/agent-terminal-exited-message.dto';
+import { AgentTerminalErrorMessageDto } from './dto/agent-terminal-error-message.dto';
+import { TerminalSessionsService } from '../terminal-sessions/terminal-sessions.service';
 
 @Public()
 @WebSocketGateway({
@@ -57,6 +62,7 @@ export class AgentRealtimeGateway
   constructor(
     private readonly tasksService: TasksService,
     private readonly agentRealtimeService: AgentRealtimeService,
+    private readonly terminalSessionsService: TerminalSessionsService,
   ) {}
 
   afterInit(): void {
@@ -129,6 +135,10 @@ export class AgentRealtimeGateway
         AGENT_REALTIME_CLIENT_EVENTS.TASK_LOG,
         AGENT_REALTIME_CLIENT_EVENTS.TASK_COMPLETED,
         AGENT_REALTIME_CLIENT_EVENTS.METRICS,
+        AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_OPENED,
+        AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_OUTPUT,
+        AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_EXITED,
+        AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_ERROR,
       ]);
 
       if (allowedEvents.has(eventName)) {
@@ -537,6 +547,161 @@ export class AgentRealtimeGateway
       return this.emitHandlerError(
         client,
         AGENT_REALTIME_CLIENT_EVENTS.METRICS,
+        error,
+      );
+    }
+  }
+
+  @SubscribeMessage(AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_OPENED)
+  async handleTerminalOpened(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: AgentTerminalOpenedMessageDto,
+  ) {
+    const session = this.agentRealtimeService.getSessionForSocket(client.id);
+    if (!session) {
+      this.disconnectWithReason(client, 'terminal.opened-before-auth');
+      return { ok: false, message: 'Socket is not authenticated' };
+    }
+
+    try {
+      const body = await this.validationPipe.transform(payload, {
+        type: 'body',
+        metatype: AgentTerminalOpenedMessageDto,
+      });
+
+      const terminalSession = await this.terminalSessionsService.handleAgentOpened({
+        sessionId: body.sessionId,
+        nodeId: session.nodeId,
+        cols: body.cols,
+        rows: body.rows,
+        timestamp: body.timestamp,
+      });
+
+      return {
+        ok: true,
+        sessionId: terminalSession.id,
+        status: terminalSession.status,
+      };
+    } catch (error) {
+      return this.emitHandlerError(
+        client,
+        AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_OPENED,
+        error,
+      );
+    }
+  }
+
+  @SubscribeMessage(AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_OUTPUT)
+  async handleTerminalOutput(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: AgentTerminalOutputMessageDto,
+  ) {
+    const session = this.agentRealtimeService.getSessionForSocket(client.id);
+    if (!session) {
+      this.disconnectWithReason(client, 'terminal.output-before-auth');
+      return { ok: false, message: 'Socket is not authenticated' };
+    }
+
+    try {
+      const body = await this.validationPipe.transform(payload, {
+        type: 'body',
+        metatype: AgentTerminalOutputMessageDto,
+      });
+
+      const chunk = await this.terminalSessionsService.handleAgentOutput({
+        sessionId: body.sessionId,
+        nodeId: session.nodeId,
+        direction: body.direction,
+        payload: body.payload,
+        timestamp: body.timestamp,
+      });
+
+      return {
+        ok: true,
+        sessionId: body.sessionId,
+        seq: chunk?.seq ?? null,
+      };
+    } catch (error) {
+      return this.emitHandlerError(
+        client,
+        AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_OUTPUT,
+        error,
+      );
+    }
+  }
+
+  @SubscribeMessage(AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_EXITED)
+  async handleTerminalExited(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: AgentTerminalExitedMessageDto,
+  ) {
+    const session = this.agentRealtimeService.getSessionForSocket(client.id);
+    if (!session) {
+      this.disconnectWithReason(client, 'terminal.exited-before-auth');
+      return { ok: false, message: 'Socket is not authenticated' };
+    }
+
+    try {
+      const body = await this.validationPipe.transform(payload, {
+        type: 'body',
+        metatype: AgentTerminalExitedMessageDto,
+      });
+
+      const terminalSession = await this.terminalSessionsService.handleAgentExited({
+        sessionId: body.sessionId,
+        nodeId: session.nodeId,
+        exitCode: body.exitCode,
+        reason: body.reason,
+        timestamp: body.timestamp,
+      });
+
+      return {
+        ok: true,
+        sessionId: terminalSession.id,
+        status: terminalSession.status,
+      };
+    } catch (error) {
+      return this.emitHandlerError(
+        client,
+        AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_EXITED,
+        error,
+      );
+    }
+  }
+
+  @SubscribeMessage(AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_ERROR)
+  async handleTerminalError(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: AgentTerminalErrorMessageDto,
+  ) {
+    const session = this.agentRealtimeService.getSessionForSocket(client.id);
+    if (!session) {
+      this.disconnectWithReason(client, 'terminal.error-before-auth');
+      return { ok: false, message: 'Socket is not authenticated' };
+    }
+
+    try {
+      const body = await this.validationPipe.transform(payload, {
+        type: 'body',
+        metatype: AgentTerminalErrorMessageDto,
+      });
+
+      const terminalSession = await this.terminalSessionsService.handleAgentError({
+        sessionId: body.sessionId,
+        nodeId: session.nodeId,
+        message: body.message,
+        timestamp: body.timestamp,
+      });
+
+      return {
+        ok: true,
+        sessionId: terminalSession.id,
+        status: terminalSession.status,
+      };
+    } catch (error) {
+      return this.emitHandlerError(
+        client,
+        AGENT_REALTIME_CLIENT_EVENTS.TERMINAL_ERROR,
         error,
       );
     }

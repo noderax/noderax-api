@@ -35,14 +35,17 @@ describe('PackagesService compatibility hardening', () => {
       term: 'nginx',
     });
 
-    expect(tasksService.create).toHaveBeenCalledWith({
-      nodeId: 'node-1',
-      type: TASK_TYPES.PACKAGE_SEARCH,
-      payload: {
-        term: 'nginx',
-        query: 'nginx',
+    expect(tasksService.create).toHaveBeenCalledWith(
+      {
+        nodeId: 'node-1',
+        type: TASK_TYPES.PACKAGE_SEARCH,
+        payload: {
+          term: 'nginx',
+          query: 'nginx',
+        },
       },
-    });
+      undefined,
+    );
   });
 
   it('queues install payload with names, packages and package aliases', async () => {
@@ -51,16 +54,19 @@ describe('PackagesService compatibility hardening', () => {
       purge: false,
     });
 
-    expect(tasksService.create).toHaveBeenCalledWith({
-      nodeId: 'node-1',
-      type: TASK_TYPES.PACKAGE_INSTALL,
-      payload: {
-        names: ['nginx'],
-        packages: ['nginx'],
-        package: 'nginx',
-        purge: false,
+    expect(tasksService.create).toHaveBeenCalledWith(
+      {
+        nodeId: 'node-1',
+        type: TASK_TYPES.PACKAGE_INSTALL,
+        payload: {
+          names: ['nginx'],
+          packages: ['nginx'],
+          package: 'nginx',
+          purge: false,
+        },
       },
-    });
+      undefined,
+    );
   });
 
   it('normalizes purge removals to packageRemove while preserving purge intent in payload', async () => {
@@ -68,16 +74,19 @@ describe('PackagesService compatibility hardening', () => {
       purge: 'true',
     });
 
-    expect(tasksService.create).toHaveBeenCalledWith({
-      nodeId: 'node-1',
-      type: TASK_TYPES.PACKAGE_REMOVE,
-      payload: {
-        names: ['nginx'],
-        packages: ['nginx'],
-        package: 'nginx',
-        purge: true,
+    expect(tasksService.create).toHaveBeenCalledWith(
+      {
+        nodeId: 'node-1',
+        type: TASK_TYPES.PACKAGE_REMOVE,
+        payload: {
+          names: ['nginx'],
+          packages: ['nginx'],
+          package: 'nginx',
+          purge: true,
+        },
       },
-    });
+      undefined,
+    );
   });
 
   it('returns accepted response aliases id/status along with canonical taskId/taskStatus', async () => {

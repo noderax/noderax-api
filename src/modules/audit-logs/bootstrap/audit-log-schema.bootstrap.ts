@@ -8,6 +8,13 @@ export class AuditLogSchemaBootstrap implements OnModuleInit {
   constructor(private readonly dataSource: DataSource) {}
 
   async onModuleInit(): Promise<void> {
+    if (this.dataSource.options.synchronize) {
+      this.logger.debug(
+        'Skipping audit log schema bootstrap because TypeORM synchronize is enabled',
+      );
+      return;
+    }
+
     await this.dataSource.query(`
       CREATE EXTENSION IF NOT EXISTS pgcrypto
     `);

@@ -120,6 +120,48 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  async increment(
+    key: string,
+    ttlSeconds?: number,
+  ): Promise<number> {
+    if (!this.client) {
+      return 0;
+    }
+
+    await this.ensureConnected();
+    if (this.client.status !== 'ready') {
+      return 0;
+    }
+
+    const nextValue = await this.client.incr(key);
+    if (ttlSeconds && ttlSeconds > 0) {
+      await this.client.expire(key, ttlSeconds);
+    }
+
+    return nextValue;
+  }
+
+  async decrement(
+    key: string,
+    ttlSeconds?: number,
+  ): Promise<number> {
+    if (!this.client) {
+      return 0;
+    }
+
+    await this.ensureConnected();
+    if (this.client.status !== 'ready') {
+      return 0;
+    }
+
+    const nextValue = await this.client.decr(key);
+    if (ttlSeconds && ttlSeconds > 0) {
+      await this.client.expire(key, ttlSeconds);
+    }
+
+    return nextValue;
+  }
+
   async subscribe(
     channel: string,
     handler: RedisMessageHandler,

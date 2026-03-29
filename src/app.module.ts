@@ -24,6 +24,7 @@ import { PackagesModule } from './modules/packages/packages.module';
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { TasksModule } from './modules/tasks/tasks.module';
+import { TerminalSessionsModule } from './modules/terminal-sessions/terminal-sessions.module';
 import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
@@ -63,6 +64,7 @@ import { RedisModule } from './redis/redis.module';
     EventsModule,
     MetricsModule,
     TasksModule,
+    TerminalSessionsModule,
     AgentsModule,
   ],
   controllers: [AppController],

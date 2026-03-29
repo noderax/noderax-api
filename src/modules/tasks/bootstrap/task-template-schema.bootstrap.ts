@@ -8,6 +8,13 @@ export class TaskTemplateSchemaBootstrap implements OnModuleInit {
   constructor(private readonly dataSource: DataSource) {}
 
   async onModuleInit(): Promise<void> {
+    if (this.dataSource.options.synchronize) {
+      this.logger.debug(
+        'Skipping task template schema bootstrap because TypeORM synchronize is enabled',
+      );
+      return;
+    }
+
     await this.dataSource.query(`
       CREATE EXTENSION IF NOT EXISTS pgcrypto
     `);

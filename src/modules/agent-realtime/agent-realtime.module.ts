@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { MetricsModule } from '../metrics/metrics.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { TasksModule } from '../tasks/tasks.module';
+import { TerminalSessionsModule } from '../terminal-sessions/terminal-sessions.module';
 import { AgentRealtimeGateway } from './agent-realtime.gateway';
 import { AgentRealtimeService } from './agent-realtime.service';
 import { AgentTaskLifecycleEventEntity } from './entities/agent-task-lifecycle-event.entity';
@@ -13,6 +14,7 @@ import { AgentTaskLifecycleEventEntity } from './entities/agent-task-lifecycle-e
     NodesModule,
     MetricsModule,
     forwardRef(() => TasksModule),
+    forwardRef(() => TerminalSessionsModule),
   ],
   providers: [AgentRealtimeGateway, AgentRealtimeService],
   exports: [AgentRealtimeService],

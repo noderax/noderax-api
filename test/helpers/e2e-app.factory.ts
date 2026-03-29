@@ -25,6 +25,7 @@ import configuration from '../../src/config/configuration';
 import { validationSchema } from '../../src/config/env.validation';
 import { APP_CONFIG_KEY, appConfig } from '../../src/config';
 import { AgentsModule } from '../../src/modules/agents/agents.module';
+import { AuditLogEntity } from '../../src/modules/audit-logs/entities/audit-log.entity';
 import { AuthModule } from '../../src/modules/auth/auth.module';
 import { DiagnosticsModule } from '../../src/modules/diagnostics/diagnostics.module';
 import { EnrollmentEntity } from '../../src/modules/enrollments/entities/enrollment.entity';
@@ -42,6 +43,9 @@ import { TaskLogEntity } from '../../src/modules/tasks/entities/task-log.entity'
 import { ScheduledTaskEntity } from '../../src/modules/tasks/entities/scheduled-task.entity';
 import { TaskEntity } from '../../src/modules/tasks/entities/task.entity';
 import { TasksModule } from '../../src/modules/tasks/tasks.module';
+import { TerminalSessionsModule } from '../../src/modules/terminal-sessions/terminal-sessions.module';
+import { TerminalSessionChunkEntity } from '../../src/modules/terminal-sessions/entities/terminal-session-chunk.entity';
+import { TerminalSessionEntity } from '../../src/modules/terminal-sessions/entities/terminal-session.entity';
 import { PasswordResetTokenEntity } from '../../src/modules/users/entities/password-reset-token.entity';
 import { UserInvitationEntity } from '../../src/modules/users/entities/user-invitation.entity';
 import { UserEntity } from '../../src/modules/users/entities/user.entity';
@@ -64,6 +68,9 @@ const TEST_ENTITIES = [
   TaskEntity,
   TaskLogEntity,
   ScheduledTaskEntity,
+  TerminalSessionEntity,
+  TerminalSessionChunkEntity,
+  AuditLogEntity,
   WorkspaceEntity,
   WorkspaceMembershipEntity,
   TeamMembershipEntity,
@@ -155,6 +162,7 @@ export async function createE2eApp(): Promise<INestApplication> {
       EventsModule,
       MetricsModule,
       TasksModule,
+      TerminalSessionsModule,
       AgentsModule,
     ],
     controllers: [AppController],

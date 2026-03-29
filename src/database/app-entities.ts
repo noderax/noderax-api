@@ -10,6 +10,8 @@ import { ScheduledTaskEntity } from '../modules/tasks/entities/scheduled-task.en
 import { TaskLogEntity } from '../modules/tasks/entities/task-log.entity';
 import { TaskEntity } from '../modules/tasks/entities/task.entity';
 import { TaskTemplateEntity } from '../modules/tasks/entities/task-template.entity';
+import { TerminalSessionChunkEntity } from '../modules/terminal-sessions/entities/terminal-session-chunk.entity';
+import { TerminalSessionEntity } from '../modules/terminal-sessions/entities/terminal-session.entity';
 import { PasswordResetTokenEntity } from '../modules/users/entities/password-reset-token.entity';
 import { UserInvitationEntity } from '../modules/users/entities/user-invitation.entity';
 import { UserEntity } from '../modules/users/entities/user.entity';
@@ -31,6 +33,8 @@ export const APP_ENTITIES = [
   TaskEntity,
   TaskLogEntity,
   TaskTemplateEntity,
+  TerminalSessionEntity,
+  TerminalSessionChunkEntity,
   ScheduledTaskEntity,
   EventEntity,
   MetricEntity,

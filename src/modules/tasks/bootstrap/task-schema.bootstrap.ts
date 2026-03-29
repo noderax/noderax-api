@@ -8,6 +8,13 @@ export class TaskSchemaBootstrap implements OnModuleInit {
   constructor(private readonly dataSource: DataSource) {}
 
   async onModuleInit(): Promise<void> {
+    if (this.dataSource.options.synchronize) {
+      this.logger.debug(
+        'Skipping task schema bootstrap because TypeORM synchronize is enabled',
+      );
+      return;
+    }
+
     if (!(await this.hasTable('tasks'))) {
       this.logger.warn(
         'Skipping task schema bootstrap because the "tasks" table does not exist',
