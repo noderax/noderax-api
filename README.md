@@ -70,7 +70,7 @@ src/
   - teams are composed from workspace members only
   - inactive users cannot log in or receive new assignments
 - Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
-- Node inventory with online/offline detection, maintenance mode, team ownership, and fleet telemetry
+- Node inventory with online/offline detection, maintenance mode, team ownership, and version telemetry
 - Agent enrollment with approval flow plus legacy registration compatibility
 - Metrics ingestion and node telemetry persistence
 - Task creation, team-targeted dispatch, batch dispatch, long-poll task claiming, lifecycle updates, and logs
@@ -222,7 +222,7 @@ Key rules:
 - Bootstrap now repairs orphaned team memberships that no longer have a matching workspace membership.
 - Teams are no longer organizational only. Nodes can be assigned to teams, and tasks can be broadcast to every eligible node currently owned by a team.
 
-## Audit, Fleet, And Maintenance
+## Audit And Maintenance
 
 - `GET /audit-logs` exposes platform-wide append-only audit entries for platform admins.
 - `GET /workspaces/:workspaceId/audit-logs` exposes workspace-scoped audit entries for workspace owners/admins.
@@ -230,11 +230,6 @@ Key rules:
   - `POST /nodes/:id/maintenance/enable`
   - `POST /nodes/:id/maintenance/disable`
   - workspace-scoped equivalents under `/workspaces/:workspaceId/nodes/:id/*`
-- Fleet is now an inventory and telemetry surface only:
-  - `GET /fleet/nodes`
-  - includes `agentVersion`, `platformVersion`, `kernelVersion`, maintenance state, and team ownership
-  - staged rollout command orchestration is intentionally not part of the current API surface
-
 ## Security Model
 
 - `POST /auth/login` may return either a normal session token or `requiresMfa=true` with a short-lived challenge token.
@@ -311,7 +306,6 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 - `GET /platform-settings`
 - `PATCH /platform-settings`
 - `POST /platform-settings/validate/smtp`
-- `GET /fleet/nodes`
 - `POST /auth/mfa/setup/initiate`
 - `POST /auth/mfa/setup/confirm`
 - `POST /auth/mfa/recovery/regenerate`

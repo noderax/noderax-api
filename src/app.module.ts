@@ -17,7 +17,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { DiagnosticsModule } from './modules/diagnostics/diagnostics.module';
 import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
 import { EventsModule } from './modules/events/events.module';
-import { FleetModule } from './modules/fleet/fleet.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { NodesModule } from './modules/nodes/nodes.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -62,7 +61,6 @@ import { RedisModule } from './redis/redis.module';
     PackagesModule,
     PlatformSettingsModule,
     EventsModule,
-    FleetModule,
     MetricsModule,
     TasksModule,
     AgentsModule,
