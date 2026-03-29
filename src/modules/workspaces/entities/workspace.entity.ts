@@ -58,6 +58,30 @@ export class WorkspaceEntity {
   @Column({ type: 'boolean', default: false })
   isDefault: boolean;
 
+  @ApiProperty({
+    example: false,
+  })
+  @Column({ type: 'boolean', default: false })
+  automationEmailEnabled: boolean;
+
+  @ApiProperty({
+    example: false,
+  })
+  @Column({ type: 'boolean', default: false })
+  automationTelegramEnabled: boolean;
+
+  @ApiPropertyOptional({
+    example: '123456789:ABCDefghIJKLmnopQRSTuvwxyz',
+  })
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  automationTelegramBotToken: string | null;
+
+  @ApiPropertyOptional({
+    example: '-1001234567890',
+  })
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  automationTelegramChatId: string | null;
+
   @ApiPropertyOptional({
     enum: WorkspaceMembershipRole,
     enumName: 'WorkspaceMembershipRole',

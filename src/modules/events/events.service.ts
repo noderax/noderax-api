@@ -68,9 +68,7 @@ export class EventsService {
       severity: savedEvent.severity,
     });
 
-    if (savedEvent.severity === EventSeverity.CRITICAL) {
-      await this.notificationsService.notifyEvent(savedEvent);
-    }
+    await this.notificationsService.notifyEvent(savedEvent);
 
     return savedEvent;
   }

@@ -9,6 +9,7 @@ import { UserEntity } from '../users/entities/user.entity';
 import { UserRole } from '../users/entities/user-role.enum';
 import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-membership-role.enum';
 import { WorkspaceMembershipEntity } from '../workspaces/entities/workspace-membership.entity';
+import { WorkspaceEntity } from '../workspaces/entities/workspace.entity';
 import { MailerService } from './mailer.service';
 
 const WORKSPACE_ADMIN_ROLES = [
@@ -32,6 +33,8 @@ export class NotificationsService {
     private readonly usersRepository: Repository<UserEntity>,
     @InjectRepository(WorkspaceMembershipEntity)
     private readonly workspaceMembershipsRepository: Repository<WorkspaceMembershipEntity>,
+    @InjectRepository(WorkspaceEntity)
+    private readonly workspacesRepository: Repository<WorkspaceEntity>,
     private readonly mailerService: MailerService,
     private readonly configService: ConfigService,
   ) {}
@@ -110,45 +113,114 @@ export class NotificationsService {
 
   async notifyEvent(event: EventEntity) {
     try {
-      const recipients = await this.findCriticalEventRecipients(
-        event.workspaceId,
-      );
+      const workspace = await this.workspacesRepository.findOne({
+        where: { id: event.workspaceId },
+      });
 
-      if (!recipients.length) {
+      if (!workspace) {
+        this.logger.warn(
+          `Could not find workspace ${event.workspaceId} for event notification`,
+        );
         return;
       }
 
-      const email = this.buildStyledEmail({
-        eyebrow: 'Critical event',
-        title: `Critical event detected: ${event.type}`,
-        paragraphs: [
-          'Noderax recorded a critical event that may need operator attention.',
-          event.message,
-        ],
-        ctaLabel: 'Open Noderax',
-        ctaUrl: this.buildFrontendUrl(''),
-        tone: this.resolveTone(event.severity),
-        details: [
-          { label: 'Severity', value: event.severity.toUpperCase() },
-          { label: 'Workspace', value: event.workspaceId },
-          { label: 'Node', value: event.nodeId ?? 'n/a' },
-          {
-            label: 'Detected at',
-            value: this.formatTimestamp(event.createdAt),
-          },
-        ],
-      });
+      // 1. Telegram Automation
+      if (
+        workspace.automationTelegramEnabled &&
+        workspace.automationTelegramBotToken &&
+        workspace.automationTelegramChatId
+      ) {
+        await this.sendTelegramMessage(workspace, event);
+      }
 
-      await this.mailerService.sendMail({
-        to: recipients,
-        subject: `[Noderax] Critical event: ${event.type}`,
-        text: email.text,
-        html: email.html,
-      });
+      // 2. Email Automation
+      if (workspace.automationEmailEnabled || event.severity === EventSeverity.CRITICAL) {
+        const recipients = await this.findCriticalEventRecipients(
+          event.workspaceId,
+        );
+
+        if (recipients.length > 0) {
+          const email = this.buildStyledEmail({
+            eyebrow: 'Event notification',
+            title: `Event detected: ${event.type}`,
+            paragraphs: [
+              `Noderax recorded an event in workspace "${workspace.name}" that may need attention.`,
+              event.message,
+            ],
+            ctaLabel: 'Open Noderax',
+            ctaUrl: this.buildFrontendUrl(''),
+            tone: this.resolveTone(event.severity),
+            details: [
+              { label: 'Severity', value: event.severity.toUpperCase() },
+              { label: 'Workspace', value: workspace.name },
+              { label: 'Node', value: event.nodeId ?? 'n/a' },
+              {
+                label: 'Detected at',
+                value: this.formatTimestamp(event.createdAt),
+              },
+            ],
+          });
+
+          await this.mailerService.sendMail({
+            to: recipients,
+            subject: `[Noderax] ${event.severity.toUpperCase()} event: ${event.type}`,
+            text: email.text,
+            html: email.html,
+          });
+        }
+      }
     } catch (error) {
       this.logger.error(
-        'Failed to deliver critical event notification',
+        'Failed to deliver event notification',
         error instanceof Error ? (error.stack ?? error.message) : String(error),
+      );
+    }
+  }
+
+  private async sendTelegramMessage(
+    workspace: WorkspaceEntity,
+    event: EventEntity,
+  ) {
+    try {
+      const severityEmoji =
+        event.severity === EventSeverity.CRITICAL
+          ? '🔴'
+          : event.severity === EventSeverity.WARNING
+            ? '🟠'
+            : '🔵';
+
+      const text =
+        `<b>${severityEmoji} Noderax Event</b>\n\n` +
+        `<b>Type:</b> ${this.escapeHtml(event.type)}\n` +
+        `<b>Workspace:</b> ${this.escapeHtml(workspace.name)}\n` +
+        `<b>Severity:</b> ${this.escapeHtml(event.severity.toUpperCase())}\n` +
+        `<b>Node:</b> ${this.escapeHtml(event.nodeId ?? 'n/a')}\n\n` +
+        `<code>${this.escapeHtmlWithBreaks(event.message)}</code>\n\n` +
+        `<a href="${this.buildFrontendUrl('')}">Open Dashboard</a>`;
+
+      const response = await fetch(
+        `https://api.telegram.org/bot${workspace.automationTelegramBotToken}/sendMessage`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: workspace.automationTelegramChatId,
+            text,
+            parse_mode: 'HTML',
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+        this.logger.error(
+          `Telegram API error for workspace ${workspace.id}: ${response.status} ${body}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to send Telegram message for workspace ${workspace.id}`,
+        error instanceof Error ? error.message : String(error),
       );
     }
   }

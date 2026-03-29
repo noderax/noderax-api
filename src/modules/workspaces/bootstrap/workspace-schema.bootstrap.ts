@@ -82,7 +82,11 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
 
     await this.dataSource.query(`
       ALTER TABLE "workspaces"
-      ADD COLUMN IF NOT EXISTS "isDefault" boolean NOT NULL DEFAULT false
+      ADD COLUMN IF NOT EXISTS "isDefault" boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "automationEmailEnabled" boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "automationTelegramEnabled" boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "automationTelegramBotToken" varchar(255) NULL,
+      ADD COLUMN IF NOT EXISTS "automationTelegramChatId" varchar(255) NULL
     `);
 
     await this.dataSource.query(`

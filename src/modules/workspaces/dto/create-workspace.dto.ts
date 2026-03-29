@@ -46,4 +46,32 @@ export class CreateWorkspaceDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  automationEmailEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  automationTelegramEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    example: '123456789:ABCDefghIJKLmnopQRSTuvwxyz',
+  })
+  @IsOptional()
+  @IsString()
+  automationTelegramBotToken?: string;
+
+  @ApiPropertyOptional({
+    example: '-1001234567890',
+  })
+  @IsOptional()
+  @IsString()
+  automationTelegramChatId?: string;
 }

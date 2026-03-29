@@ -192,6 +192,10 @@ export class WorkspacesService {
       createdByUserId: actor.id,
       isArchived: dto.isArchived ?? false,
       isDefault: false,
+      automationEmailEnabled: dto.automationEmailEnabled ?? false,
+      automationTelegramEnabled: dto.automationTelegramEnabled ?? false,
+      automationTelegramBotToken: dto.automationTelegramBotToken ?? null,
+      automationTelegramChatId: dto.automationTelegramChatId ?? null,
     });
     const saved = await this.workspacesRepository.save(workspace);
 
@@ -306,6 +310,22 @@ export class WorkspacesService {
     if (dto.isArchived !== undefined) {
       workspace.isArchived = dto.isArchived;
     }
+ 
+     if (dto.automationEmailEnabled !== undefined) {
+       workspace.automationEmailEnabled = dto.automationEmailEnabled;
+     }
+ 
+     if (dto.automationTelegramEnabled !== undefined) {
+       workspace.automationTelegramEnabled = dto.automationTelegramEnabled;
+     }
+ 
+     if (dto.automationTelegramBotToken !== undefined) {
+       workspace.automationTelegramBotToken = dto.automationTelegramBotToken;
+     }
+ 
+     if (dto.automationTelegramChatId !== undefined) {
+       workspace.automationTelegramChatId = dto.automationTelegramChatId;
+     }
 
     const saved = await this.workspacesRepository.save(workspace);
 
