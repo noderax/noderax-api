@@ -390,12 +390,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('Terminal session is not open for input.');
     }
 
-    const chunk = await this.appendChunk(session, {
+    await this.appendChunk(session, {
       direction: TerminalTranscriptDirection.STDIN,
       payload,
     });
-
-    await this.publishOutput(session.id, chunk);
 
     const dispatched = await this.agentRealtimeService.sendTerminalInput(
       session.nodeId,
@@ -765,26 +763,86 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       sourceTimestamp?: Date;
     },
   ): Promise<TerminalSessionChunkEntity> {
-    const chunk = this.chunksRepository.create({
-      sessionId: session.id,
-      direction: input.direction,
-      encoding: 'base64',
-      payload: input.payload,
-      seq: (session.lastChunkSeq ?? 0) + 1,
-      sourceTimestamp: input.sourceTimestamp ?? null,
-    });
+    const payloadBytes = Buffer.from(input.payload, 'base64').byteLength;
 
-    const savedChunk = await this.chunksRepository.save(chunk);
-    session.lastChunkSeq = savedChunk.seq;
-    session.chunkCount = (session.chunkCount ?? 0) + 1;
-    session.transcriptBytes = String(
-      this.readTranscriptBytes(session) +
-        Buffer.from(input.payload, 'base64').byteLength,
+    const transactionResult = await this.sessionsRepository.manager.transaction(
+      async (entityManager) => {
+        const updateResult = await entityManager
+          .createQueryBuilder()
+          .update(TerminalSessionEntity)
+          .set({
+            lastChunkSeq: () => '"lastChunkSeq" + 1',
+            chunkCount: () => '"chunkCount" + 1',
+            transcriptBytes: () => `"transcriptBytes" + ${payloadBytes}`,
+            updatedAt: () => 'CURRENT_TIMESTAMP',
+          })
+          .where('id = :sessionId', { sessionId: session.id })
+          .returning([
+            'lastChunkSeq',
+            'chunkCount',
+            'transcriptBytes',
+            'updatedAt',
+          ])
+          .execute();
+
+        const rawUpdateResult = Array.isArray(updateResult.raw)
+          ? updateResult.raw[0]
+          : updateResult.raw;
+
+        if (!rawUpdateResult || typeof rawUpdateResult !== 'object') {
+          throw new Error(
+            `Terminal session chunk allocation failed for session ${session.id}.`,
+          );
+        }
+
+        const nextSeq = this.readNumericReturningValue(rawUpdateResult, [
+          'lastChunkSeq',
+          'lastchunkseq',
+        ]);
+        const nextChunkCount = this.readNumericReturningValue(rawUpdateResult, [
+          'chunkCount',
+          'chunkcount',
+        ]);
+        const nextTranscriptBytes = this.readNumericReturningValue(
+          rawUpdateResult,
+          ['transcriptBytes', 'transcriptbytes'],
+        );
+        const nextUpdatedAt =
+          this.readDateReturningValue(rawUpdateResult, [
+            'updatedAt',
+            'updatedat',
+          ]) ?? new Date();
+
+        const chunkRepository = entityManager.getRepository(
+          TerminalSessionChunkEntity,
+        );
+        const chunk = chunkRepository.create({
+          sessionId: session.id,
+          direction: input.direction,
+          encoding: 'base64',
+          payload: input.payload,
+          seq: nextSeq,
+          sourceTimestamp: input.sourceTimestamp ?? null,
+        });
+
+        const savedChunk = await chunkRepository.save(chunk);
+
+        return {
+          chunk: savedChunk,
+          lastChunkSeq: nextSeq,
+          chunkCount: nextChunkCount,
+          transcriptBytes: nextTranscriptBytes,
+          updatedAt: nextUpdatedAt,
+        };
+      },
     );
-    session.updatedAt = new Date();
-    await this.sessionsRepository.save(session);
 
-    return savedChunk;
+    session.lastChunkSeq = transactionResult.lastChunkSeq;
+    session.chunkCount = transactionResult.chunkCount;
+    session.transcriptBytes = String(transactionResult.transcriptBytes);
+    session.updatedAt = transactionResult.updatedAt;
+
+    return transactionResult.chunk;
   }
 
   private readTranscriptBytes(session: TerminalSessionEntity): number {
@@ -1072,6 +1130,44 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
 
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  private readNumericReturningValue(
+    raw: Record<string, unknown>,
+    keys: string[],
+  ): number {
+    for (const key of keys) {
+      const value = raw[key];
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    throw new Error(
+      `Unable to read numeric returning value from terminal session chunk update (${keys.join(', ')}).`,
+    );
+  }
+
+  private readDateReturningValue(
+    raw: Record<string, unknown>,
+    keys: string[],
+  ): Date | null {
+    for (const key of keys) {
+      const value = raw[key];
+      if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value;
+      }
+
+      if (typeof value === 'string' || typeof value === 'number') {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      }
+    }
+
+    return null;
   }
 
   private isTerminal(status: TerminalSessionStatus): boolean {
