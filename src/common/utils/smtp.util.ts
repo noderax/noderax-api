@@ -8,6 +8,10 @@ export interface SmtpConnectionSettings {
   smtpPassword: string;
 }
 
+const SMTP_CONNECTION_TIMEOUT_MS = 5_000;
+const SMTP_GREETING_TIMEOUT_MS = 5_000;
+const SMTP_SOCKET_TIMEOUT_MS = 10_000;
+
 export const createSmtpTransporter = (
   settings: SmtpConnectionSettings,
 ): Transporter =>
@@ -21,6 +25,9 @@ export const createSmtpTransporter = (
           pass: settings.smtpPassword,
         }
       : undefined,
+    connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+    greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
+    socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
   });
 
 export const verifySmtpConnection = async (

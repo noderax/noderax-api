@@ -31,6 +31,20 @@ describe('smtp.util', () => {
 
     expect(verify).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(1);
+    expect(createTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: 'smtp.resend.com',
+        port: 587,
+        secure: false,
+        auth: {
+          user: 'resend',
+          pass: 'secret',
+        },
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 10000,
+      }),
+    );
   });
 
   it('rejects blank SMTP host before verifying', async () => {

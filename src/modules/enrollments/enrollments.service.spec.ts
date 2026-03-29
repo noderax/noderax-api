@@ -158,4 +158,47 @@ describe('EnrollmentsService', () => {
       }),
     );
   });
+
+  it('initiates enrollment without waiting for notification delivery', async () => {
+    enrollmentTokensService.issueEnrollmentToken.mockResolvedValue({
+      token: 'raw-token',
+      tokenHash: 'token-hash',
+      tokenLookupHash: 'lookup-hash',
+    });
+
+    let resolveNotification: (() => void) | null = null;
+    notificationsService.notifyEnrollmentInitiated.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveNotification = resolve;
+        }),
+    );
+
+    const result = await Promise.race([
+      service.initiate({
+        email: 'admin@example.com',
+        hostname: 'srv-enroll-01',
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('initiate did not resolve in time'));
+        }, 50);
+      }),
+    ]);
+
+    resolveNotification?.();
+
+    expect(result).toEqual({
+      token: 'raw-token',
+      expiresAt: expect.any(Date),
+    });
+    expect(enrollmentsRepository.save).toHaveBeenCalled();
+    expect(notificationsService.notifyEnrollmentInitiated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'admin@example.com',
+        hostname: 'srv-enroll-01',
+        hasKnownUser: false,
+      }),
+    );
+  });
 });

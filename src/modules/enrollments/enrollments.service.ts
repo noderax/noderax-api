@@ -64,7 +64,7 @@ export class EnrollmentsService {
 
     await this.enrollmentsRepository.save(enrollment);
 
-    await this.notificationsService.notifyEnrollmentInitiated({
+    void this.notificationsService.notifyEnrollmentInitiated({
       email,
       hostname,
       expiresAt,
