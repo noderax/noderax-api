@@ -10,6 +10,7 @@ import { UserRole } from '../users/entities/user-role.enum';
 import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-membership-role.enum';
 import { WorkspaceMembershipEntity } from '../workspaces/entities/workspace-membership.entity';
 import { WorkspaceEntity } from '../workspaces/entities/workspace.entity';
+import { NodeEntity } from '../nodes/entities/node.entity';
 import { MailerService } from './mailer.service';
 
 const WORKSPACE_ADMIN_ROLES = [
@@ -35,6 +36,8 @@ export class NotificationsService {
     private readonly workspaceMembershipsRepository: Repository<WorkspaceMembershipEntity>,
     @InjectRepository(WorkspaceEntity)
     private readonly workspacesRepository: Repository<WorkspaceEntity>,
+    @InjectRepository(NodeEntity)
+    private readonly nodesRepository: Repository<NodeEntity>,
     private readonly mailerService: MailerService,
     private readonly configService: ConfigService,
   ) {}
@@ -131,7 +134,10 @@ export class NotificationsService {
         workspace.automationTelegramChatId &&
         workspace.automationTelegramLevels.includes(event.severity)
       ) {
-        await this.sendTelegramMessage(workspace, event);
+        const node = event.nodeId
+          ? await this.nodesRepository.findOne({ where: { id: event.nodeId } })
+          : null;
+        await this.sendTelegramMessage(workspace, event, node);
       }
 
       // 2. Email Automation
@@ -141,7 +147,7 @@ export class NotificationsService {
           workspace.automationEmailLevels.includes(event.severity));
 
       if (shouldSendEmail) {
-        const [platformAdmins, workspaceAdminsWithPreference, allWorkspaceAdmins] =
+        const [platformAdmins, workspaceAdminsWithPreference, allWorkspaceAdmins, node] =
           await Promise.all([
             this.usersRepository.find({
               where: {
@@ -152,6 +158,9 @@ export class NotificationsService {
             }),
             this.findWorkspaceAdmins(event.workspaceId, "criticalEventEmailsEnabled"),
             this.findWorkspaceAdmins(event.workspaceId),
+            event.nodeId
+              ? this.nodesRepository.findOne({ where: { id: event.nodeId } })
+              : null,
           ]);
 
         const recipientEmails: string[] = [];
@@ -167,6 +176,7 @@ export class NotificationsService {
         const uniqueRecipientsList = Array.from(new Set(recipientEmails));
 
         if (uniqueRecipientsList.length > 0) {
+          const nodeDisplay = node ? `${node.name} (${node.id})` : (event.nodeId ?? 'n/a');
           const email = this.buildStyledEmail({
             eyebrow: 'Event notification',
             title: `Event detected: ${event.type}`,
@@ -180,7 +190,7 @@ export class NotificationsService {
             details: [
               { label: 'Severity', value: event.severity.toUpperCase() },
               { label: 'Workspace', value: workspace.name },
-              { label: 'Node', value: event.nodeId ?? 'n/a' },
+              { label: 'Node', value: nodeDisplay },
               {
                 label: 'Detected at',
                 value: this.formatTimestamp(event.createdAt),
@@ -207,6 +217,7 @@ export class NotificationsService {
   private async sendTelegramMessage(
     workspace: WorkspaceEntity,
     event: EventEntity,
+    node?: NodeEntity | null,
   ) {
     try {
       const severityEmoji =
@@ -217,12 +228,13 @@ export class NotificationsService {
             : '🔵';
 
       const dashboardUrl = this.buildFrontendUrl('');
+      const nodeDisplay = node ? `${node.name} (${node.id})` : (event.nodeId ?? 'n/a');
       const text =
         `<b>${severityEmoji} Noderax Event</b>\n\n` +
         `<b>Type:</b> ${this.escapeTelegramHtml(event.type)}\n` +
         `<b>Workspace:</b> ${this.escapeTelegramHtml(workspace.name)}\n` +
         `<b>Severity:</b> ${this.escapeTelegramHtml(event.severity.toUpperCase())}\n` +
-        `<b>Node:</b> ${this.escapeTelegramHtml(event.nodeId ?? 'n/a')}\n\n` +
+        `<b>Node:</b> ${this.escapeTelegramHtml(nodeDisplay)}\n\n` +
         `<code>${this.escapeTelegramHtml(event.message)}</code>\n\n` +
         `<a href="${this.escapeTelegramHtml(dashboardUrl)}">Open Dashboard</a>`;
 
