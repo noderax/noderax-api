@@ -158,7 +158,18 @@ export class WorkspaceNodesController {
   @ApiOperation({
     summary: 'Delete a node in a workspace',
   })
-  delete(@Param('workspaceId') workspaceId: string, @Param('id') id: string) {
-    return this.nodesService.delete(id, workspaceId);
+  delete(
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.delete(id, workspaceId, actor, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 }

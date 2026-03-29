@@ -104,7 +104,11 @@ export class TerminalGateway
         },
       };
     } catch (error) {
-      return this.handleWsError(client, bodyOrUndefined(payload)?.sessionId, error);
+      return this.handleWsError(
+        client,
+        bodyOrUndefined(payload)?.sessionId,
+        error,
+      );
     }
   }
 
@@ -127,7 +131,11 @@ export class TerminalGateway
 
       return { ok: true, sessionId: body.sessionId };
     } catch (error) {
-      return this.handleWsError(client, bodyOrUndefined(payload)?.sessionId, error);
+      return this.handleWsError(
+        client,
+        bodyOrUndefined(payload)?.sessionId,
+        error,
+      );
     }
   }
 
@@ -156,7 +164,11 @@ export class TerminalGateway
         rows: session.rows,
       };
     } catch (error) {
-      return this.handleWsError(client, bodyOrUndefined(payload)?.sessionId, error);
+      return this.handleWsError(
+        client,
+        bodyOrUndefined(payload)?.sessionId,
+        error,
+      );
     }
   }
 
@@ -180,7 +192,11 @@ export class TerminalGateway
 
       return { ok: true, sessionId: session.id, status: session.status };
     } catch (error) {
-      return this.handleWsError(client, bodyOrUndefined(payload)?.sessionId, error);
+      return this.handleWsError(
+        client,
+        bodyOrUndefined(payload)?.sessionId,
+        error,
+      );
     }
   }
 
@@ -189,7 +205,8 @@ export class TerminalGateway
     next: (error?: Error) => void,
   ): Promise<void> {
     try {
-      const user = await this.terminalSocketAuthService.authenticateSocket(client);
+      const user =
+        await this.terminalSocketAuthService.authenticateSocket(client);
       (client as AuthenticatedSocket).data.user = user;
       next();
     } catch (error) {
@@ -228,7 +245,9 @@ export class TerminalGateway
   }
 }
 
-const bodyOrUndefined = (payload: unknown): { sessionId?: string } | undefined =>
+const bodyOrUndefined = (
+  payload: unknown,
+): { sessionId?: string } | undefined =>
   payload && typeof payload === 'object'
     ? (payload as { sessionId?: string })
     : undefined;

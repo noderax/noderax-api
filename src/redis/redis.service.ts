@@ -120,10 +120,7 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
-  async increment(
-    key: string,
-    ttlSeconds?: number,
-  ): Promise<number> {
+  async increment(key: string, ttlSeconds?: number): Promise<number> {
     if (!this.client) {
       return 0;
     }
@@ -141,10 +138,7 @@ export class RedisService implements OnModuleDestroy {
     return nextValue;
   }
 
-  async decrement(
-    key: string,
-    ttlSeconds?: number,
-  ): Promise<number> {
+  async decrement(key: string, ttlSeconds?: number): Promise<number> {
     if (!this.client) {
       return 0;
     }

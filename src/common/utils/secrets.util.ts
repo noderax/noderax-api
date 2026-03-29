@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from 'crypto';
 
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
@@ -6,10 +11,7 @@ const AUTH_TAG_LENGTH = 16;
 const deriveKey = (rawKey: string) =>
   createHash('sha256').update(rawKey).digest();
 
-export const encryptSecretValue = (
-  value: string,
-  rawKey: string,
-): string => {
+export const encryptSecretValue = (value: string, rawKey: string): string => {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv('aes-256-gcm', deriveKey(rawKey), iv);
   const encrypted = Buffer.concat([
@@ -33,8 +35,7 @@ export const decryptSecretValue = (
 
   decipher.setAuthTag(authTag);
 
-  return Buffer.concat([
-    decipher.update(encrypted),
-    decipher.final(),
-  ]).toString('utf8');
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString(
+    'utf8',
+  );
 };

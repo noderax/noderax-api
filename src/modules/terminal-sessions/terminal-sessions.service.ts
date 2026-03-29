@@ -12,9 +12,7 @@ import {
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  PUBSUB_CHANNELS,
-} from '../../common/constants/pubsub.constants';
+import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import {
   TERMINAL_ATTACH_GRACE_SECONDS,
   TERMINAL_EVENTS,
@@ -88,7 +86,8 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     this.unsubscribers.push(
       await this.redisService.subscribe(
         PUBSUB_CHANNELS.TERMINAL_SESSION_STATE,
-        (payload) => this.forwardPubsubEvent(TERMINAL_EVENTS.SESSION_STATE, payload),
+        (payload) =>
+          this.forwardPubsubEvent(TERMINAL_EVENTS.SESSION_STATE, payload),
       ),
       await this.redisService.subscribe(
         PUBSUB_CHANNELS.TERMINAL_SESSION_OUTPUT,
@@ -144,7 +143,9 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const hasRoute = await this.agentRealtimeService.hasActiveNodeRoute(node.id);
+    const hasRoute = await this.agentRealtimeService.hasActiveNodeRoute(
+      node.id,
+    );
     if (!hasRoute) {
       throw new ConflictException(
         `Node ${node.hostname} does not have an active agent realtime route.`,
@@ -211,7 +212,11 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     );
 
     if (!dispatched) {
-      return this.markFailed(session.id, workspaceId, 'Agent route was not available to start the terminal session.');
+      return this.markFailed(
+        session.id,
+        workspaceId,
+        'Agent route was not available to start the terminal session.',
+      );
     }
 
     return session;
@@ -257,7 +262,9 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       session.status !== TerminalSessionStatus.OPEN &&
       session.status !== TerminalSessionStatus.TERMINATING
     ) {
-      throw new GoneException('Transcript retention expired for this terminal session.');
+      throw new GoneException(
+        'Transcript retention expired for this terminal session.',
+      );
     }
 
     return this.chunksRepository.find({
@@ -276,7 +283,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     context?: RequestAuditContext,
   ): Promise<TerminalSessionEntity> {
     const session = await this.findSessionOrFail(sessionId, workspaceId);
-    await this.workspacesService.assertWorkspaceAdmin(session.workspaceId, user);
+    await this.workspacesService.assertWorkspaceAdmin(
+      session.workspaceId,
+      user,
+    );
     await this.workspacesService.assertWorkspaceWritable(session.workspaceId);
     if (this.isTerminal(session.status)) {
       return session;
@@ -341,7 +351,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const session = await this.findSessionOrFail(sessionId);
-    await this.workspacesService.assertWorkspaceAdmin(session.workspaceId, user);
+    await this.workspacesService.assertWorkspaceAdmin(
+      session.workspaceId,
+      user,
+    );
     this.assertCanControlSession(user, session);
     await this.workspacesService.assertWorkspaceWritable(session.workspaceId);
 
@@ -382,7 +395,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     user: AuthenticatedUser,
   ): Promise<void> {
     const session = await this.findSessionOrFail(sessionId);
-    await this.workspacesService.assertWorkspaceAdmin(session.workspaceId, user);
+    await this.workspacesService.assertWorkspaceAdmin(
+      session.workspaceId,
+      user,
+    );
     this.assertCanControlSession(user, session);
     await this.workspacesService.assertWorkspaceWritable(session.workspaceId);
 
@@ -419,7 +435,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     user: AuthenticatedUser,
   ): Promise<TerminalSessionEntity> {
     const session = await this.findSessionOrFail(sessionId);
-    await this.workspacesService.assertWorkspaceAdmin(session.workspaceId, user);
+    await this.workspacesService.assertWorkspaceAdmin(
+      session.workspaceId,
+      user,
+    );
     this.assertCanControlSession(user, session);
     await this.workspacesService.assertWorkspaceWritable(session.workspaceId);
 
@@ -553,7 +572,8 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       if (!dispatched) {
         await this.closeSession(session, {
           status: TerminalSessionStatus.FAILED,
-          reason: 'Transcript capacity exceeded and the terminal could not be stopped cleanly.',
+          reason:
+            'Transcript capacity exceeded and the terminal could not be stopped cleanly.',
           exitCode: null,
         });
       }
@@ -598,7 +618,13 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     message: string;
     timestamp?: string;
   }): Promise<TerminalSessionEntity> {
-    return this.markFailed(input.sessionId, undefined, input.message, input.nodeId, input.timestamp);
+    return this.markFailed(
+      input.sessionId,
+      undefined,
+      input.message,
+      input.nodeId,
+      input.timestamp,
+    );
   }
 
   @Cron('0 */10 * * * *')
@@ -719,7 +745,9 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (!session) {
-      throw new NotFoundException(`Terminal session ${sessionId} was not found.`);
+      throw new NotFoundException(
+        `Terminal session ${sessionId} was not found.`,
+      );
     }
 
     return session;
@@ -860,7 +888,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     };
 
     this.emitToRoom(session.id, TERMINAL_EVENTS.SESSION_STATE, payload);
-    await this.redisService.publish(PUBSUB_CHANNELS.TERMINAL_SESSION_STATE, payload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.TERMINAL_SESSION_STATE,
+      payload,
+    );
   }
 
   private async publishOutput(
@@ -874,7 +905,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     };
 
     this.emitToRoom(sessionId, TERMINAL_EVENTS.OUTPUT, payload);
-    await this.redisService.publish(PUBSUB_CHANNELS.TERMINAL_SESSION_OUTPUT, payload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.TERMINAL_SESSION_OUTPUT,
+      payload,
+    );
   }
 
   private async publishClosed(session: TerminalSessionEntity): Promise<void> {
@@ -885,7 +919,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     };
 
     this.emitToRoom(session.id, TERMINAL_EVENTS.CLOSED, payload);
-    await this.redisService.publish(PUBSUB_CHANNELS.TERMINAL_SESSION_CLOSED, payload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.TERMINAL_SESSION_CLOSED,
+      payload,
+    );
   }
 
   private async publishError(
@@ -899,13 +936,13 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     };
 
     this.emitToRoom(sessionId, TERMINAL_EVENTS.ERROR, payload);
-    await this.redisService.publish(PUBSUB_CHANNELS.TERMINAL_SESSION_ERROR, payload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.TERMINAL_SESSION_ERROR,
+      payload,
+    );
   }
 
-  private forwardPubsubEvent(
-    eventName: string,
-    payload: PubsubPayload,
-  ): void {
+  private forwardPubsubEvent(eventName: string, payload: PubsubPayload): void {
     if (payload.sourceInstanceId === this.redisService.getInstanceId()) {
       return;
     }
@@ -1060,8 +1097,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     if (!dispatched) {
       await this.closeSession(session, {
         status: TerminalSessionStatus.CLOSED,
-        reason:
-          `Session closed after the controller did not reattach within ${this.formatAttachGraceWindow()}.`,
+        reason: `Session closed after the controller did not reattach within ${this.formatAttachGraceWindow()}.`,
         exitCode: null,
       });
     }

@@ -16,7 +16,10 @@ import { TerminalSessionStatus } from './terminal-session-status.enum';
 import { TerminalSessionChunkEntity } from './terminal-session-chunk.entity';
 
 @Index('IDX_terminal_sessions_node_created_at', ['nodeId', 'createdAt'])
-@Index('IDX_terminal_sessions_workspace_created_at', ['workspaceId', 'createdAt'])
+@Index('IDX_terminal_sessions_workspace_created_at', [
+  'workspaceId',
+  'createdAt',
+])
 @Entity({ name: 'terminal_sessions' })
 export class TerminalSessionEntity {
   @ApiProperty({ format: 'uuid' })

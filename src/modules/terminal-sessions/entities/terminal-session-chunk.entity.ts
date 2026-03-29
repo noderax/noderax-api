@@ -14,7 +14,10 @@ import { TerminalSessionEntity } from './terminal-session.entity';
 @Index('IDX_terminal_session_chunks_session_seq', ['sessionId', 'seq'], {
   unique: true,
 })
-@Index('IDX_terminal_session_chunks_session_created_at', ['sessionId', 'createdAt'])
+@Index('IDX_terminal_session_chunks_session_created_at', [
+  'sessionId',
+  'createdAt',
+])
 @Entity({ name: 'terminal_session_chunks' })
 export class TerminalSessionChunkEntity {
   @ApiProperty({ format: 'uuid' })

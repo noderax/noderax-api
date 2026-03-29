@@ -277,15 +277,19 @@ export class ScheduledTasksService {
     try {
       const createdTaskIds: string[] = [];
       const targets = scheduledTask.targetTeamId
-        ? (await this.nodesService.listTeamOwnedNodes(
-            scheduledTask.workspaceId,
-            scheduledTask.targetTeamId,
-          )).filter((node) => !node.maintenanceMode)
-        : scheduledTask.nodeId
-          ? [await this.nodesService.findOneOrFail(
-              scheduledTask.nodeId,
+        ? (
+            await this.nodesService.listTeamOwnedNodes(
               scheduledTask.workspaceId,
-            )]
+              scheduledTask.targetTeamId,
+            )
+          ).filter((node) => !node.maintenanceMode)
+        : scheduledTask.nodeId
+          ? [
+              await this.nodesService.findOneOrFail(
+                scheduledTask.nodeId,
+                scheduledTask.workspaceId,
+              ),
+            ]
           : [];
 
       if (targets.length === 0) {
@@ -684,7 +688,10 @@ export class ScheduledTasksService {
     templateId?: string,
     context?: RequestAuditContext,
   ): Promise<ScheduledTaskEntity[]> {
-    const team = await this.workspacesService.findTeamOrFail(workspace.id, teamId);
+    const team = await this.workspacesService.findTeamOrFail(
+      workspace.id,
+      teamId,
+    );
     const template = templateId
       ? await this.resolveTemplateOrFail(templateId, workspace.id)
       : null;

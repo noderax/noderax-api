@@ -41,7 +41,9 @@ import { TerminalSessionsService } from './terminal-sessions.service';
 @UseGuards(WorkspaceMembershipGuard, WorkspaceRolesGuard)
 @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
 export class TerminalSessionsController {
-  constructor(private readonly terminalSessionsService: TerminalSessionsService) {}
+  constructor(
+    private readonly terminalSessionsService: TerminalSessionsService,
+  ) {}
 
   @Post('nodes/:nodeId/terminal-sessions')
   @ApiOperation({
@@ -106,7 +108,11 @@ export class TerminalSessionsController {
     @Param('sessionId') sessionId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.terminalSessionsService.getSession(workspaceId, sessionId, user);
+    return this.terminalSessionsService.getSession(
+      workspaceId,
+      sessionId,
+      user,
+    );
   }
 
   @Get('terminal-sessions/:sessionId/chunks')

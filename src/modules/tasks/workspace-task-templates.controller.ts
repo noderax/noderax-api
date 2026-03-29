@@ -29,10 +29,7 @@ import { UpdateTaskTemplateDto } from './dto/update-task-template.dto';
 import { TaskTemplateEntity } from './entities/task-template.entity';
 import { TaskTemplatesService } from './task-templates.service';
 
-const buildAuditContext = (
-  request: Request,
-  actor: AuthenticatedUser,
-) => ({
+const buildAuditContext = (request: Request, actor: AuthenticatedUser) => ({
   actorType: 'user' as const,
   actorUserId: actor.id,
   actorEmailSnapshot: actor.email,

@@ -14,7 +14,10 @@ import * as bcrypt from 'bcrypt';
 import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { JwtPayload } from '../../common/types/jwt-payload.type';
-import { decryptSecretValue, encryptSecretValue } from '../../common/utils/secrets.util';
+import {
+  decryptSecretValue,
+  encryptSecretValue,
+} from '../../common/utils/secrets.util';
 import {
   buildTotpOtpauthUrl,
   generateRecoveryCodes,
@@ -99,7 +102,8 @@ const OIDC_PRESETS: Record<
 > = {
   google: {
     issuer: 'https://accounts.google.com',
-    discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
+    discoveryUrl:
+      'https://accounts.google.com/.well-known/openid-configuration',
     scopes: [...OIDC_DEFAULT_SCOPES],
   },
   microsoft: {
@@ -604,7 +608,9 @@ export class AuthService {
     authorizationUrl.searchParams.set('redirect_uri', query.redirectUri);
     authorizationUrl.searchParams.set(
       'scope',
-      provider.scopes?.length ? provider.scopes.join(' ') : 'openid email profile',
+      provider.scopes?.length
+        ? provider.scopes.join(' ')
+        : 'openid email profile',
     );
     authorizationUrl.searchParams.set('state', state);
 
@@ -634,7 +640,9 @@ export class AuthService {
     const provider = await this.getOidcProviderBySlugOrFail(input.providerSlug);
 
     if (statePayload.providerId !== provider.id) {
-      throw new UnauthorizedException('OIDC state token does not match provider.');
+      throw new UnauthorizedException(
+        'OIDC state token does not match provider.',
+      );
     }
 
     const discovery = await this.fetchOidcDiscoveryDocument(
@@ -758,6 +766,19 @@ export class AuthService {
         AUTH_CONFIG_KEY,
       );
 
+    await this.auditLogsService.record({
+      scope: 'platform',
+      action: 'auth.login.success',
+      targetType: 'user',
+      targetId: user.id,
+      targetLabel: user.email,
+      context: {
+        actorType: 'user',
+        actorUserId: user.id,
+        actorEmailSnapshot: user.email,
+      },
+    });
+
     return {
       accessToken,
       expiresIn: authSettings.jwtExpiresIn,
@@ -792,10 +813,7 @@ export class AuthService {
       }
 
       const user = await this.loadUserWithMfa(payload.sub);
-      if (
-        !user.isActive ||
-        user.sessionVersion !== payload.sessionVersion
-      ) {
+      if (!user.isActive || user.sessionVersion !== payload.sessionVersion) {
         throw new UnauthorizedException('Invalid MFA challenge token.');
       }
 
@@ -807,7 +825,8 @@ export class AuthService {
 
   private async verifyOidcStateToken(token: string): Promise<OidcStatePayload> {
     try {
-      const payload = await this.jwtService.verifyAsync<OidcStatePayload>(token);
+      const payload =
+        await this.jwtService.verifyAsync<OidcStatePayload>(token);
 
       if (payload.type !== 'oidc_state') {
         throw new UnauthorizedException('Invalid OIDC state token.');
@@ -856,12 +875,14 @@ export class AuthService {
       issuer: (input.issuer || presetDefaults?.issuer || '').trim(),
       clientId: input.clientId.trim(),
       clientSecret: input.clientSecret?.trim() ?? '',
-      discoveryUrl:
-        (input.discoveryUrl || presetDefaults?.discoveryUrl || '').trim(),
-      scopes:
-        input.scopes?.length
-          ? input.scopes.map((scope) => scope.trim()).filter(Boolean)
-          : presetDefaults?.scopes ?? [...OIDC_DEFAULT_SCOPES],
+      discoveryUrl: (
+        input.discoveryUrl ||
+        presetDefaults?.discoveryUrl ||
+        ''
+      ).trim(),
+      scopes: input.scopes?.length
+        ? input.scopes.map((scope) => scope.trim()).filter(Boolean)
+        : (presetDefaults?.scopes ?? [...OIDC_DEFAULT_SCOPES]),
       enabled: input.enabled ?? true,
     };
   }
@@ -895,9 +916,7 @@ export class AuthService {
 
     const provider = await query.getOne();
     if (!provider) {
-      throw new NotFoundException(
-        `OIDC provider ${providerId} was not found.`,
-      );
+      throw new NotFoundException(`OIDC provider ${providerId} was not found.`);
     }
 
     return provider;
@@ -981,9 +1000,7 @@ export class AuthService {
         client_id: input.provider.clientId,
         ...(input.provider.clientSecretEncrypted
           ? {
-              client_secret: this.decrypt(
-                input.provider.clientSecretEncrypted,
-              ),
+              client_secret: this.decrypt(input.provider.clientSecretEncrypted),
             }
           : {}),
       }),
@@ -1015,7 +1032,10 @@ export class AuthService {
       }
     }
 
-    if (!input.discovery.userinfo_endpoint || !input.tokenResponse.access_token) {
+    if (
+      !input.discovery.userinfo_endpoint ||
+      !input.tokenResponse.access_token
+    ) {
       throw new ForbiddenException(
         'Identity provider response is missing profile information.',
       );
@@ -1080,7 +1100,10 @@ export class AuthService {
   }
 
   private normalizeRecoveryCode(value: string) {
-    return value.replace(/[^a-zA-Z0-9]/g, '').trim().toUpperCase();
+    return value
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .trim()
+      .toUpperCase();
   }
 
   private createTokenVerificationException(

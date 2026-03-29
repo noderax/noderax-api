@@ -172,7 +172,17 @@ export class NodesController {
   @ApiNotFoundResponse({
     description: 'Node not found.',
   })
-  delete(@Param('id') id: string) {
-    return this.nodesService.delete(id);
+  delete(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.delete(id, undefined, actor, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 }

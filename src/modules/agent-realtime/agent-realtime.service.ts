@@ -473,7 +473,11 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     return Boolean(route);
   }
 
-  private emitRawEvent(socketId: string, event: string, payload: Record<string, unknown>): boolean {
+  private emitRawEvent(
+    socketId: string,
+    event: string,
+    payload: Record<string, unknown>,
+  ): boolean {
     if (!this.socketEmitter) {
       return false;
     }
@@ -552,7 +556,11 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const delivered = this.socketEmitter(socketId, message.event, message.payload);
+    const delivered = this.socketEmitter(
+      socketId,
+      message.event,
+      message.payload,
+    );
 
     if (!delivered) {
       this.incrementCounter(

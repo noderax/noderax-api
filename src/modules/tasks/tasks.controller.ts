@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -11,6 +11,9 @@ import {
 } from '@nestjs/swagger';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { Request } from 'express';
 import { UserRole } from '../users/entities/user-role.enum';
 import { CreateBatchTaskDto } from './dto/create-batch-task.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
@@ -44,8 +47,18 @@ export class TasksController {
   @ApiForbiddenResponse({
     description: 'Insufficient permissions.',
   })
-  create(@Body() createTaskDto: CreateTaskDto) {
-    return this.tasksService.create(createTaskDto);
+  create(
+    @Body() createTaskDto: CreateTaskDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.tasksService.create(createTaskDto, undefined, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Post('batch')
@@ -63,8 +76,18 @@ export class TasksController {
   @ApiForbiddenResponse({
     description: 'Insufficient permissions.',
   })
-  createBatch(@Body() createBatchTaskDto: CreateBatchTaskDto) {
-    return this.tasksService.createBatch(createBatchTaskDto);
+  createBatch(
+    @Body() createBatchTaskDto: CreateBatchTaskDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.tasksService.createBatch(createBatchTaskDto, undefined, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Get()

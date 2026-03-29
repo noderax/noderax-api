@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -10,6 +10,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import configuration from './config/configuration';
 import { validationSchema } from './config/env.validation';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { getTypeOrmConfig } from './database/typeorm.config';
 import { AgentRealtimeModule } from './modules/agent-realtime/agent-realtime.module';
 import { AgentsModule } from './modules/agents/agents.module';
@@ -84,4 +85,8 @@ import { RedisModule } from './redis/redis.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}

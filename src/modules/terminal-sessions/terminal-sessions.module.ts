@@ -16,7 +16,10 @@ import { TerminalSessionSchemaBootstrap } from './bootstrap/terminal-session-sch
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TerminalSessionEntity, TerminalSessionChunkEntity]),
+    TypeOrmModule.forFeature([
+      TerminalSessionEntity,
+      TerminalSessionChunkEntity,
+    ]),
     AuthModule,
     AuditLogsModule,
     NodesModule,

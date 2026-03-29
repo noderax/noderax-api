@@ -89,19 +89,25 @@ export class TasksService {
   async create(
     createTaskDto: CreateTaskDto,
     workspaceId?: string,
+    context?: import('../../common/types/request-audit-context.type').RequestAuditContext,
   ): Promise<TaskEntity> {
-    return this.queueTask({
-      nodeId: createTaskDto.nodeId,
-      type: createTaskDto.type,
-      payload: createTaskDto.payload ?? {},
-      workspaceId,
-      templateId: createTaskDto.templateId,
-    });
+    return this.queueTask(
+      {
+        nodeId: createTaskDto.nodeId,
+        type: createTaskDto.type,
+        payload: createTaskDto.payload ?? {},
+        workspaceId,
+        templateId: createTaskDto.templateId,
+      },
+      undefined,
+      context,
+    );
   }
 
   async createBatch(
     createBatchTaskDto: CreateBatchTaskDto,
     workspaceId?: string,
+    context?: import('../../common/types/request-audit-context.type').RequestAuditContext,
   ): Promise<TaskEntity[]> {
     const nodeIds = this.normalizeNodeIds(createBatchTaskDto.nodeIds);
     const nodeLookup = await this.loadNodeLookup(nodeIds, workspaceId);
@@ -124,6 +130,7 @@ export class TasksService {
             templateId: createBatchTaskDto.templateId,
           },
           node,
+          context,
         ),
       );
     }
@@ -159,13 +166,16 @@ export class TasksService {
     });
   }
 
-  async createForTeam(input: {
-    workspaceId: string;
-    teamId: string;
-    type: string;
-    payload: Record<string, unknown>;
-    templateId?: string;
-  }): Promise<TaskEntity[]> {
+  async createForTeam(
+    input: {
+      workspaceId: string;
+      teamId: string;
+      type: string;
+      payload: Record<string, unknown>;
+      templateId?: string;
+    },
+    context?: import('../../common/types/request-audit-context.type').RequestAuditContext,
+  ): Promise<TaskEntity[]> {
     const workspace = await this.workspacesService.assertWorkspaceWritable(
       input.workspaceId,
     );
@@ -176,10 +186,9 @@ export class TasksService {
     const template = input.templateId
       ? await this.resolveTemplateOrFail(input.templateId, workspace.id)
       : null;
-    const nodes = (await this.nodesService.listTeamOwnedNodes(
-      workspace.id,
-      team.id,
-    )).filter((node) => !node.maintenanceMode);
+    const nodes = (
+      await this.nodesService.listTeamOwnedNodes(workspace.id, team.id)
+    ).filter((node) => !node.maintenanceMode);
 
     if (nodes.length === 0) {
       throw new BadRequestException(
@@ -212,6 +221,7 @@ export class TasksService {
             templateName: template?.name ?? null,
           },
           node,
+          context,
         ),
       );
     }
@@ -228,6 +238,7 @@ export class TasksService {
         taskCount: tasks.length,
         taskIds: tasks.map((task) => task.id),
       },
+      context,
     });
 
     return tasks;
@@ -1422,6 +1433,7 @@ export class TasksService {
       templateName?: string | null;
     },
     nodeOverride?: NodeEntity,
+    context?: import('../../common/types/request-audit-context.type').RequestAuditContext,
   ): Promise<TaskEntity> {
     const node =
       nodeOverride ??
@@ -1481,6 +1493,22 @@ export class TasksService {
       status: savedTask.status,
       sourceInstanceId: this.redisService.getInstanceId(),
     });
+
+    if (context) {
+      await this.auditLogsService.record({
+        scope: 'workspace',
+        workspaceId: node.workspaceId,
+        action: 'task.created',
+        targetType: 'task',
+        targetId: savedTask.id,
+        targetLabel: savedTask.type,
+        metadata: {
+          nodeId: savedTask.nodeId,
+          hostname: node.hostname,
+        },
+        context,
+      });
+    }
 
     return savedTask;
   }
@@ -1835,7 +1863,7 @@ export class TasksService {
       return null;
     }
 
-    return result[key]
+    return (result[key] as unknown[])
       .map((entry) => this.normalizePackageRecord(entry))
       .filter((entry): entry is NormalizedPackageDto => entry !== null);
   }
@@ -1848,7 +1876,7 @@ export class TasksService {
       return null;
     }
 
-    return result[key]
+    return (result[key] as unknown[])
       .map((entry) => this.normalizeSearchRecord(entry))
       .filter(
         (entry): entry is NormalizedPackageSearchResultDto => entry !== null,
@@ -1934,7 +1962,7 @@ export class TasksService {
       return null;
     }
 
-    return record[key].filter(
+    return (record[key] as unknown[]).filter(
       (entry): entry is string =>
         typeof entry === 'string' && entry.trim().length > 0,
     );

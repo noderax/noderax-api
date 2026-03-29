@@ -134,11 +134,28 @@ export class NodesService {
 
   async delete(
     id: string,
-    workspaceId?: string,
+    workspaceId: string | undefined,
+    actor: AuthenticatedUser,
+    context?: RequestAuditContext,
   ): Promise<{ deleted: true; id: string }> {
     const node = await this.findOneOrFail(id, workspaceId);
     await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+
+    // Store metadata before removal
+    const nodeName = node.name || node.hostname;
+    const nodeWorkspaceId = node.workspaceId;
+
     await this.nodesRepository.remove(node);
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: nodeWorkspaceId,
+      action: 'node.deleted',
+      targetType: 'node',
+      targetId: id,
+      targetLabel: nodeName,
+      context,
+    });
 
     return { deleted: true, id };
   }
@@ -209,10 +226,12 @@ export class NodesService {
       existingNode.lastSeenAt = now;
       existingNode.agentTokenHash = input.agentTokenHash;
       existingNode.name = existingNode.name || existingNode.hostname;
-      existingNode.agentVersion = input.agentVersion ?? existingNode.agentVersion;
+      existingNode.agentVersion =
+        input.agentVersion ?? existingNode.agentVersion;
       existingNode.platformVersion =
         input.platformVersion ?? existingNode.platformVersion;
-      existingNode.kernelVersion = input.kernelVersion ?? existingNode.kernelVersion;
+      existingNode.kernelVersion =
+        input.kernelVersion ?? existingNode.kernelVersion;
       existingNode.lastVersionReportedAt =
         input.agentVersion || input.platformVersion || input.kernelVersion
           ? now
@@ -469,7 +488,9 @@ export class NodesService {
   ): Promise<{ node: NodeEntity; transitionedToOnline: boolean }> {
     const now = new Date();
     const versionUpdate =
-      updates?.agentVersion || updates?.platformVersion || updates?.kernelVersion
+      updates?.agentVersion ||
+      updates?.platformVersion ||
+      updates?.kernelVersion
         ? {
             agentVersion: updates.agentVersion ?? null,
             platformVersion: updates.platformVersion ?? null,
@@ -696,7 +717,7 @@ export class NodesService {
     );
 
     nodes.forEach((node) => {
-      node.teamName = node.teamId ? lookup.get(node.teamId) ?? null : null;
+      node.teamName = node.teamId ? (lookup.get(node.teamId) ?? null) : null;
     });
 
     return input;

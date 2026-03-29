@@ -56,8 +56,16 @@ export class WorkspaceTasksController {
   create(
     @Param('workspaceId') workspaceId: string,
     @Body() createTaskDto: CreateTaskDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
   ) {
-    return this.tasksService.create(createTaskDto, workspaceId);
+    return this.tasksService.create(createTaskDto, workspaceId, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Post('batch')
@@ -73,8 +81,16 @@ export class WorkspaceTasksController {
   createBatch(
     @Param('workspaceId') workspaceId: string,
     @Body() createBatchTaskDto: CreateBatchTaskDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
   ) {
-    return this.tasksService.createBatch(createBatchTaskDto, workspaceId);
+    return this.tasksService.createBatch(createBatchTaskDto, workspaceId, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Post('teams/:teamId')
@@ -84,14 +100,25 @@ export class WorkspaceTasksController {
     @Param('workspaceId') workspaceId: string,
     @Param('teamId') teamId: string,
     @Body() dto: CreateTeamTaskDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
   ) {
-    return this.tasksService.createForTeam({
-      workspaceId,
-      teamId,
-      type: dto.type,
-      payload: dto.payload ?? {},
-      templateId: dto.templateId,
-    });
+    return this.tasksService.createForTeam(
+      {
+        workspaceId,
+        teamId,
+        type: dto.type,
+        payload: dto.payload ?? {},
+        templateId: dto.templateId,
+      },
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
   }
 
   @Get()

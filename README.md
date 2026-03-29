@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Noderax API</h1>
 
-Noderax API is the NestJS control plane for the platform. It serves the web dashboard, the first-run installer, workspace-aware control-plane routes, and the remote Go agent runtime.
+Noderax API is the NestJS control plane for the platform. It serves the web dashboard, the first-run installer, workspace-aware control-plane routes, and the remote Linux-based Go agent runtime.
 
 Current stable release: `1.0.0`
 
@@ -71,7 +71,7 @@ src/
   - teams are composed from workspace members only
   - inactive users cannot log in or receive new assignments
 - Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
-- Node inventory with online/offline detection, maintenance mode, team ownership, and version telemetry
+- Linux node inventory with online/offline detection, maintenance mode, team ownership, and version telemetry
 - Agent enrollment with approval flow plus legacy registration compatibility
 - Metrics ingestion and node telemetry persistence
 - Task creation, team-targeted dispatch, batch dispatch, long-poll task claiming, lifecycle updates, and logs

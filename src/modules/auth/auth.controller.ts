@@ -160,8 +160,7 @@ export class AuthController {
       example: {
         success: true,
         issuer: 'https://accounts.google.com',
-        authorizationEndpoint:
-          'https://accounts.google.com/o/oauth2/v2/auth',
+        authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
         tokenEndpoint: 'https://oauth2.googleapis.com/token',
         userinfoEndpoint: 'https://openidconnect.googleapis.com/v1/userinfo',
       },

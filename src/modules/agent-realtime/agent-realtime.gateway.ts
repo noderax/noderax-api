@@ -569,13 +569,14 @@ export class AgentRealtimeGateway
         metatype: AgentTerminalOpenedMessageDto,
       });
 
-      const terminalSession = await this.terminalSessionsService.handleAgentOpened({
-        sessionId: body.sessionId,
-        nodeId: session.nodeId,
-        cols: body.cols,
-        rows: body.rows,
-        timestamp: body.timestamp,
-      });
+      const terminalSession =
+        await this.terminalSessionsService.handleAgentOpened({
+          sessionId: body.sessionId,
+          nodeId: session.nodeId,
+          cols: body.cols,
+          rows: body.rows,
+          timestamp: body.timestamp,
+        });
 
       return {
         ok: true,
@@ -647,13 +648,14 @@ export class AgentRealtimeGateway
         metatype: AgentTerminalExitedMessageDto,
       });
 
-      const terminalSession = await this.terminalSessionsService.handleAgentExited({
-        sessionId: body.sessionId,
-        nodeId: session.nodeId,
-        exitCode: body.exitCode,
-        reason: body.reason,
-        timestamp: body.timestamp,
-      });
+      const terminalSession =
+        await this.terminalSessionsService.handleAgentExited({
+          sessionId: body.sessionId,
+          nodeId: session.nodeId,
+          exitCode: body.exitCode,
+          reason: body.reason,
+          timestamp: body.timestamp,
+        });
 
       return {
         ok: true,
@@ -686,12 +688,13 @@ export class AgentRealtimeGateway
         metatype: AgentTerminalErrorMessageDto,
       });
 
-      const terminalSession = await this.terminalSessionsService.handleAgentError({
-        sessionId: body.sessionId,
-        nodeId: session.nodeId,
-        message: body.message,
-        timestamp: body.timestamp,
-      });
+      const terminalSession =
+        await this.terminalSessionsService.handleAgentError({
+          sessionId: body.sessionId,
+          nodeId: session.nodeId,
+          message: body.message,
+          timestamp: body.timestamp,
+        });
 
       return {
         ok: true,
