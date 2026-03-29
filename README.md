@@ -35,6 +35,7 @@ src/
     platform-settings/
     realtime/
     setup/
+    terminal-sessions/
     tasks/
     users/
     workspaces/
@@ -79,6 +80,9 @@ src/
 - Package operations through the shared task pipeline
 - Platform settings persistence through installer state, including SMTP settings validation
 - Realtime updates for node state, metrics, tasks, and events
+- Interactive terminal sessions over a dedicated JWT-authenticated Socket.IO namespace
+- Terminal transcript persistence with ordered base64 I/O chunks, 7-day retention, and retention cleanup
+- Agent realtime terminal bridge for start, input, resize, stop, opened, output, exited, and error events
 
 ## Local Setup
 
@@ -230,6 +234,45 @@ Key rules:
   - `POST /nodes/:id/maintenance/enable`
   - `POST /nodes/:id/maintenance/disable`
   - workspace-scoped equivalents under `/workspaces/:workspaceId/nodes/:id/*`
+
+## Interactive Terminal Model
+
+Interactive terminal access is separate from the HTTP task pipeline.
+
+- Live operator traffic uses the dedicated Socket.IO namespace `/terminal`
+- Browser events:
+  - `terminal.attach`
+  - `terminal.input`
+  - `terminal.resize`
+  - `terminal.terminate`
+- Browser receives:
+  - `terminal.session.state`
+  - `terminal.output`
+  - `terminal.closed`
+  - `terminal.error`
+- Agent-side realtime events:
+  - API to agent: `terminal.start`, `terminal.input`, `terminal.resize`, `terminal.stop`
+  - agent to API: `terminal.opened`, `terminal.output`, `terminal.exited`, `terminal.error`
+
+REST surface:
+
+- `POST /workspaces/:workspaceId/nodes/:nodeId/terminal-sessions`
+- `GET /workspaces/:workspaceId/nodes/:nodeId/terminal-sessions`
+- `GET /workspaces/:workspaceId/terminal-sessions/:sessionId`
+- `GET /workspaces/:workspaceId/terminal-sessions/:sessionId/chunks`
+- `POST /workspaces/:workspaceId/terminal-sessions/:sessionId/terminate`
+
+Current behavior:
+
+- Only `platform_admin` users who are workspace `owner` or `admin` can start sessions
+- Archived workspaces cannot start new sessions
+- Nodes must be online and reachable through the agent realtime route
+- Maintenance mode does not block terminal access
+- A live session has a single controller: the creator can interact, others can inspect closed transcripts
+- Transcript chunks are stored in order with a unique `(sessionId, seq)` constraint
+- Transcript retention is 7 days
+- Controller disconnect has a 5-minute reattach grace window before the session is closed
+- Audit events are written for create, open, terminate request, exit, failure, and transcript retention cleanup
 ## Security Model
 
 - `POST /auth/login` may return either a normal session token or `requiresMfa=true` with a short-lived challenge token.
@@ -258,6 +301,8 @@ The primary task execution path is HTTP polling.
   - `POST /agent/tasks/:taskId/logs`
   - `POST /agent/tasks/:taskId/completed`
 - Cancellation is observed through agent control polling
+
+Interactive terminals are the exception to this rule: they are bridged over the agent realtime socket instead of the HTTP claim loop.
 - Realtime agent sockets remain active for telemetry and lifecycle support
 - Realtime task push exists only as an explicit compatibility mode and is disabled by default
 
