@@ -1061,7 +1061,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       await this.closeSession(session, {
         status: TerminalSessionStatus.CLOSED,
         reason:
-          'Session closed after the controller did not reattach within 30 seconds.',
+          `Session closed after the controller did not reattach within ${this.formatAttachGraceWindow()}.`,
         exitCode: null,
       });
     }
@@ -1121,6 +1121,17 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
 
   private buildControllerCountKey(sessionId: string): string {
     return `${TERMINAL_REDIS_KEYS.CONTROLLER_COUNT_PREFIX}${sessionId}`;
+  }
+
+  private formatAttachGraceWindow(): string {
+    const seconds = Number(TERMINAL_ATTACH_GRACE_SECONDS);
+
+    if (seconds % 60 === 0) {
+      const minutes = seconds / 60;
+      return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+    }
+
+    return `${seconds} second${seconds === 1 ? '' : 's'}`;
   }
 
   private parseOptionalDate(value?: string): Date | null {
