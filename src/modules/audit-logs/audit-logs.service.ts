@@ -46,7 +46,8 @@ export class AuditLogsService {
     const builder = this.auditLogsRepository
       .createQueryBuilder('audit')
       .orderBy('audit.createdAt', 'DESC')
-      .take(query.limit ?? 50);
+      .take(query.limit ?? 50)
+      .skip(query.offset ?? 0);
 
     if (workspaceId) {
       builder.where('audit.workspaceId = :workspaceId', { workspaceId });

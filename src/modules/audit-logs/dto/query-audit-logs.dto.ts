@@ -18,6 +18,13 @@ export class QueryAuditLogsDto {
   @Max(100)
   limit?: number;
 
+  @ApiPropertyOptional({ minimum: 0, default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
