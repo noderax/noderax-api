@@ -60,6 +60,8 @@ src/
   - members and teams
   - owner/admin/member/viewer roles
   - default-workspace selection
+  - granular notification levels (INFO, WARNING, CRITICAL) for Email and Telegram
+  - automated slug generation
   - archive / restore with read-only enforcement
   - protected workspace deletion rules
 - Append-only platform and workspace audit logs
