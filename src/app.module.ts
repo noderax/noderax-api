@@ -9,9 +9,11 @@ import { AppService } from './app.service';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import configuration from './config/configuration';
+import { normalizeDatabaseEnvAliases } from './config/database-env.utils';
 import { validationSchema } from './config/env.validation';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { getTypeOrmConfig } from './database/typeorm.config';
+import { LegacyHealthController } from './legacy-health.controller';
 import { AgentRealtimeModule } from './modules/agent-realtime/agent-realtime.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -30,6 +32,8 @@ import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { RedisModule } from './redis/redis.module';
+
+normalizeDatabaseEnvAliases();
 
 @Module({
   imports: [
@@ -68,7 +72,7 @@ import { RedisModule } from './redis/redis.module';
     TerminalSessionsModule,
     AgentsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, LegacyHealthController],
   providers: [
     AppService,
     {

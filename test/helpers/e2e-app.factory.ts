@@ -2,6 +2,7 @@ import {
   INestApplication,
   Logger,
   Module,
+  RequestMethod,
   ValidationPipe,
 } from '@nestjs/common';
 import { ConfigModule, ConfigService, ConfigType } from '@nestjs/config';
@@ -22,8 +23,10 @@ import { RolesGuard } from '../../src/common/guards/roles.guard';
 import { AllExceptionsFilter } from '../../src/common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from '../../src/common/interceptors/logging.interceptor';
 import configuration from '../../src/config/configuration';
+import { normalizeDatabaseEnvAliases } from '../../src/config/database-env.utils';
 import { validationSchema } from '../../src/config/env.validation';
 import { APP_CONFIG_KEY, appConfig } from '../../src/config';
+import { LegacyHealthController } from '../../src/legacy-health.controller';
 import { AgentsModule } from '../../src/modules/agents/agents.module';
 import { AuditLogEntity } from '../../src/modules/audit-logs/entities/audit-log.entity';
 import { AuthModule } from '../../src/modules/auth/auth.module';
@@ -124,6 +127,8 @@ function createPgMemDataSource(
 }
 
 export async function createE2eApp(): Promise<INestApplication> {
+  normalizeDatabaseEnvAliases();
+
   @Module({
     imports: [
       ConfigModule.forRoot({
@@ -165,7 +170,7 @@ export async function createE2eApp(): Promise<INestApplication> {
       TerminalSessionsModule,
       AgentsModule,
     ],
-    controllers: [AppController],
+    controllers: [AppController, LegacyHealthController],
     providers: [
       AppService,
       {
@@ -197,7 +202,18 @@ export async function createE2eApp(): Promise<INestApplication> {
     configService.getOrThrow<ConfigType<typeof appConfig>>(APP_CONFIG_KEY);
 
   if (appSettings.apiPrefix) {
-    app.setGlobalPrefix(appSettings.apiPrefix);
+    app.setGlobalPrefix(appSettings.apiPrefix, {
+      exclude: [
+        {
+          path: 'health',
+          method: RequestMethod.GET,
+        },
+        {
+          path: `${appSettings.apiPrefix}/health`,
+          method: RequestMethod.GET,
+        },
+      ],
+    });
   }
 
   app.useGlobalPipes(
@@ -215,7 +231,6 @@ export async function createE2eApp(): Promise<INestApplication> {
   app.enableShutdownHooks();
 
   await app.init();
-  await app.listen(0);
 
   const logger = new Logger('E2eBootstrap');
   logger.log('E2E application started');

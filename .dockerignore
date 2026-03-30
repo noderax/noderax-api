@@ -2,10 +2,9 @@ node_modules
 dist
 coverage
 .git
-.gitignore
 .DS_Store
-.npm-cache
-logs
-*.log
 .env
-.env.*
+.pnpm-store
+npm-debug.log
+yarn-debug.log
+yarn-error.log

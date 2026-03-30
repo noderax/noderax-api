@@ -4,6 +4,7 @@ import {
   type InstallState,
 } from './install-state';
 import { Client } from 'pg';
+import { normalizeDatabaseEnvAliases } from '../config/database-env.utils';
 
 export type BootMode = 'setup' | 'installed' | 'legacy';
 
@@ -33,6 +34,8 @@ const isTrue = (value?: string | null) =>
   ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 
 export const hasLegacyRuntimeEnv = () => {
+  normalizeDatabaseEnvAliases();
+
   const requiredKeys = [
     'DB_HOST',
     'DB_USERNAME',
@@ -53,6 +56,8 @@ export const hasLegacyRuntimeEnv = () => {
 const detectLegacySchemaState = async (): Promise<
   'present' | 'partial' | 'absent' | 'unknown'
 > => {
+  normalizeDatabaseEnvAliases();
+
   if (!hasLegacyRuntimeEnv()) {
     return 'absent';
   }
@@ -122,6 +127,8 @@ export const prepareBootEnvironment = async (
   if (installState) {
     applyInstallStateEnv(installState);
   }
+
+  normalizeDatabaseEnvAliases();
 
   process.env[BOOT_MODE_ENV] = bootMode;
   return bootMode;

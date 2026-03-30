@@ -86,32 +86,38 @@ src/
 - Terminal transcript persistence with ordered base64 I/O chunks, 7-day retention, and retention cleanup
 - Agent realtime terminal bridge for start, input, resize, stop, opened, output, exited, and error events
 
-## Local Setup
+## Installation
 
-### 1. Install dependencies
+### Local development without Docker
+
+1. Install dependencies:
 
 ```bash
 pnpm install
 ```
 
-### 2. Configure environment
+2. Create the local environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Important values:
+3. Configure the important values:
 
-- `JWT_SECRET`
-- `DB_HOST`
-- `DB_PORT`
-- `DB_USERNAME`
-- `DB_PASSWORD`
-- `DB_NAME`
+- `DATABASE_HOST`
+- `DATABASE_PORT`
+- `DATABASE_USERNAME`
+- `DATABASE_PASSWORD`
+- `DATABASE_NAME`
+- `DATABASE_SSL`
 - `REDIS_ENABLED`
 - `REDIS_HOST`
 - `REDIS_PORT`
+- `REDIS_PASSWORD`
 - `NODERAX_STATE_DIR`
+- `JWT_SECRET`
+- `SECRETS_ENCRYPTION_KEY`
+- `AGENT_ENROLLMENT_TOKEN`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USERNAME`
@@ -119,7 +125,8 @@ Important values:
 - `SMTP_FROM_EMAIL`
 - `SMTP_FROM_NAME`
 - `WEB_APP_URL`
-- `SECRETS_ENCRYPTION_KEY`
+
+`DATABASE_*` is the preferred naming scheme. Legacy `DB_*` aliases are still supported for backward compatibility.
 
 For installer-managed deployments, `NODERAX_STATE_DIR` should point to a writable application-data path. For Docker, use a mounted path such as `/data/noderax`.
 
@@ -132,7 +139,7 @@ If you want the API to create the first platform admin automatically, set:
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
 
-### 3. Run in development
+4. Start the API:
 
 ```bash
 pnpm start:dev
@@ -140,37 +147,98 @@ pnpm start:dev
 
 Default URLs:
 
+- Health: `http://localhost:3000/health`
 - API base: `http://localhost:3000/api/v1`
 - Swagger UI: `http://localhost:3000/api/v1/docs`
 - OpenAPI JSON: `http://localhost:3000/api/v1/docs-json`
 
-## Docker
+### Docker development with hot reload
+
+1. Copy the environment template:
 
 ```bash
 cp .env.example .env
 ```
 
-Recommended `.env` values for the bundled compose stack:
+2. Review these values in `.env`:
 
 ```env
-NODE_ENV=production
-DB_SYNCHRONIZE=false
+NODE_ENV=development
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+DATABASE_SSL=false
+DATABASE_SYNCHRONIZE=true
+DATABASE_LOGGING=false
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=change-this-redis-password
 NODERAX_STATE_DIR=/data/noderax
 ```
 
-Then run:
+3. Start the development stack:
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-Services:
+Available endpoints:
 
-- API: `http://localhost:3000`
-- PostgreSQL: `localhost:5432`
-- Redis: `localhost:6379`
+- Health: `http://localhost:3000/health`
+- API base: `http://localhost:3000/api/v1`
+- Swagger UI: `http://localhost:3000/api/v1/docs`
 
-The provided `docker-compose.yml` mounts a named volume for installer state at `/data/noderax`.
+The development override mounts the source tree, keeps `node_modules` in a named volume, and runs `pnpm run start:dev` for hot reload.
+
+### Docker production
+
+1. Copy the environment template:
+
+```bash
+cp .env.example .env
+```
+
+2. Set strong production values before booting:
+
+```env
+NODE_ENV=production
+DATABASE_HOST=postgres
+DATABASE_PORT=5432
+DATABASE_SSL=false
+DATABASE_SYNCHRONIZE=false
+DATABASE_LOGGING=false
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=change-this-redis-password
+JWT_SECRET=change-this-jwt-secret
+SECRETS_ENCRYPTION_KEY=change-this-secrets-key
+AGENT_ENROLLMENT_TOKEN=change-this-agent-enrollment-token
+NODERAX_STATE_DIR=/data/noderax
+```
+
+3. Build and run the production stack:
+
+```bash
+docker compose up -d --build
+```
+
+Production behavior:
+
+- Only the API is published on `http://localhost:3000`
+- PostgreSQL and Redis stay internal to the Docker network
+- PostgreSQL data, Redis data, and installer state are persisted in named volumes
+- Redis runs with AOF enabled and password protection
+
+### First-time setup flow
+
+On a fresh install, the API starts in `setup` mode. Complete the initial installation through the setup flow exposed under the API base path:
+
+- `GET /api/v1/setup/status`
+- `POST /api/v1/setup/validate/postgres`
+- `POST /api/v1/setup/validate/redis`
+- `POST /api/v1/setup/validate/smtp`
+- `POST /api/v1/setup/install`
+
+After installation completes, the normal application surface becomes active.
 
 ## Installer And State Directory
 
@@ -179,7 +247,7 @@ The installer persists runtime setup into `install-state.json` under `NODERAX_ST
 Important behavior:
 
 - `setup` mode:
-  Fresh install. The API exposes `/setup/*` and waits for first-time provisioning.
+  Fresh install. The API exposes setup endpoints under `/api/v1/setup/*` and waits for first-time provisioning.
 - `installed` mode:
   The installer has completed and the normal app surface is active.
 - `restart_required` mode:

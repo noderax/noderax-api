@@ -1,0 +1,32 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      NODE_ENV: development
+      SWAGGER_ENABLED: true
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_SSL: false
+      DATABASE_SYNCHRONIZE: true
+      DATABASE_LOGGING: false
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-this-redis-password}
+      CHOKIDAR_USEPOLLING: "true"
+    command:
+      [
+        "sh",
+        "-c",
+        "pnpm install --frozen-lockfile && exec pnpm run start:dev",
+      ]
+    volumes:
+      - .:/app
+      - api_node_modules:/app/node_modules
+      - pnpm_store:/pnpm/store
+
+volumes:
+  api_node_modules:
+  pnpm_store:

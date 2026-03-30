@@ -1,4 +1,4 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import {
@@ -14,11 +14,14 @@ import { SWAGGER_BEARER_AUTH_NAME } from './common/constants/swagger.constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { APP_CONFIG_KEY, appConfig } from './config';
+import { normalizeDatabaseEnvAliases } from './config/database-env.utils';
 import { prepareBootEnvironment } from './install/boot-mode';
 import { readInstallState } from './install/install-state';
 import { SetupAppModule } from './setup-app.module';
 
 async function bootstrap() {
+  normalizeDatabaseEnvAliases();
+
   const installState = readInstallState();
   const bootMode = await prepareBootEnvironment(installState);
   const rootModule = bootMode === 'setup' ? SetupAppModule : AppModule;
@@ -40,7 +43,18 @@ async function bootstrap() {
     appSettings;
 
   if (apiPrefix) {
-    app.setGlobalPrefix(apiPrefix);
+    app.setGlobalPrefix(apiPrefix, {
+      exclude: [
+        {
+          path: 'health',
+          method: RequestMethod.GET,
+        },
+        {
+          path: `${apiPrefix}/health`,
+          method: RequestMethod.GET,
+        },
+      ],
+    });
   }
 
   app.enableCors({
@@ -105,7 +119,7 @@ async function bootstrap() {
     SwaggerModule.setup(swaggerPath, app, swaggerDocument, swaggerOptions);
   }
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   const publicBaseUrl = normalizePublicBaseUrl(await app.getUrl());
   const apiBaseUrl = buildPublicUrl(publicBaseUrl, apiPrefix);
 

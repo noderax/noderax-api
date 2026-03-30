@@ -5,7 +5,11 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import configuration from './config/configuration';
+import { normalizeDatabaseEnvAliases } from './config/database-env.utils';
+import { LegacyHealthController } from './legacy-health.controller';
 import { SetupModule } from './modules/setup/setup.module';
+
+normalizeDatabaseEnvAliases();
 
 @Module({
   imports: [
@@ -21,7 +25,7 @@ import { SetupModule } from './modules/setup/setup.module';
     ]),
     SetupModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, LegacyHealthController],
   providers: [
     AppService,
     {

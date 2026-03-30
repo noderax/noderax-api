@@ -1,4 +1,7 @@
 import * as Joi from 'joi';
+import { normalizeDatabaseEnvAliases } from './database-env.utils';
+
+normalizeDatabaseEnvAliases();
 
 export const validationSchema = Joi.object({
   NODE_ENV: Joi.string()
@@ -18,6 +21,14 @@ export const validationSchema = Joi.object({
   DB_SYNCHRONIZE: Joi.boolean().default(false),
   DB_LOGGING: Joi.boolean().default(false),
   DB_SSL: Joi.boolean().default(false),
+  DATABASE_HOST: Joi.string().optional(),
+  DATABASE_PORT: Joi.number().default(5432),
+  DATABASE_USERNAME: Joi.string().optional(),
+  DATABASE_PASSWORD: Joi.string().optional(),
+  DATABASE_NAME: Joi.string().optional(),
+  DATABASE_SYNCHRONIZE: Joi.boolean().default(false),
+  DATABASE_LOGGING: Joi.boolean().default(false),
+  DATABASE_SSL: Joi.boolean().default(false),
 
   // Redis
   REDIS_ENABLED: Joi.boolean().default(true),
