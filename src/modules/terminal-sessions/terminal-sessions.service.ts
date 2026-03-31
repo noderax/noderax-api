@@ -20,6 +20,7 @@ import {
   TERMINAL_PENDING_OPEN_TIMEOUT_MS,
   TERMINAL_REDIS_KEYS,
   TERMINAL_SESSION_ROOM_PREFIX,
+  TERMINAL_TERMINATION_TIMEOUT_MS,
   TERMINAL_TRANSCRIPT_RETENTION_DAYS,
 } from '../../common/constants/terminal.constants';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
@@ -60,6 +61,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TerminalSessionsService.name);
   private readonly pendingOpenTimers = new Map<string, NodeJS.Timeout>();
   private readonly detachTimers = new Map<string, NodeJS.Timeout>();
+  private readonly terminationTimers = new Map<string, NodeJS.Timeout>();
   private readonly socketToAttachment = new Map<string, SocketAttachment>();
   private readonly localControllerCounts = new Map<string, number>();
   private readonly unsubscribers: Array<() => Promise<void>> = [];
@@ -120,6 +122,11 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       clearTimeout(timer);
     }
     this.detachTimers.clear();
+
+    for (const timer of this.terminationTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.terminationTimers.clear();
   }
 
   bindRoomEmitter(emitter: RoomEmitter): void {
@@ -305,6 +312,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     session.status = TerminalSessionStatus.TERMINATING;
     await this.sessionsRepository.save(session);
     await this.publishSessionState(session);
+    this.scheduleTerminationTimeout(session.id);
 
     await this.auditLogsService.record({
       scope: 'workspace',
@@ -560,6 +568,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       session.closedReason = 'transcript-overflow';
       await this.sessionsRepository.save(session);
       await this.publishSessionState(session);
+      this.scheduleTerminationTimeout(session.id);
 
       const dispatched = await this.agentRealtimeService.stopTerminalSession(
         session.nodeId,
@@ -695,6 +704,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
   ): Promise<TerminalSessionEntity> {
     this.clearPendingOpenTimer(session.id);
     this.clearDetachTimer(session.id);
+    this.clearTerminationTimer(session.id);
 
     session.status = input.status;
     session.closedAt = input.closedAt ?? new Date();
@@ -1061,6 +1071,26 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     this.detachTimers.delete(sessionId);
   }
 
+  private scheduleTerminationTimeout(sessionId: string): void {
+    this.clearTerminationTimer(sessionId);
+    this.terminationTimers.set(
+      sessionId,
+      setTimeout(() => {
+        void this.handleTerminationTimeout(sessionId);
+      }, TERMINAL_TERMINATION_TIMEOUT_MS),
+    );
+  }
+
+  private clearTerminationTimer(sessionId: string): void {
+    const timer = this.terminationTimers.get(sessionId);
+    if (!timer) {
+      return;
+    }
+
+    clearTimeout(timer);
+    this.terminationTimers.delete(sessionId);
+  }
+
   private async handleDetachTimeout(sessionId: string): Promise<void> {
     this.detachTimers.delete(sessionId);
     const activeCount = await this.getControllerCount(sessionId);
@@ -1085,6 +1115,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     session.closedReason = 'controller-detached-timeout';
     await this.sessionsRepository.save(session);
     await this.publishSessionState(session);
+    this.scheduleTerminationTimeout(session.id);
 
     const dispatched = await this.agentRealtimeService.stopTerminalSession(
       session.nodeId,
@@ -1101,6 +1132,27 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
         exitCode: null,
       });
     }
+  }
+
+  private async handleTerminationTimeout(sessionId: string): Promise<void> {
+    this.terminationTimers.delete(sessionId);
+
+    const session = await this.findSessionOrFail(sessionId).catch(() => null);
+    if (!session || session.status !== TerminalSessionStatus.TERMINATING) {
+      return;
+    }
+
+    this.logger.warn(
+      `Terminal session termination timed out waiting for agent exit event: session=${session.id} node=${session.nodeId}`,
+    );
+
+    await this.closeSession(session, {
+      status: TerminalSessionStatus.CLOSED,
+      reason:
+        session.closedReason?.trim() ||
+        'Termination completed after the remote shell stopped responding to exit confirmation.',
+      exitCode: null,
+    });
   }
 
   private async incrementControllerCount(sessionId: string): Promise<number> {
