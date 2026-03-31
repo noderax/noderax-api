@@ -40,6 +40,27 @@ export class EnrollmentSchemaBootstrap implements OnModuleInit {
       `);
     }
 
+    if (!(await this.hasTable('node_installs'))) {
+      await this.dataSource.query(`
+        CREATE TABLE "node_installs" (
+          "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+          "workspaceId" uuid NOT NULL,
+          "teamId" uuid NULL,
+          "nodeName" character varying(120) NOT NULL,
+          "description" text NULL,
+          "tokenHash" character varying(255) NOT NULL,
+          "tokenLookupHash" character varying(64) NOT NULL,
+          "hostname" character varying(255) NULL,
+          "additionalInfo" jsonb NULL,
+          "nodeId" uuid NULL,
+          "consumedAt" TIMESTAMPTZ NULL,
+          "expiresAt" TIMESTAMPTZ NOT NULL,
+          "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT "PK_node_installs_id" PRIMARY KEY ("id")
+        )
+      `);
+    }
+
     await this.dataSource.query(`
       ALTER TABLE "nodes"
       ADD COLUMN IF NOT EXISTS "description" text NULL
@@ -63,6 +84,36 @@ export class EnrollmentSchemaBootstrap implements OnModuleInit {
     await this.dataSource.query(`
       CREATE INDEX IF NOT EXISTS "IDX_enrollments_node_id"
       ON "enrollments" ("nodeId")
+    `);
+
+    await this.dataSource.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "IDX_node_installs_token_lookup_hash"
+      ON "node_installs" ("tokenLookupHash")
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_node_installs_workspace_id"
+      ON "node_installs" ("workspaceId")
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_node_installs_team_id"
+      ON "node_installs" ("teamId")
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_node_installs_hostname"
+      ON "node_installs" ("hostname")
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_node_installs_node_id"
+      ON "node_installs" ("nodeId")
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_node_installs_expires_at"
+      ON "node_installs" ("expiresAt")
     `);
 
     this.logger.log('Ensured enrollment schema exists');

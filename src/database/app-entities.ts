@@ -3,6 +3,7 @@ import { OidcIdentityEntity } from '../modules/auth/entities/oidc-identity.entit
 import { OidcProviderEntity } from '../modules/auth/entities/oidc-provider.entity';
 import { AgentTaskLifecycleEventEntity } from '../modules/agent-realtime/entities/agent-task-lifecycle-event.entity';
 import { EnrollmentEntity } from '../modules/enrollments/entities/enrollment.entity';
+import { NodeInstallEntity } from '../modules/enrollments/entities/node-install.entity';
 import { EventEntity } from '../modules/events/entities/event.entity';
 import { MetricEntity } from '../modules/metrics/entities/metric.entity';
 import { NodeEntity } from '../modules/nodes/entities/node.entity';
@@ -39,6 +40,7 @@ export const APP_ENTITIES = [
   EventEntity,
   MetricEntity,
   EnrollmentEntity,
+  NodeInstallEntity,
   OidcProviderEntity,
   OidcIdentityEntity,
   AgentTaskLifecycleEventEntity,

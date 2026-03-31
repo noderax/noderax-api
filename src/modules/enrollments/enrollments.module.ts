@@ -9,17 +9,25 @@ import { EnrollmentEntity } from './entities/enrollment.entity';
 import { EnrollmentsController } from './enrollments.controller';
 import { EnrollmentTokensService } from './enrollment-tokens.service';
 import { EnrollmentsService } from './enrollments.service';
+import { NodeInstallEntity } from './entities/node-install.entity';
+import { NodeInstallsController } from './node-installs.controller';
 import { WorkspaceEnrollmentsController } from './workspace-enrollments.controller';
+import { WorkspaceNodeInstallsController } from './workspace-node-installs.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([EnrollmentEntity]),
+    TypeOrmModule.forFeature([EnrollmentEntity, NodeInstallEntity]),
     UsersModule,
     NodesModule,
     NotificationsModule,
     WorkspacesModule,
   ],
-  controllers: [EnrollmentsController, WorkspaceEnrollmentsController],
+  controllers: [
+    EnrollmentsController,
+    WorkspaceEnrollmentsController,
+    NodeInstallsController,
+    WorkspaceNodeInstallsController,
+  ],
   providers: [
     EnrollmentsService,
     EnrollmentTokensService,

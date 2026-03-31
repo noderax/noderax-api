@@ -38,6 +38,27 @@ const parseBoolean = (
   return fallback;
 };
 
+const normalizeUrl = (
+  value: string | undefined,
+  fallback: string,
+  options?: { stripApiPrefix?: boolean },
+): string => {
+  const candidate = value?.trim() || fallback;
+
+  try {
+    const url = new URL(candidate);
+    url.hash = '';
+
+    if (options?.stripApiPrefix) {
+      url.pathname = url.pathname.replace(/\/(?:api\/)?v1\/?$/i, '') || '/';
+    }
+
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return fallback;
+  }
+};
+
 export const AGENTS_CONFIG_KEY = 'agents';
 
 export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
@@ -82,4 +103,13 @@ export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
   ),
   enrollmentToken: process.env.AGENT_ENROLLMENT_TOKEN ?? '',
   highCpuThreshold: parseFloat(process.env.AGENT_HIGH_CPU_THRESHOLD ?? '90'),
+  publicApiUrl: normalizeUrl(
+    process.env.AGENT_PUBLIC_API_URL,
+    `http://localhost:${process.env.PORT ?? '3000'}`,
+    { stripApiPrefix: true },
+  ),
+  installScriptUrl: normalizeUrl(
+    process.env.AGENT_INSTALL_SCRIPT_URL,
+    'https://cdn.noderax.net/noderax-agent/install.sh',
+  ),
 }));

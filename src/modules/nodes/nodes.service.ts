@@ -169,6 +169,7 @@ export class NodesService {
 
   async createFromEnrollment(input: {
     workspaceId: string;
+    teamId?: string | null;
     name: string;
     description: string | null;
     hostname: string;
@@ -181,6 +182,12 @@ export class NodesService {
   }): Promise<NodeEntity> {
     await this.assertHostnameAvailable(input.hostname);
     await this.workspacesService.assertWorkspaceWritable(input.workspaceId);
+    const team = input.teamId
+      ? await this.workspacesService.findTeamOrFail(
+          input.workspaceId,
+          input.teamId,
+        )
+      : null;
 
     const node = this.nodesRepository.create({
       workspaceId: input.workspaceId,
@@ -199,9 +206,10 @@ export class NodesService {
         input.agentVersion || input.platformVersion || input.kernelVersion
           ? new Date()
           : null,
+      teamId: team?.id ?? null,
     });
 
-    return this.nodesRepository.save(node);
+    return this.populateTeamMetadata(await this.nodesRepository.save(node));
   }
 
   async upsertFromAgentRegistration(input: {

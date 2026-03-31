@@ -77,6 +77,10 @@ export const validationSchema = Joi.object({
     .min(10)
     .default(1800),
   AGENT_HIGH_CPU_THRESHOLD: Joi.number().min(0).max(100).default(90),
+  AGENT_PUBLIC_API_URL: Joi.string().uri().optional(),
+  AGENT_INSTALL_SCRIPT_URL: Joi.string()
+    .uri()
+    .default('https://cdn.noderax.net/noderax-agent/install.sh'),
 
   // Bootstrap
   SEED_DEFAULT_ADMIN: Joi.boolean().default(false),

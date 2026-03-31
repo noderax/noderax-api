@@ -74,7 +74,7 @@ src/
   - inactive users cannot log in or receive new assignments
 - Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
 - Linux node inventory with online/offline detection, maintenance mode, team ownership, and version telemetry
-- Agent enrollment with approval flow plus legacy registration compatibility
+- Workspace-scoped one-click node bootstrap with short-lived install commands, installer consumption, and legacy enrollment compatibility
 - Metrics ingestion and node telemetry persistence
 - Task creation, team-targeted dispatch, batch dispatch, long-poll task claiming, lifecycle updates, and logs
 - Workspace-scoped task templates
@@ -118,6 +118,8 @@ cp .env.example .env
 - `JWT_SECRET`
 - `SECRETS_ENCRYPTION_KEY`
 - `AGENT_ENROLLMENT_TOKEN`
+- `AGENT_PUBLIC_API_URL`
+- `AGENT_INSTALL_SCRIPT_URL`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USERNAME`
@@ -131,6 +133,8 @@ cp .env.example .env
 For installer-managed deployments, `NODERAX_STATE_DIR` should point to a writable application-data path. For Docker, use a mounted path such as `/data/noderax`.
 
 If `SMTP_HOST` is left blank, mail delivery remains disabled. Invite, reset-password, and operational email flows only send when SMTP is configured. In tests, the API uses JSON transport and exposes captured deliveries through the in-memory mailer service.
+
+`AGENT_PUBLIC_API_URL` should point to the externally reachable API origin used by target servers. `AGENT_INSTALL_SCRIPT_URL` controls the installer script URL embedded into the generated node install command.
 
 If you want the API to create the first platform admin automatically, set:
 
@@ -239,6 +243,14 @@ On a fresh install, the API starts in `setup` mode. Complete the initial install
 - `POST /api/v1/setup/install`
 
 After installation completes, the normal application surface becomes active.
+
+## Node Bootstrap Flow
+
+- Workspace owners, admins, and platform admins can create one-click install commands through `POST /workspaces/:workspaceId/node-installs`
+- The response includes the full `curl | sudo bash` installer command, the public API URL, the installer script URL, and the expiry timestamp
+- Install tokens are single-use and short-lived
+- Target hosts consume the token through `POST /node-installs/consume`
+- Legacy `POST /enrollments/initiate` and `GET /enrollments/:token` remain available for backward compatibility
 
 ## Installer And State Directory
 
@@ -399,6 +411,7 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 - `POST /setup/validate/redis`
 - `POST /setup/validate/smtp`
 - `POST /setup/install`
+- `POST /node-installs/consume`
 - `POST /enrollments/initiate`
 - `GET /enrollments/:token`
 
@@ -431,6 +444,7 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 - `DELETE /auth/providers/:providerId`
 - `POST /auth/providers/test`
 - `POST /workspaces/:workspaceId/tasks/teams/:teamId`
+- `POST /workspaces/:workspaceId/node-installs`
 - `GET /workspaces/:workspaceId/task-templates`
 - `POST /workspaces/:workspaceId/task-templates`
 - `PATCH /workspaces/:workspaceId/task-templates/:id`

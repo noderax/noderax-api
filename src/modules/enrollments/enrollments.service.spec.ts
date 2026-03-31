@@ -4,6 +4,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { EnrollmentEntity } from './entities/enrollment.entity';
 import { EnrollmentStatus } from './entities/enrollment-status.enum';
+import { NodeInstallEntity } from './entities/node-install.entity';
 import { EnrollmentTokensService } from './enrollment-tokens.service';
 import { EnrollmentsService } from './enrollments.service';
 
@@ -46,6 +47,7 @@ function buildEnrollment(
 
 describe('EnrollmentsService', () => {
   let enrollmentsRepository: MockRepository<EnrollmentEntity>;
+  let nodeInstallsRepository: MockRepository<NodeInstallEntity>;
   let enrollmentTokensService: jest.Mocked<EnrollmentTokensService>;
   let usersService: jest.Mocked<UsersService>;
   let nodesService: jest.Mocked<NodesService>;
@@ -54,6 +56,12 @@ describe('EnrollmentsService', () => {
 
   beforeEach(() => {
     enrollmentsRepository = {
+      create: jest.fn((value) => value),
+      find: jest.fn().mockResolvedValue([]),
+      save: jest.fn(async (value) => value),
+      createQueryBuilder: jest.fn(),
+    };
+    nodeInstallsRepository = {
       create: jest.fn((value) => value),
       find: jest.fn().mockResolvedValue([]),
       save: jest.fn(async (value) => value),
@@ -85,6 +93,7 @@ describe('EnrollmentsService', () => {
 
     service = new EnrollmentsService(
       enrollmentsRepository as unknown as Repository<EnrollmentEntity>,
+      nodeInstallsRepository as unknown as Repository<NodeInstallEntity>,
       enrollmentTokensService,
       usersService,
       nodesService,
@@ -95,6 +104,12 @@ describe('EnrollmentsService', () => {
         }),
         assertWorkspaceWritable: jest.fn().mockResolvedValue({
           id: 'workspace-1',
+        }),
+      } as never,
+      {
+        getOrThrow: jest.fn().mockReturnValue({
+          publicApiUrl: 'https://api.example.com',
+          installScriptUrl: 'https://cdn.example.com/install.sh',
         }),
       } as never,
     );

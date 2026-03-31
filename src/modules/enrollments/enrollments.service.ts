@@ -5,12 +5,18 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { NodesService } from '../nodes/nodes.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { ConsumeNodeInstallDto } from './dto/consume-node-install.dto';
+import { ConsumeNodeInstallResponseDto } from './dto/consume-node-install-response.dto';
+import { CreateNodeInstallDto } from './dto/create-node-install.dto';
+import { CreateNodeInstallResponseDto } from './dto/create-node-install-response.dto';
 import { FinalizeEnrollmentDto } from './dto/finalize-enrollment.dto';
 import { FinalizeEnrollmentResponseDto } from './dto/finalize-enrollment-response.dto';
 import { EnrollmentStatusResponseDto } from './dto/enrollment-status-response.dto';
@@ -18,9 +24,11 @@ import { InitiateEnrollmentDto } from './dto/initiate-enrollment.dto';
 import { InitiateEnrollmentResponseDto } from './dto/initiate-enrollment-response.dto';
 import { EnrollmentEntity } from './entities/enrollment.entity';
 import { EnrollmentStatus } from './entities/enrollment-status.enum';
+import { NodeInstallEntity } from './entities/node-install.entity';
 import { EnrollmentTokensService } from './enrollment-tokens.service';
 
 const ENROLLMENT_TOKEN_TTL_MINUTES = 15;
+const NODE_INSTALL_TOKEN_TTL_MINUTES = 15;
 
 @Injectable()
 export class EnrollmentsService {
@@ -29,11 +37,14 @@ export class EnrollmentsService {
   constructor(
     @InjectRepository(EnrollmentEntity)
     private readonly enrollmentsRepository: Repository<EnrollmentEntity>,
+    @InjectRepository(NodeInstallEntity)
+    private readonly nodeInstallsRepository: Repository<NodeInstallEntity>,
     private readonly enrollmentTokensService: EnrollmentTokensService,
     private readonly usersService: UsersService,
     private readonly nodesService: NodesService,
     private readonly notificationsService: NotificationsService,
     private readonly workspacesService: WorkspacesService,
+    private readonly configService: ConfigService,
   ) {}
 
   async initiate(
@@ -170,6 +181,99 @@ export class EnrollmentsService {
     };
   }
 
+  async createNodeInstall(
+    workspaceId: string,
+    body: CreateNodeInstallDto,
+  ): Promise<CreateNodeInstallResponseDto> {
+    await this.workspacesService.assertWorkspaceWritable(workspaceId);
+    const team = body.teamId
+      ? await this.workspacesService.findTeamOrFail(workspaceId, body.teamId)
+      : null;
+    const { token, tokenHash, tokenLookupHash } =
+      await this.enrollmentTokensService.issueEnrollmentToken();
+    const expiresAt = new Date(
+      Date.now() + NODE_INSTALL_TOKEN_TTL_MINUTES * 60 * 1000,
+    );
+
+    const nodeInstall = this.nodeInstallsRepository.create({
+      workspaceId,
+      teamId: team?.id ?? null,
+      nodeName: body.nodeName.trim(),
+      description: body.description?.trim() || null,
+      tokenHash,
+      tokenLookupHash,
+      hostname: null,
+      additionalInfo: null,
+      nodeId: null,
+      consumedAt: null,
+      expiresAt,
+    });
+
+    const saved = await this.nodeInstallsRepository.save(nodeInstall);
+    const agents =
+      this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
+        AGENTS_CONFIG_KEY,
+      );
+
+    return {
+      installId: saved.id,
+      installCommand: this.buildInstallCommand(
+        agents.installScriptUrl,
+        agents.publicApiUrl,
+        token,
+      ),
+      scriptUrl: agents.installScriptUrl,
+      apiUrl: agents.publicApiUrl,
+      expiresAt,
+    };
+  }
+
+  async consumeNodeInstall(
+    body: ConsumeNodeInstallDto,
+  ): Promise<ConsumeNodeInstallResponseDto> {
+    const nodeInstall = await this.findNodeInstallByTokenOrThrow(body.token);
+
+    if (nodeInstall.consumedAt || nodeInstall.nodeId) {
+      throw new ConflictException('Bootstrap token has already been used');
+    }
+
+    if (this.isExpired(nodeInstall)) {
+      throw new GoneException('Bootstrap token has expired');
+    }
+
+    await this.workspacesService.assertWorkspaceWritable(nodeInstall.workspaceId);
+    const hostname = this.normalizeHostname(body.hostname);
+    const additionalInfo = body.additionalInfo
+      ? { ...body.additionalInfo }
+      : null;
+    const agentToken = this.enrollmentTokensService.issueAgentToken();
+    const node = await this.nodesService.createFromEnrollment({
+      workspaceId: nodeInstall.workspaceId,
+      teamId: nodeInstall.teamId,
+      name: nodeInstall.nodeName,
+      description: nodeInstall.description,
+      hostname,
+      os: this.resolveNodeOs(additionalInfo),
+      arch: this.resolveNodeArch(additionalInfo),
+      agentTokenHash: this.nodesService.hashAgentToken(agentToken),
+      agentVersion: this.readString(additionalInfo, ['agentVersion']),
+      platformVersion: this.readString(additionalInfo, ['platformVersion']),
+      kernelVersion: this.readString(additionalInfo, ['kernelVersion']),
+    });
+
+    nodeInstall.hostname = hostname;
+    nodeInstall.additionalInfo = additionalInfo;
+    nodeInstall.nodeId = node.id;
+    nodeInstall.consumedAt = new Date();
+    nodeInstall.expiresAt = nodeInstall.consumedAt;
+    await this.nodeInstallsRepository.save(nodeInstall);
+
+    return {
+      nodeId: node.id,
+      agentToken,
+    };
+  }
+
   private async revokePendingByEmailAndHostname(
     email: string,
     hostname: string,
@@ -199,6 +303,35 @@ export class EnrollmentsService {
     enrollment.status = EnrollmentStatus.REVOKED;
     enrollment.expiresAt = new Date();
     await this.enrollmentsRepository.save(enrollment);
+  }
+
+  private async findNodeInstallByTokenOrThrow(
+    token: string,
+  ): Promise<NodeInstallEntity> {
+    const nodeInstall = await this.nodeInstallsRepository
+      .createQueryBuilder('nodeInstall')
+      .addSelect('nodeInstall.tokenHash')
+      .addSelect('nodeInstall.tokenLookupHash')
+      .where('nodeInstall.tokenLookupHash = :tokenLookupHash', {
+        tokenLookupHash: this.enrollmentTokensService.createLookupHash(token),
+      })
+      .getOne();
+
+    if (!nodeInstall) {
+      throw new NotFoundException('Bootstrap token was not found');
+    }
+
+    const isValidToken = await this.enrollmentTokensService.verifyToken({
+      token,
+      tokenHash: nodeInstall.tokenHash,
+      tokenLookupHash: nodeInstall.tokenLookupHash,
+    });
+
+    if (!isValidToken) {
+      throw new NotFoundException('Bootstrap token was not found');
+    }
+
+    return nodeInstall;
   }
 
   private async findByTokenOrThrow(
@@ -242,6 +375,26 @@ export class EnrollmentsService {
 
   private normalizeHostname(hostname: string): string {
     return hostname.trim().toLowerCase();
+  }
+
+  private buildInstallCommand(
+    scriptUrl: string,
+    apiUrl: string,
+    token: string,
+  ): string {
+    return [
+      'curl -fsSL',
+      this.shellEscape(scriptUrl),
+      '| sudo bash -s --',
+      '--api-url',
+      this.shellEscape(apiUrl),
+      '--bootstrap-token',
+      this.shellEscape(token),
+    ].join(' ');
+  }
+
+  private shellEscape(value: string): string {
+    return `'${value.replace(/'/g, `'\"'\"'`)}'`;
   }
 
   private isExpired(enrollment: Pick<EnrollmentEntity, 'expiresAt'>): boolean {

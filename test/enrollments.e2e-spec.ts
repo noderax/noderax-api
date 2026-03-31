@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import * as request from 'supertest';
 import { EnrollmentEntity } from '../src/modules/enrollments/entities/enrollment.entity';
 import { EnrollmentTokensService } from '../src/modules/enrollments/enrollment-tokens.service';
+import { NodeInstallEntity } from '../src/modules/enrollments/entities/node-install.entity';
 import { NodeEntity } from '../src/modules/nodes/entities/node.entity';
 import { MailerService } from '../src/modules/notifications/mailer.service';
 import { apiPath } from './helpers/api-path';
@@ -42,12 +43,27 @@ function configureTestEnv() {
   process.env.AGENT_OFFLINE_CHECK_INTERVAL_SECONDS = '1';
   process.env.AGENT_ENROLLMENT_TOKEN = 'secret-enrollment-token';
   process.env.AGENT_HIGH_CPU_THRESHOLD = '90';
+  process.env.AGENT_PUBLIC_API_URL = 'https://api.example.com';
+  process.env.AGENT_INSTALL_SCRIPT_URL =
+    'https://cdn.example.com/noderax-agent/install.sh';
 
   process.env.SEED_DEFAULT_ADMIN = 'true';
   process.env.ADMIN_NAME = 'E2E Admin';
   process.env.ADMIN_EMAIL = 'admin@example.com';
   process.env.ADMIN_PASSWORD = 'ChangeMe123!';
 }
+
+const extractBootstrapToken = (installCommand: string): string => {
+  const match = installCommand.match(/--bootstrap-token '([^']+)'/);
+
+  if (!match) {
+    throw new Error(
+      `Unable to extract bootstrap token from command: ${installCommand}`,
+    );
+  }
+
+  return match[1];
+};
 
 describe('Enrollments (e2e)', () => {
   let app: INestApplication;
@@ -304,6 +320,142 @@ describe('Enrollments (e2e)', () => {
       .send({
         email: 'admin@example.com',
         nodeName: 'Enrollment Node 07',
+      })
+      .expect(410);
+  });
+
+  it('allows only workspace admins to generate one-click install commands', async () => {
+    const workspaces = await request(app.getHttpServer())
+      .get(apiPath('/workspaces'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const workspaceId = workspaces.body[0]?.id as string;
+
+    await request(app.getHttpServer())
+      .post(apiPath(`/workspaces/${workspaceId}/node-installs`))
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        nodeName: 'Bootstrap Node 01',
+      })
+      .expect(403);
+  });
+
+  it('creates and consumes one-click node install tokens', async () => {
+    const workspaces = await request(app.getHttpServer())
+      .get(apiPath('/workspaces'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const workspaceId = workspaces.body[0]?.id as string;
+
+    const team = await request(app.getHttpServer())
+      .post(apiPath(`/workspaces/${workspaceId}/teams`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Operations',
+      })
+      .expect(201);
+
+    const createInstall = await request(app.getHttpServer())
+      .post(apiPath(`/workspaces/${workspaceId}/node-installs`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        nodeName: 'Bootstrap Node 02',
+        description: 'One-click install test node',
+        teamId: team.body.id,
+      })
+      .expect(201);
+
+    expect(createInstall.body.installId).toEqual(expect.any(String));
+    expect(createInstall.body.apiUrl).toBe('https://api.example.com');
+    expect(createInstall.body.scriptUrl).toBe(
+      'https://cdn.example.com/noderax-agent/install.sh',
+    );
+    expect(createInstall.body.installCommand).toContain(
+      'curl -fsSL \'https://cdn.example.com/noderax-agent/install.sh\'',
+    );
+
+    const bootstrapToken = extractBootstrapToken(
+      createInstall.body.installCommand,
+    );
+    const consume = await request(app.getHttpServer())
+      .post(apiPath('/node-installs/consume'))
+      .send({
+        token: bootstrapToken,
+        hostname: 'srv-bootstrap-02',
+        additionalInfo: {
+          os: 'ubuntu-24.04',
+          arch: 'arm64',
+          agentVersion: '1.2.3',
+          platformVersion: 'Ubuntu 24.04',
+          kernelVersion: '6.8.0',
+        },
+      })
+      .expect(201);
+
+    expect(consume.body.nodeId).toEqual(expect.any(String));
+    expect(consume.body.agentToken).toEqual(expect.any(String));
+
+    await request(app.getHttpServer())
+      .get(apiPath(`/workspaces/${workspaceId}/nodes/${consume.body.nodeId}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.name).toBe('Bootstrap Node 02');
+        expect(body.description).toBe('One-click install test node');
+        expect(body.hostname).toBe('srv-bootstrap-02');
+        expect(body.os).toBe('ubuntu-24.04');
+        expect(body.arch).toBe('arm64');
+        expect(body.teamId).toBe(team.body.id);
+        expect(body.agentVersion).toBe('1.2.3');
+        expect(body.platformVersion).toBe('Ubuntu 24.04');
+        expect(body.kernelVersion).toBe('6.8.0');
+      });
+
+    const nodeInstall = await dataSource
+      .getRepository(NodeInstallEntity)
+      .findOneByOrFail({
+        id: createInstall.body.installId,
+      });
+    expect(nodeInstall.hostname).toBe('srv-bootstrap-02');
+    expect(nodeInstall.nodeId).toBe(consume.body.nodeId);
+    expect(nodeInstall.consumedAt).toBeTruthy();
+
+    await request(app.getHttpServer())
+      .post(apiPath('/node-installs/consume'))
+      .send({
+        token: bootstrapToken,
+        hostname: 'srv-bootstrap-02',
+      })
+      .expect(409);
+  });
+
+  it('rejects expired one-click node install tokens', async () => {
+    const workspaces = await request(app.getHttpServer())
+      .get(apiPath('/workspaces'))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const workspaceId = workspaces.body[0]?.id as string;
+
+    const createInstall = await request(app.getHttpServer())
+      .post(apiPath(`/workspaces/${workspaceId}/node-installs`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        nodeName: 'Bootstrap Node 03',
+      })
+      .expect(201);
+
+    const installRepository = dataSource.getRepository(NodeInstallEntity);
+    const nodeInstall = await installRepository.findOneByOrFail({
+      id: createInstall.body.installId,
+    });
+    nodeInstall.expiresAt = new Date(Date.now() - 60_000);
+    await installRepository.save(nodeInstall);
+
+    await request(app.getHttpServer())
+      .post(apiPath('/node-installs/consume'))
+      .send({
+        token: extractBootstrapToken(createInstall.body.installCommand),
+        hostname: 'srv-bootstrap-03',
       })
       .expect(410);
   });

@@ -32,6 +32,7 @@ import { AuditLogEntity } from '../../src/modules/audit-logs/entities/audit-log.
 import { AuthModule } from '../../src/modules/auth/auth.module';
 import { DiagnosticsModule } from '../../src/modules/diagnostics/diagnostics.module';
 import { EnrollmentEntity } from '../../src/modules/enrollments/entities/enrollment.entity';
+import { NodeInstallEntity } from '../../src/modules/enrollments/entities/node-install.entity';
 import { EnrollmentsModule } from '../../src/modules/enrollments/enrollments.module';
 import { EventsModule } from '../../src/modules/events/events.module';
 import { EventEntity } from '../../src/modules/events/entities/event.entity';
@@ -65,6 +66,7 @@ const TEST_ENTITIES = [
   UserInvitationEntity,
   PasswordResetTokenEntity,
   EnrollmentEntity,
+  NodeInstallEntity,
   NodeEntity,
   EventEntity,
   MetricEntity,
