@@ -53,9 +53,15 @@ export class EnrollmentSchemaBootstrap implements OnModuleInit {
           "hostname" character varying(255) NULL,
           "additionalInfo" jsonb NULL,
           "nodeId" uuid NULL,
+          "status" character varying(32) NOT NULL DEFAULT 'pending',
+          "stage" character varying(64) NOT NULL DEFAULT 'command_generated',
+          "progressPercent" integer NOT NULL DEFAULT 5,
+          "statusMessage" text NULL,
+          "startedAt" TIMESTAMPTZ NULL,
           "consumedAt" TIMESTAMPTZ NULL,
           "expiresAt" TIMESTAMPTZ NOT NULL,
           "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
           CONSTRAINT "PK_node_installs_id" PRIMARY KEY ("id")
         )
       `);
@@ -64,6 +70,57 @@ export class EnrollmentSchemaBootstrap implements OnModuleInit {
     await this.dataSource.query(`
       ALTER TABLE "nodes"
       ADD COLUMN IF NOT EXISTS "description" text NULL
+    `);
+
+    await this.dataSource.query(`
+      ALTER TABLE "node_installs"
+      ADD COLUMN IF NOT EXISTS "status" character varying(32) NOT NULL DEFAULT 'pending'
+    `);
+
+    await this.dataSource.query(`
+      ALTER TABLE "node_installs"
+      ADD COLUMN IF NOT EXISTS "stage" character varying(64) NOT NULL DEFAULT 'command_generated'
+    `);
+
+    await this.dataSource.query(`
+      ALTER TABLE "node_installs"
+      ADD COLUMN IF NOT EXISTS "progressPercent" integer NOT NULL DEFAULT 5
+    `);
+
+    await this.dataSource.query(`
+      ALTER TABLE "node_installs"
+      ADD COLUMN IF NOT EXISTS "statusMessage" text NULL
+    `);
+
+    await this.dataSource.query(`
+      ALTER TABLE "node_installs"
+      ADD COLUMN IF NOT EXISTS "startedAt" TIMESTAMPTZ NULL
+    `);
+
+    await this.dataSource.query(`
+      ALTER TABLE "node_installs"
+      ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    `);
+
+    await this.dataSource.query(`
+      CREATE OR REPLACE FUNCTION sync_node_installs_updated_at()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        NEW."updatedAt" = now();
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+
+    await this.dataSource.query(`
+      DROP TRIGGER IF EXISTS "trg_node_installs_updated_at" ON "node_installs"
+    `);
+
+    await this.dataSource.query(`
+      CREATE TRIGGER "trg_node_installs_updated_at"
+      BEFORE UPDATE ON "node_installs"
+      FOR EACH ROW
+      EXECUTE FUNCTION sync_node_installs_updated_at()
     `);
 
     await this.dataSource.query(`

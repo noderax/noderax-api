@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { RedisModule } from '../../redis/redis.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { UsersModule } from '../users/users.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { EnrollmentSchemaBootstrap } from './bootstrap/enrollment-schema.bootstrap';
@@ -20,6 +22,8 @@ import { WorkspaceNodeInstallsController } from './workspace-node-installs.contr
     UsersModule,
     NodesModule,
     NotificationsModule,
+    RealtimeModule,
+    RedisModule,
     WorkspacesModule,
   ],
   controllers: [

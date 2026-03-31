@@ -1,10 +1,13 @@
 import { Repository } from 'typeorm';
+import { RedisService } from '../../redis/redis.service';
 import { NodesService } from '../nodes/nodes.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { UsersService } from '../users/users.service';
 import { EnrollmentEntity } from './entities/enrollment.entity';
 import { EnrollmentStatus } from './entities/enrollment-status.enum';
 import { NodeInstallEntity } from './entities/node-install.entity';
+import { NodeInstallStatus } from './entities/node-install-status.enum';
 import { EnrollmentTokensService } from './enrollment-tokens.service';
 import { EnrollmentsService } from './enrollments.service';
 
@@ -52,6 +55,8 @@ describe('EnrollmentsService', () => {
   let usersService: jest.Mocked<UsersService>;
   let nodesService: jest.Mocked<NodesService>;
   let notificationsService: jest.Mocked<NotificationsService>;
+  let realtimeGateway: jest.Mocked<RealtimeGateway>;
+  let redisService: jest.Mocked<RedisService>;
   let service: EnrollmentsService;
 
   beforeEach(() => {
@@ -64,7 +69,12 @@ describe('EnrollmentsService', () => {
     nodeInstallsRepository = {
       create: jest.fn((value) => value),
       find: jest.fn().mockResolvedValue([]),
-      save: jest.fn(async (value) => value),
+      save: jest.fn(async (value) => ({
+        id: 'node-install-1',
+        createdAt: new Date('2026-03-31T23:19:00.000Z'),
+        updatedAt: new Date('2026-03-31T23:19:00.000Z'),
+        ...value,
+      })),
       createQueryBuilder: jest.fn(),
     };
 
@@ -91,6 +101,15 @@ describe('EnrollmentsService', () => {
       notifyEnrollmentInitiated: jest.fn(),
     } as unknown as jest.Mocked<NotificationsService>;
 
+    realtimeGateway = {
+      emitNodeInstallUpdated: jest.fn(),
+    } as unknown as jest.Mocked<RealtimeGateway>;
+
+    redisService = {
+      publish: jest.fn().mockResolvedValue(1),
+      getInstanceId: jest.fn().mockReturnValue('instance-1'),
+    } as unknown as jest.Mocked<RedisService>;
+
     service = new EnrollmentsService(
       enrollmentsRepository as unknown as Repository<EnrollmentEntity>,
       nodeInstallsRepository as unknown as Repository<NodeInstallEntity>,
@@ -112,6 +131,8 @@ describe('EnrollmentsService', () => {
           installScriptUrl: 'https://cdn.example.com/install.sh',
         }),
       } as never,
+      realtimeGateway,
+      redisService,
     );
   });
 
@@ -213,6 +234,36 @@ describe('EnrollmentsService', () => {
         email: 'admin@example.com',
         hostname: 'srv-enroll-01',
         hasKnownUser: false,
+      }),
+    );
+  });
+
+  it('creates node installs with an initial pending progress state', async () => {
+    enrollmentTokensService.issueEnrollmentToken.mockResolvedValue({
+      token: 'raw-install-token',
+      tokenHash: 'token-hash',
+      tokenLookupHash: 'lookup-hash',
+    });
+
+    const result = await service.createNodeInstall('workspace-1', {
+      nodeName: 'Production Node',
+      description: 'Bootstrap this server',
+    });
+
+    expect(nodeInstallsRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'workspace-1',
+        status: NodeInstallStatus.PENDING,
+        stage: 'command_generated',
+        progressPercent: 5,
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        installId: expect.anything(),
+        status: NodeInstallStatus.PENDING,
+        stage: 'command_generated',
+        progressPercent: 5,
       }),
     );
   });

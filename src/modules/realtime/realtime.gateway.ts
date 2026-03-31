@@ -18,10 +18,13 @@ import {
   REALTIME_ERROR_CODES,
   REALTIME_EVENTS,
   REALTIME_NODE_ROOM_PREFIX,
+  REALTIME_WORKSPACE_ROOM_PREFIX,
 } from '../../common/constants/realtime.constants';
 import { NodeSubscriptionDto } from './dto/node-subscription.dto';
+import { WorkspaceSubscriptionDto } from './dto/workspace-subscription.dto';
 import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
 import { WsNodeSubscriptionGuard } from './guards/ws-node-subscription.guard';
+import { WsWorkspaceSubscriptionGuard } from './guards/ws-workspace-subscription.guard';
 import { RealtimeAuthService } from './services/realtime-auth.service';
 
 @Public()
@@ -81,6 +84,28 @@ export class RealtimeGateway
     return { unsubscribed: true, nodeId: payload.nodeId };
   }
 
+  @SubscribeMessage(REALTIME_EVENTS.SUBSCRIBE_WORKSPACE)
+  @UseGuards(WsJwtAuthGuard, WsWorkspaceSubscriptionGuard)
+  handleWorkspaceSubscription(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @CurrentSocketUser() _user: AuthenticatedUser,
+    @MessageBody() payload: WorkspaceSubscriptionDto,
+  ) {
+    client.join(`${REALTIME_WORKSPACE_ROOM_PREFIX}${payload.workspaceId}`);
+    return { subscribed: true, workspaceId: payload.workspaceId };
+  }
+
+  @SubscribeMessage(REALTIME_EVENTS.UNSUBSCRIBE_WORKSPACE)
+  @UseGuards(WsJwtAuthGuard, WsWorkspaceSubscriptionGuard)
+  handleWorkspaceUnsubscribe(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @CurrentSocketUser() _user: AuthenticatedUser,
+    @MessageBody() payload: WorkspaceSubscriptionDto,
+  ) {
+    client.leave(`${REALTIME_WORKSPACE_ROOM_PREFIX}${payload.workspaceId}`);
+    return { unsubscribed: true, workspaceId: payload.workspaceId };
+  }
+
   emitNodeStatusUpdate(payload: Record<string, unknown>) {
     if (payload.nodeId) {
       this.server
@@ -118,6 +143,14 @@ export class RealtimeGateway
       this.server
         .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
         .emit(REALTIME_EVENTS.EVENT_CREATED, payload);
+    }
+  }
+
+  emitNodeInstallUpdated(payload: Record<string, unknown>) {
+    if (payload.workspaceId) {
+      this.server
+        .to(`${REALTIME_WORKSPACE_ROOM_PREFIX}${payload.workspaceId}`)
+        .emit(REALTIME_EVENTS.NODE_INSTALL_UPDATED, payload);
     }
   }
 

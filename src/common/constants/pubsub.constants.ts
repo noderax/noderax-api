@@ -3,6 +3,7 @@ export const PUBSUB_CHANNELS = {
   AGENT_REALTIME_TERMINAL_CONTROL: 'agent-realtime.terminal.control',
   EVENTS_CREATED: 'events.created',
   METRICS_INGESTED: 'metrics.ingested',
+  NODE_INSTALLS_UPDATED: 'node-installs.updated',
   NODES_STATUS_UPDATED: 'nodes.status.updated',
   TERMINAL_SESSION_CLOSED: 'terminal.session.closed',
   TERMINAL_SESSION_ERROR: 'terminal.session.error',

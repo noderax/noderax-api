@@ -47,4 +47,29 @@ export class RealtimeAuthorizationService {
 
     throw new ForbiddenException('You are not allowed to access this node');
   }
+
+  async assertCanAccessWorkspace(
+    user: AuthenticatedUser,
+    workspaceId: string,
+  ): Promise<void> {
+    await this.workspacesService.findWorkspaceOrFail(workspaceId);
+
+    if (user.role === UserRole.PLATFORM_ADMIN) {
+      return;
+    }
+
+    if (
+      user.role === UserRole.USER &&
+      (await this.workspacesService.findMembershipForUser(
+        workspaceId,
+        user.id,
+      ))
+    ) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      'You are not allowed to access this workspace',
+    );
+  }
 }

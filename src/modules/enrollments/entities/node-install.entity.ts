@@ -9,7 +9,9 @@ import {
   Entity,
   Index,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
+import { NodeInstallStatus } from './node-install-status.enum';
 
 @Entity({ name: 'node_installs' })
 export class NodeInstallEntity {
@@ -84,6 +86,52 @@ export class NodeInstallEntity {
   @Column({ type: 'uuid', nullable: true })
   nodeId: string | null;
 
+  @ApiProperty({
+    enum: NodeInstallStatus,
+    example: NodeInstallStatus.PENDING,
+  })
+  @Column({
+    length: 32,
+    default: NodeInstallStatus.PENDING,
+  })
+  status: NodeInstallStatus;
+
+  @ApiProperty({
+    example: 'command_generated',
+  })
+  @Column({
+    length: 64,
+    default: 'command_generated',
+  })
+  stage: string;
+
+  @ApiProperty({
+    minimum: 0,
+    maximum: 100,
+    example: 5,
+  })
+  @Column({
+    type: 'integer',
+    default: 5,
+  })
+  progressPercent: number;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example:
+      'Install command generated. Run it on the target server to start bootstrap.',
+  })
+  @Column({ type: 'text', nullable: true })
+  statusMessage: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+    example: '2026-03-31T12:35:01.000Z',
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  startedAt: Date | null;
+
   @ApiPropertyOptional({
     format: 'date-time',
     nullable: true,
@@ -106,4 +154,11 @@ export class NodeInstallEntity {
   })
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
+
+  @ApiProperty({
+    format: 'date-time',
+    example: '2026-03-31T12:35:12.000Z',
+  })
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updatedAt: Date;
 }

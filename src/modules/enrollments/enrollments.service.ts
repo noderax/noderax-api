@@ -10,8 +10,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
 import { Repository } from 'typeorm';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
+import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
+import { RedisService } from '../../redis/redis.service';
 import { NodesService } from '../nodes/nodes.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { UsersService } from '../users/users.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { ConsumeNodeInstallDto } from './dto/consume-node-install.dto';
@@ -23,13 +26,25 @@ import { FinalizeEnrollmentResponseDto } from './dto/finalize-enrollment-respons
 import { EnrollmentStatusResponseDto } from './dto/enrollment-status-response.dto';
 import { InitiateEnrollmentDto } from './dto/initiate-enrollment.dto';
 import { InitiateEnrollmentResponseDto } from './dto/initiate-enrollment-response.dto';
+import { NodeInstallStatusResponseDto } from './dto/node-install-status-response.dto';
+import { ReportNodeInstallProgressDto } from './dto/report-node-install-progress.dto';
 import { EnrollmentEntity } from './entities/enrollment.entity';
 import { EnrollmentStatus } from './entities/enrollment-status.enum';
 import { NodeInstallEntity } from './entities/node-install.entity';
+import { NodeInstallStatus } from './entities/node-install-status.enum';
 import { EnrollmentTokensService } from './enrollment-tokens.service';
 
 const ENROLLMENT_TOKEN_TTL_MINUTES = 15;
 const NODE_INSTALL_TOKEN_TTL_MINUTES = 15;
+const INITIAL_NODE_INSTALL_PROGRESS = 5;
+const INITIAL_NODE_INSTALL_STAGE = 'command_generated';
+const EXPIRED_NODE_INSTALL_STAGE = 'expired';
+const BOOTSTRAP_CONSUMED_STAGE = 'bootstrap_token_consumed';
+const TERMINAL_NODE_INSTALL_STATUSES = new Set<NodeInstallStatus>([
+  NodeInstallStatus.COMPLETED,
+  NodeInstallStatus.FAILED,
+  NodeInstallStatus.EXPIRED,
+]);
 
 @Injectable()
 export class EnrollmentsService {
@@ -46,6 +61,8 @@ export class EnrollmentsService {
     private readonly notificationsService: NotificationsService,
     private readonly workspacesService: WorkspacesService,
     private readonly configService: ConfigService,
+    private readonly realtimeGateway: RealtimeGateway,
+    private readonly redisService: RedisService,
   ) {}
 
   async initiate(
@@ -207,6 +224,14 @@ export class EnrollmentsService {
       hostname: null,
       additionalInfo: null,
       nodeId: null,
+      status: NodeInstallStatus.PENDING,
+      stage: INITIAL_NODE_INSTALL_STAGE,
+      progressPercent: INITIAL_NODE_INSTALL_PROGRESS,
+      statusMessage: this.resolveDefaultNodeInstallMessage(
+        INITIAL_NODE_INSTALL_STAGE,
+        NodeInstallStatus.PENDING,
+      ),
+      startedAt: null,
       consumedAt: null,
       expiresAt,
     });
@@ -222,7 +247,7 @@ export class EnrollmentsService {
     );
 
     return {
-      installId: saved.id,
+      ...this.toNodeInstallStatusResponse(saved),
       installCommand: this.buildInstallCommand(
         agents.installScriptUrl,
         publicApiUrl,
@@ -230,8 +255,61 @@ export class EnrollmentsService {
       ),
       scriptUrl: agents.installScriptUrl,
       apiUrl: publicApiUrl,
-      expiresAt,
     };
+  }
+
+  async getNodeInstallStatus(
+    workspaceId: string,
+    installId: string,
+  ): Promise<NodeInstallStatusResponseDto> {
+    await this.workspacesService.findWorkspaceOrFail(workspaceId);
+
+    const nodeInstall = await this.nodeInstallsRepository.findOne({
+      where: {
+        id: installId,
+        workspaceId,
+      },
+    });
+
+    if (!nodeInstall) {
+      throw new NotFoundException(`Node install ${installId} was not found`);
+    }
+
+    const normalized = await this.expireNodeInstallIfNeeded(nodeInstall);
+    return this.toNodeInstallStatusResponse(normalized);
+  }
+
+  async reportNodeInstallProgress(
+    body: ReportNodeInstallProgressDto,
+  ): Promise<NodeInstallStatusResponseDto> {
+    const nodeInstall = await this.findNodeInstallByTokenOrThrow(body.token);
+    const normalized = await this.expireNodeInstallIfNeeded(nodeInstall);
+
+    if (normalized.status === NodeInstallStatus.EXPIRED) {
+      throw new GoneException('Bootstrap token has expired');
+    }
+
+    if (
+      TERMINAL_NODE_INSTALL_STATUSES.has(normalized.status) &&
+      normalized.status !== body.status
+    ) {
+      return this.toNodeInstallStatusResponse(normalized);
+    }
+
+    normalized.status = body.status ?? NodeInstallStatus.INSTALLING;
+    normalized.stage = body.stage.trim();
+    normalized.progressPercent =
+      typeof body.progressPercent === 'number'
+        ? body.progressPercent
+        : normalized.progressPercent;
+    normalized.statusMessage =
+      body.statusMessage?.trim() ||
+      this.resolveDefaultNodeInstallMessage(normalized.stage, normalized.status);
+    normalized.startedAt ??= new Date();
+
+    const saved = await this.nodeInstallsRepository.save(normalized);
+    await this.emitNodeInstallUpdated(saved);
+    return this.toNodeInstallStatusResponse(saved);
   }
 
   async consumeNodeInstall(
@@ -243,7 +321,8 @@ export class EnrollmentsService {
       throw new ConflictException('Bootstrap token has already been used');
     }
 
-    if (this.isExpired(nodeInstall)) {
+    if (this.isNodeInstallExpired(nodeInstall)) {
+      await this.expireNodeInstall(nodeInstall);
       throw new GoneException('Bootstrap token has expired');
     }
 
@@ -273,8 +352,17 @@ export class EnrollmentsService {
     nodeInstall.additionalInfo = additionalInfo;
     nodeInstall.nodeId = node.id;
     nodeInstall.consumedAt = new Date();
-    nodeInstall.expiresAt = nodeInstall.consumedAt;
-    await this.nodeInstallsRepository.save(nodeInstall);
+    nodeInstall.startedAt ??= nodeInstall.consumedAt;
+    nodeInstall.status = NodeInstallStatus.INSTALLING;
+    nodeInstall.stage = BOOTSTRAP_CONSUMED_STAGE;
+    nodeInstall.progressPercent = Math.max(nodeInstall.progressPercent, 92);
+    nodeInstall.statusMessage = this.resolveDefaultNodeInstallMessage(
+      BOOTSTRAP_CONSUMED_STAGE,
+      NodeInstallStatus.INSTALLING,
+    );
+
+    const saved = await this.nodeInstallsRepository.save(nodeInstall);
+    await this.emitNodeInstallUpdated(saved);
 
     return {
       nodeId: node.id,
@@ -375,6 +463,68 @@ export class EnrollmentsService {
     }
 
     return enrollment;
+  }
+
+  private async emitNodeInstallUpdated(nodeInstall: NodeInstallEntity) {
+    const payload = this.toNodeInstallStatusResponse(
+      nodeInstall,
+    ) as unknown as Record<string, unknown>;
+
+    this.realtimeGateway.emitNodeInstallUpdated(payload);
+    await this.redisService.publish(PUBSUB_CHANNELS.NODE_INSTALLS_UPDATED, {
+      ...payload,
+      sourceInstanceId: this.redisService.getInstanceId(),
+    });
+  }
+
+  private async expireNodeInstallIfNeeded(
+    nodeInstall: NodeInstallEntity,
+  ): Promise<NodeInstallEntity> {
+    if (
+      nodeInstall.status === NodeInstallStatus.EXPIRED ||
+      !this.isNodeInstallExpired(nodeInstall)
+    ) {
+      return nodeInstall;
+    }
+
+    return this.expireNodeInstall(nodeInstall);
+  }
+
+  private async expireNodeInstall(
+    nodeInstall: NodeInstallEntity,
+  ): Promise<NodeInstallEntity> {
+    nodeInstall.status = NodeInstallStatus.EXPIRED;
+    nodeInstall.stage = EXPIRED_NODE_INSTALL_STAGE;
+    nodeInstall.statusMessage = this.resolveDefaultNodeInstallMessage(
+      EXPIRED_NODE_INSTALL_STAGE,
+      NodeInstallStatus.EXPIRED,
+    );
+    const saved = await this.nodeInstallsRepository.save(nodeInstall);
+    await this.emitNodeInstallUpdated(saved);
+    return saved;
+  }
+
+  private toNodeInstallStatusResponse(
+    nodeInstall: NodeInstallEntity,
+  ): NodeInstallStatusResponseDto {
+    return {
+      installId: nodeInstall.id,
+      workspaceId: nodeInstall.workspaceId,
+      teamId: nodeInstall.teamId,
+      nodeName: nodeInstall.nodeName,
+      description: nodeInstall.description,
+      hostname: nodeInstall.hostname,
+      nodeId: nodeInstall.nodeId,
+      status: nodeInstall.status,
+      stage: nodeInstall.stage,
+      progressPercent: nodeInstall.progressPercent,
+      statusMessage: nodeInstall.statusMessage,
+      startedAt: nodeInstall.startedAt,
+      consumedAt: nodeInstall.consumedAt,
+      expiresAt: nodeInstall.expiresAt,
+      createdAt: nodeInstall.createdAt,
+      updatedAt: nodeInstall.updatedAt,
+    };
   }
 
   private normalizeEmail(email: string): string {
@@ -487,6 +637,15 @@ export class EnrollmentsService {
     return enrollment.expiresAt.getTime() <= Date.now();
   }
 
+  private isNodeInstallExpired(
+    nodeInstall: Pick<NodeInstallEntity, 'expiresAt' | 'consumedAt'>,
+  ): boolean {
+    return (
+      !nodeInstall.consumedAt &&
+      nodeInstall.expiresAt.getTime() <= Date.now()
+    );
+  }
+
   private resolveNodeOs(
     additionalInfo: Record<string, unknown> | null,
   ): string {
@@ -521,5 +680,46 @@ export class EnrollmentsService {
     }
 
     return null;
+  }
+
+  private resolveDefaultNodeInstallMessage(
+    stage: string,
+    status: NodeInstallStatus,
+  ): string {
+    if (status === NodeInstallStatus.FAILED) {
+      return 'Installer reported a failure. Inspect the server output for details.';
+    }
+
+    if (status === NodeInstallStatus.EXPIRED) {
+      return 'Bootstrap token expired before installation finished. Generate a fresh install command.';
+    }
+
+    switch (stage) {
+      case INITIAL_NODE_INSTALL_STAGE:
+        return 'Install command generated. Run it on the target server to start bootstrap.';
+      case 'installer_started':
+        return 'Installer started on the target server.';
+      case 'dependencies_installing':
+        return 'Installing required operating system packages.';
+      case 'dependencies_ready':
+        return 'Required operating system packages are ready.';
+      case 'service_user_ready':
+        return 'Preparing the noderax service account and runtime directories.';
+      case 'binary_download_started':
+        return 'Downloading the Noderax agent binary.';
+      case 'binary_downloaded':
+        return 'Agent binary downloaded. Bootstrapping node credentials next.';
+      case 'agent_bootstrapping':
+        return 'Bootstrapping node credentials and writing service config.';
+      case BOOTSTRAP_CONSUMED_STAGE:
+        return 'Node record created. Finishing service startup.';
+      case 'service_started':
+      case 'completed':
+        return 'Agent installed successfully and the noderax service is running.';
+      default:
+        return status === NodeInstallStatus.COMPLETED
+          ? 'Agent installation completed successfully.'
+          : 'Installer progress updated.';
+    }
   }
 }

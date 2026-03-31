@@ -54,6 +54,12 @@ export class RealtimePubsubBridgeService
           this.forwardTaskUpdated(payload as PubsubPayload);
         },
       ),
+      await this.redisService.subscribe(
+        PUBSUB_CHANNELS.NODE_INSTALLS_UPDATED,
+        (payload) => {
+          this.forwardNodeInstallUpdated(payload as PubsubPayload);
+        },
+      ),
     );
 
     this.logger.log('Realtime pubsub bridge is active');
@@ -96,6 +102,14 @@ export class RealtimePubsubBridgeService
     }
 
     this.realtimeGateway.emitTaskUpdated(payload);
+  }
+
+  private forwardNodeInstallUpdated(payload: PubsubPayload): void {
+    if (this.isSameInstance(payload)) {
+      return;
+    }
+
+    this.realtimeGateway.emitNodeInstallUpdated(payload);
   }
 
   private isSameInstance(payload: PubsubPayload): boolean {
