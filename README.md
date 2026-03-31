@@ -74,14 +74,14 @@ src/
   - inactive users cannot log in or receive new assignments
 - Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
 - Linux node inventory with online/offline detection, maintenance mode, team ownership, and version telemetry
-- Workspace-scoped one-click node bootstrap with short-lived install commands, installer consumption, and legacy enrollment compatibility
+- Workspace-scoped one-click node bootstrap with short-lived install commands, live install progress tracking, installer consumption, and legacy enrollment compatibility
 - Metrics ingestion and node telemetry persistence
 - Task creation, team-targeted dispatch, batch dispatch, long-poll task claiming, lifecycle updates, and logs
 - Workspace-scoped task templates
 - Scheduled task creation with workspace timezone support and team targeting
 - Package operations through the shared task pipeline
 - Platform settings persistence through installer state, including SMTP settings validation
-- Realtime updates for node state, metrics, tasks, and events
+- Realtime updates for node state, metrics, tasks, events, and node install progress
 - Interactive terminal sessions over a dedicated JWT-authenticated Socket.IO namespace
 - Terminal transcript persistence with ordered base64 I/O chunks, 7-day retention, and retention cleanup
 - Agent realtime terminal bridge for start, input, resize, stop, opened, output, exited, and error events
@@ -134,7 +134,7 @@ For installer-managed deployments, `NODERAX_STATE_DIR` should point to a writabl
 
 If `SMTP_HOST` is left blank, mail delivery remains disabled. Invite, reset-password, and operational email flows only send when SMTP is configured. In tests, the API uses JSON transport and exposes captured deliveries through the in-memory mailer service.
 
-`AGENT_PUBLIC_API_URL` should point to the externally reachable API origin used by target servers. `AGENT_INSTALL_SCRIPT_URL` controls the installer script URL embedded into the generated node install command.
+`AGENT_PUBLIC_API_URL` should point to the externally reachable API origin used by target servers. In installer-managed setups, the setup flow populates this from the system API URL. `AGENT_INSTALL_SCRIPT_URL` controls the installer script URL embedded into the generated node install command.
 
 If you want the API to create the first platform admin automatically, set:
 
@@ -247,8 +247,12 @@ After installation completes, the normal application surface becomes active.
 ## Node Bootstrap Flow
 
 - Workspace owners, admins, and platform admins can create one-click install commands through `POST /workspaces/:workspaceId/node-installs`
-- The response includes the full `curl | sudo bash` installer command, the public API URL, the installer script URL, and the expiry timestamp
+- The response includes the full `curl | sudo bash` installer command, the public API URL, the installer script URL, the install record ID, and the initial live status payload
 - Install tokens are single-use and short-lived
+- Install status can be read through `GET /workspaces/:workspaceId/node-installs/:installId`
+- The installer reports progress stages through `POST /node-installs/progress`
+- Common progress stages include `installer_started`, dependency preparation, binary download, bootstrap, and `service_started`
+- Workspace realtime consumers receive `node-install.updated` frames while bootstrap is running
 - Target hosts consume the token through `POST /node-installs/consume`
 - Legacy `POST /enrollments/initiate` and `GET /enrollments/:token` remain available for backward compatibility
 
@@ -354,6 +358,7 @@ Current behavior:
 - Transcript chunks are stored in order with a unique `(sessionId, seq)` constraint
 - Transcript retention is 7 days
 - Controller disconnect has a 5-minute reattach grace window before the session is closed
+- Termination requests have a backend timeout fallback so sessions do not remain stuck in `terminating` if the remote shell disconnects without a final exit event
 - Audit events are written for create, open, terminate request, exit, failure, and transcript retention cleanup
 ## Security Model
 
@@ -412,6 +417,7 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 - `POST /setup/validate/smtp`
 - `POST /setup/install`
 - `POST /node-installs/consume`
+- `POST /node-installs/progress`
 - `POST /enrollments/initiate`
 - `GET /enrollments/:token`
 
@@ -445,6 +451,7 @@ All routes below are relative to `http://localhost:3000/api/v1`.
 - `POST /auth/providers/test`
 - `POST /workspaces/:workspaceId/tasks/teams/:teamId`
 - `POST /workspaces/:workspaceId/node-installs`
+- `GET /workspaces/:workspaceId/node-installs/:installId`
 - `GET /workspaces/:workspaceId/task-templates`
 - `POST /workspaces/:workspaceId/task-templates`
 - `PATCH /workspaces/:workspaceId/task-templates/:id`
@@ -506,6 +513,7 @@ The API publishes web-facing realtime events for:
 - `task.created`
 - `task.updated`
 - `event.created`
+- `node-install.updated`
 
 It also hosts the agent realtime namespace at `/agent-realtime`.
 
