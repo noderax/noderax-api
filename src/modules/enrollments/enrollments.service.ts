@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Request } from 'express';
 import { Repository } from 'typeorm';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { NodesService } from '../nodes/nodes.service';
@@ -184,6 +185,7 @@ export class EnrollmentsService {
   async createNodeInstall(
     workspaceId: string,
     body: CreateNodeInstallDto,
+    request?: Request,
   ): Promise<CreateNodeInstallResponseDto> {
     await this.workspacesService.assertWorkspaceWritable(workspaceId);
     const team = body.teamId
@@ -214,16 +216,20 @@ export class EnrollmentsService {
       this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
         AGENTS_CONFIG_KEY,
       );
+    const publicApiUrl = this.resolveNodeInstallApiUrl(
+      request,
+      agents.publicApiUrl,
+    );
 
     return {
       installId: saved.id,
       installCommand: this.buildInstallCommand(
         agents.installScriptUrl,
-        agents.publicApiUrl,
+        publicApiUrl,
         token,
       ),
       scriptUrl: agents.installScriptUrl,
-      apiUrl: agents.publicApiUrl,
+      apiUrl: publicApiUrl,
       expiresAt,
     };
   }
@@ -241,7 +247,9 @@ export class EnrollmentsService {
       throw new GoneException('Bootstrap token has expired');
     }
 
-    await this.workspacesService.assertWorkspaceWritable(nodeInstall.workspaceId);
+    await this.workspacesService.assertWorkspaceWritable(
+      nodeInstall.workspaceId,
+    );
     const hostname = this.normalizeHostname(body.hostname);
     const additionalInfo = body.additionalInfo
       ? { ...body.additionalInfo }
@@ -395,6 +403,84 @@ export class EnrollmentsService {
 
   private shellEscape(value: string): string {
     return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+  }
+
+  private resolveNodeInstallApiUrl(
+    request: Request | undefined,
+    fallback: string,
+  ): string {
+    const proxiedUrl = this.normalizePublicApiUrl(
+      request
+        ? this.readHeaderValue(request, 'x-noderax-public-api-url')
+        : null,
+    );
+    if (proxiedUrl) {
+      return proxiedUrl;
+    }
+
+    const requestUrl = this.resolveRequestPublicApiUrl(request);
+    if (requestUrl) {
+      return requestUrl;
+    }
+
+    const configuredUrl = this.normalizePublicApiUrl(
+      process.env.AGENT_PUBLIC_API_URL,
+    );
+    if (configuredUrl) {
+      return configuredUrl;
+    }
+
+    return fallback;
+  }
+
+  private resolveRequestPublicApiUrl(request?: Request): string | null {
+    if (!request) {
+      return null;
+    }
+
+    const host =
+      this.readHeaderValue(request, 'x-forwarded-host') ??
+      this.readHeaderValue(request, 'host');
+    if (!host) {
+      return null;
+    }
+
+    const protocol =
+      this.readHeaderValue(request, 'x-forwarded-proto')
+        ?.split(',')[0]
+        ?.trim() ||
+      request.protocol ||
+      'http';
+
+    return this.normalizePublicApiUrl(`${protocol}://${host}`);
+  }
+
+  private readHeaderValue(request: Request, name: string): string | null {
+    const value = request.headers[name];
+
+    if (Array.isArray(value)) {
+      return value.find((item) => item.trim().length > 0)?.trim() ?? null;
+    }
+
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : null;
+  }
+
+  private normalizePublicApiUrl(value?: string | null): string | null {
+    const candidate = value?.trim();
+    if (!candidate) {
+      return null;
+    }
+
+    try {
+      const url = new URL(candidate);
+      url.hash = '';
+      url.pathname = url.pathname.replace(/\/(?:api\/)?v1\/?$/i, '') || '/';
+      return url.toString().replace(/\/$/, '');
+    } catch {
+      return null;
+    }
   }
 
   private isExpired(enrollment: Pick<EnrollmentEntity, 'expiresAt'>): boolean {

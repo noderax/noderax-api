@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -17,6 +17,7 @@ import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-member
 import { CreateNodeInstallDto } from './dto/create-node-install.dto';
 import { CreateNodeInstallResponseDto } from './dto/create-node-install-response.dto';
 import { EnrollmentsService } from './enrollments.service';
+import { Request } from 'express';
 
 @ApiTags('Workspace Node Installs')
 @ApiBearerAuth(SWAGGER_BEARER_AUTH_NAME)
@@ -47,7 +48,8 @@ export class WorkspaceNodeInstallsController {
   create(
     @Param('workspaceId') workspaceId: string,
     @Body() body: CreateNodeInstallDto,
+    @Req() request: Request,
   ) {
-    return this.enrollmentsService.createNodeInstall(workspaceId, body);
+    return this.enrollmentsService.createNodeInstall(workspaceId, body, request);
   }
 }
