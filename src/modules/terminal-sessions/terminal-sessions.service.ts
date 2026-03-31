@@ -56,6 +56,19 @@ type PubsubPayload = Record<string, unknown> & {
   sessionId?: string;
 };
 
+type TerminalSessionMetadataPatch = Partial<
+  Pick<
+    TerminalSessionEntity,
+    | 'status'
+    | 'openedAt'
+    | 'closedAt'
+    | 'closedReason'
+    | 'exitCode'
+    | 'cols'
+    | 'rows'
+  >
+>;
+
 @Injectable()
 export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TerminalSessionsService.name);
@@ -310,7 +323,9 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     });
 
     session.status = TerminalSessionStatus.TERMINATING;
-    await this.sessionsRepository.save(session);
+    await this.updateSessionMetadata(session, {
+      status: session.status,
+    });
     await this.publishSessionState(session);
     this.scheduleTerminationTimeout(session.id);
 
@@ -453,7 +468,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     if (session.status === TerminalSessionStatus.PENDING) {
       session.cols = cols;
       session.rows = rows;
-      await this.sessionsRepository.save(session);
+      await this.updateSessionMetadata(session, {
+        cols: session.cols,
+        rows: session.rows,
+      });
       await this.publishSessionState(session);
       return session;
     }
@@ -464,7 +482,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
 
     session.cols = cols;
     session.rows = rows;
-    await this.sessionsRepository.save(session);
+    await this.updateSessionMetadata(session, {
+      cols: session.cols,
+      rows: session.rows,
+    });
     await this.publishSessionState(session);
 
     const dispatched = await this.agentRealtimeService.resizeTerminalSession(
@@ -512,7 +533,15 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       session.rows = input.rows;
     }
 
-    const saved = await this.sessionsRepository.save(session);
+    const saved = await this.updateSessionMetadata(session, {
+      status: session.status,
+      openedAt: session.openedAt,
+      closedAt: session.closedAt,
+      closedReason: session.closedReason,
+      exitCode: session.exitCode,
+      cols: session.cols,
+      rows: session.rows,
+    });
 
     this.logger.debug(
       `Terminal session opened: session=${saved.id} node=${saved.nodeId}`,
@@ -566,7 +595,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       });
       session.status = TerminalSessionStatus.TERMINATING;
       session.closedReason = 'transcript-overflow';
-      await this.sessionsRepository.save(session);
+      await this.updateSessionMetadata(session, {
+        status: session.status,
+        closedReason: session.closedReason,
+      });
       await this.publishSessionState(session);
       this.scheduleTerminationTimeout(session.id);
 
@@ -711,7 +743,12 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     session.closedReason = input.reason;
     session.exitCode = input.exitCode;
 
-    const saved = await this.sessionsRepository.save(session);
+    const saved = await this.updateSessionMetadata(session, {
+      status: session.status,
+      closedAt: session.closedAt,
+      closedReason: session.closedReason,
+      exitCode: session.exitCode,
+    });
     await this.appendChunk(saved, {
       direction:
         input.status === TerminalSessionStatus.FAILED
@@ -794,6 +831,30 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async appendChunk(
+    session: TerminalSessionEntity,
+    input: {
+      direction: TerminalTranscriptDirection;
+      payload: string;
+      sourceTimestamp?: Date;
+    },
+  ): Promise<TerminalSessionChunkEntity> {
+    try {
+      return await this.appendChunkOnce(session, input);
+    } catch (error) {
+      if (!this.isChunkSequenceConflict(error)) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `Detected terminal transcript sequence drift; reconciling and retrying chunk append for session ${session.id}.`,
+      );
+
+      await this.reconcileTranscriptState(session);
+      return this.appendChunkOnce(session, input);
+    }
+  }
+
+  private async appendChunkOnce(
     session: TerminalSessionEntity,
     input: {
       direction: TerminalTranscriptDirection;
@@ -1113,7 +1174,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
 
     session.status = TerminalSessionStatus.TERMINATING;
     session.closedReason = 'controller-detached-timeout';
-    await this.sessionsRepository.save(session);
+    await this.updateSessionMetadata(session, {
+      status: session.status,
+      closedReason: session.closedReason,
+    });
     await this.publishSessionState(session);
     this.scheduleTerminationTimeout(session.id);
 
@@ -1267,6 +1331,162 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     }
 
     return null;
+  }
+
+  private async updateSessionMetadata(
+    session: TerminalSessionEntity,
+    patch: TerminalSessionMetadataPatch,
+  ): Promise<TerminalSessionEntity> {
+    const setClause: Record<string, unknown> = {
+      updatedAt: () => 'CURRENT_TIMESTAMP',
+    };
+
+    if ('status' in patch) {
+      setClause.status = patch.status ?? null;
+    }
+    if ('openedAt' in patch) {
+      setClause.openedAt = patch.openedAt ?? null;
+    }
+    if ('closedAt' in patch) {
+      setClause.closedAt = patch.closedAt ?? null;
+    }
+    if ('closedReason' in patch) {
+      setClause.closedReason = patch.closedReason ?? null;
+    }
+    if ('exitCode' in patch) {
+      setClause.exitCode = patch.exitCode ?? null;
+    }
+    if ('cols' in patch) {
+      setClause.cols = patch.cols ?? null;
+    }
+    if ('rows' in patch) {
+      setClause.rows = patch.rows ?? null;
+    }
+
+    const updateResult = await this.sessionsRepository
+      .createQueryBuilder()
+      .update(TerminalSessionEntity)
+      .set(setClause as never)
+      .where('id = :sessionId', { sessionId: session.id })
+      .returning(['updatedAt'])
+      .execute();
+
+    const rawUpdateResult = Array.isArray(updateResult.raw)
+      ? updateResult.raw[0]
+      : updateResult.raw;
+    const nextUpdatedAt =
+      rawUpdateResult && typeof rawUpdateResult === 'object'
+        ? this.readDateReturningValue(rawUpdateResult, [
+            'updatedAt',
+            'updatedat',
+          ])
+        : null;
+
+    if ('status' in patch && patch.status !== undefined) {
+      session.status = patch.status;
+    }
+    if ('openedAt' in patch) {
+      session.openedAt = patch.openedAt ?? null;
+    }
+    if ('closedAt' in patch) {
+      session.closedAt = patch.closedAt ?? null;
+    }
+    if ('closedReason' in patch) {
+      session.closedReason = patch.closedReason ?? null;
+    }
+    if ('exitCode' in patch) {
+      session.exitCode = patch.exitCode ?? null;
+    }
+    if ('cols' in patch && typeof patch.cols === 'number') {
+      session.cols = patch.cols;
+    }
+    if ('rows' in patch && typeof patch.rows === 'number') {
+      session.rows = patch.rows;
+    }
+    session.updatedAt = nextUpdatedAt ?? new Date();
+
+    return session;
+  }
+
+  private async reconcileTranscriptState(
+    session: TerminalSessionEntity,
+  ): Promise<void> {
+    const raw = await this.chunksRepository
+      .createQueryBuilder('chunk')
+      .select('COALESCE(MAX(chunk.seq), 0)', 'lastChunkSeq')
+      .addSelect('COUNT(*)', 'chunkCount')
+      .addSelect(
+        "COALESCE(SUM(OCTET_LENGTH(DECODE(chunk.payload, 'base64'))), 0)",
+        'transcriptBytes',
+      )
+      .where('chunk.sessionId = :sessionId', { sessionId: session.id })
+      .getRawOne<Record<string, unknown>>();
+
+    const lastChunkSeq = this.readNumericReturningValue(raw ?? {}, [
+      'lastChunkSeq',
+      'lastchunkseq',
+    ]);
+    const chunkCount = this.readNumericReturningValue(raw ?? {}, [
+      'chunkCount',
+      'chunkcount',
+    ]);
+    const transcriptBytes = this.readNumericReturningValue(raw ?? {}, [
+      'transcriptBytes',
+      'transcriptbytes',
+    ]);
+
+    const updateResult = await this.sessionsRepository
+      .createQueryBuilder()
+      .update(TerminalSessionEntity)
+      .set({
+        lastChunkSeq,
+        chunkCount,
+        transcriptBytes: String(transcriptBytes),
+        updatedAt: () => 'CURRENT_TIMESTAMP',
+      } as never)
+      .where('id = :sessionId', { sessionId: session.id })
+      .returning(['updatedAt'])
+      .execute();
+
+    const rawUpdateResult = Array.isArray(updateResult.raw)
+      ? updateResult.raw[0]
+      : updateResult.raw;
+
+    session.lastChunkSeq = lastChunkSeq;
+    session.chunkCount = chunkCount;
+    session.transcriptBytes = String(transcriptBytes);
+    session.updatedAt =
+      rawUpdateResult && typeof rawUpdateResult === 'object'
+        ? this.readDateReturningValue(rawUpdateResult, [
+            'updatedAt',
+            'updatedat',
+          ]) ?? new Date()
+        : new Date();
+  }
+
+  private isChunkSequenceConflict(error: unknown): boolean {
+    const code =
+      (error as { code?: string })?.code ??
+      (error as { driverError?: { code?: string } })?.driverError?.code;
+    if (code !== '23505') {
+      return false;
+    }
+
+    const constraint =
+      (error as { constraint?: string })?.constraint ??
+      (error as { driverError?: { constraint?: string } })?.driverError
+        ?.constraint;
+    if (constraint === 'IDX_terminal_session_chunks_session_seq') {
+      return true;
+    }
+
+    const message =
+      (error as { message?: string })?.message ??
+      (error as { driverError?: { message?: string } })?.driverError?.message;
+    return (
+      typeof message === 'string' &&
+      message.includes('IDX_terminal_session_chunks_session_seq')
+    );
   }
 
   private isTerminal(status: TerminalSessionStatus): boolean {
