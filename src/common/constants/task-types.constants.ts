@@ -1,4 +1,5 @@
 export const TASK_TYPES = {
+  AGENT_UPDATE: 'agent.update',
   PACKAGE_LIST: 'packageList',
   PACKAGE_SEARCH: 'packageSearch',
   PACKAGE_INSTALL: 'packageInstall',

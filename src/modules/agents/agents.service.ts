@@ -7,6 +7,7 @@ import { ConfigService, ConfigType } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
+import { AgentUpdatesService } from '../agent-updates/agent-updates.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodesService } from '../nodes/nodes.service';
@@ -20,6 +21,7 @@ export class AgentsService {
   constructor(
     private readonly nodesService: NodesService,
     private readonly eventsService: EventsService,
+    private readonly agentUpdatesService: AgentUpdatesService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -117,6 +119,10 @@ export class AgentsService {
       });
     }
     await this.nodesService.broadcastStatusUpdate(updatedNode);
+    await this.agentUpdatesService.observeNodeVersion({
+      id: updatedNode.id,
+      agentVersion: updatedNode.agentVersion,
+    });
 
     return {
       acknowledged: true,

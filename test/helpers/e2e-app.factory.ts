@@ -27,6 +27,9 @@ import { normalizeDatabaseEnvAliases } from '../../src/config/database-env.utils
 import { validationSchema } from '../../src/config/env.validation';
 import { APP_CONFIG_KEY, appConfig } from '../../src/config';
 import { LegacyHealthController } from '../../src/legacy-health.controller';
+import { AgentUpdatesModule } from '../../src/modules/agent-updates/agent-updates.module';
+import { AgentUpdateRolloutTargetEntity } from '../../src/modules/agent-updates/entities/agent-update-rollout-target.entity';
+import { AgentUpdateRolloutEntity } from '../../src/modules/agent-updates/entities/agent-update-rollout.entity';
 import { AgentsModule } from '../../src/modules/agents/agents.module';
 import { AuditLogEntity } from '../../src/modules/audit-logs/entities/audit-log.entity';
 import { AuthModule } from '../../src/modules/auth/auth.module';
@@ -80,6 +83,8 @@ const TEST_ENTITIES = [
   WorkspaceMembershipEntity,
   TeamMembershipEntity,
   TeamEntity,
+  AgentUpdateRolloutEntity,
+  AgentUpdateRolloutTargetEntity,
 ];
 
 function createPgMemDataSource(
@@ -158,6 +163,7 @@ export async function createE2eApp(): Promise<INestApplication> {
       }),
       RedisModule,
       RealtimeModule,
+      AgentUpdatesModule,
       NotificationsModule,
       UsersModule,
       AuthModule,

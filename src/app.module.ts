@@ -15,6 +15,7 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
 import { getTypeOrmConfig } from './database/typeorm.config';
 import { LegacyHealthController } from './legacy-health.controller';
 import { AgentRealtimeModule } from './modules/agent-realtime/agent-realtime.module';
+import { AgentUpdatesModule } from './modules/agent-updates/agent-updates.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DiagnosticsModule } from './modules/diagnostics/diagnostics.module';
@@ -56,6 +57,7 @@ normalizeDatabaseEnvAliases();
     RedisModule,
     RealtimeModule,
     AgentRealtimeModule,
+    AgentUpdatesModule,
     NotificationsModule,
     SetupModule,
     UsersModule,

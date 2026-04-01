@@ -22,6 +22,7 @@ Current stable release: `1.0.0`
 src/
   modules/
     audit-logs/
+    agent-updates/
     agent-realtime/
     agents/
     auth/
@@ -75,6 +76,8 @@ src/
 - Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
 - Linux node inventory with online/offline detection, maintenance mode, team ownership, and version telemetry
 - Workspace-scoped one-click node bootstrap with short-lived install commands, live install progress tracking, installer consumption, and legacy enrollment compatibility
+- Official agent release catalog resolution through CDN-first metadata with GitHub Releases fallback
+- Platform-admin agent update rollouts with sequential dispatch, retry, skip, resume, cancel, rollback, and heartbeat-confirmed completion
 - Metrics ingestion and node telemetry persistence
 - Task creation, team-targeted dispatch, batch dispatch, long-poll task claiming, lifecycle updates, and logs
 - Workspace-scoped task templates
@@ -256,6 +259,18 @@ Production behavior:
 - PostgreSQL data, Redis data, and installer state are persisted in named volumes
 - Redis runs with AOF enabled and password protection
 - Runtime CORS must be configured with explicit origins before switching to production traffic
+
+## Agent Updates And Official Releases
+
+The API now owns the official agent update control plane.
+
+- `GET /agent-updates/summary` returns the latest tagged release, outdated node counts, and the active rollout summary.
+- `GET /agent-updates/releases` and `GET /agent-updates/rollouts` power the platform-admin `Updates` center in the web app.
+- `POST /agent-updates/rollouts`, `resume`, `cancel`, `retry`, and `skip` manage sequential fleet rollout state.
+- `POST /agent-updates/targets/:targetId/progress` is agent-authenticated and receives detached updater progress from the target node.
+- A rollout target is not considered successful until the agent heartbeat reports `agentVersion === targetVersion`; updater progress alone is not enough.
+- On the first target failure or timeout the rollout is paused and requires explicit operator action before the fleet continues.
+- Only tagged official releases are catalogued. The API reads the official CDN manifest catalog first and falls back to official GitHub Release assets when the CDN is unavailable.
 
 ### First-time setup flow
 

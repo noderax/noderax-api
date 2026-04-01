@@ -1,4 +1,8 @@
 export const SYSTEM_EVENT_TYPES = {
+  AGENT_UPDATE_ROLLOUT_CREATED: 'agent.update.rollout.created',
+  AGENT_UPDATE_TARGET_COMPLETED: 'agent.update.target.completed',
+  AGENT_UPDATE_TARGET_DISPATCHED: 'agent.update.target.dispatched',
+  AGENT_UPDATE_TARGET_FAILED: 'agent.update.target.failed',
   HIGH_CPU: 'high.cpu',
   NODE_OFFLINE: 'node.offline',
   NODE_ONLINE: 'node.online',
