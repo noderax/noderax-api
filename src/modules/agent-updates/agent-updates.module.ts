@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AgentAuthGuard } from '../../common/guards/agent-auth.guard';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
@@ -25,7 +25,7 @@ import { TaskEntity } from '../tasks/entities/task.entity';
       TaskEntity,
     ]),
     NodesModule,
-    TasksModule,
+    forwardRef(() => TasksModule),
     EventsModule,
     AuditLogsModule,
   ],

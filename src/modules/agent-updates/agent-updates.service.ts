@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -55,6 +57,7 @@ export class AgentUpdatesService {
     private readonly tasksRepository: Repository<TaskEntity>,
     private readonly releaseCatalogService: AgentReleaseCatalogService,
     private readonly nodesService: NodesService,
+    @Inject(forwardRef(() => TasksService))
     private readonly tasksService: TasksService,
     private readonly eventsService: EventsService,
     private readonly auditLogsService: AuditLogsService,
