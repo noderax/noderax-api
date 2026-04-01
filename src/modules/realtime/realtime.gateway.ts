@@ -14,6 +14,7 @@ import { CurrentSocketUser } from '../../common/decorators/current-socket-user.d
 import { AuthenticatedSocket } from '../../common/types/authenticated-socket.type';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { Server, Socket } from 'socket.io';
+import { buildRuntimeSocketCorsOptions } from '../../config';
 import {
   REALTIME_ERROR_CODES,
   REALTIME_EVENTS,
@@ -30,10 +31,7 @@ import { RealtimeAuthService } from './services/realtime-auth.service';
 @Public()
 @WebSocketGateway({
   namespace: 'realtime',
-  cors: {
-    origin: '*',
-    credentials: true,
-  },
+  cors: buildRuntimeSocketCorsOptions(),
 })
 export class RealtimeGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect

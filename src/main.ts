@@ -13,7 +13,18 @@ import { AppModule } from './app.module';
 import { SWAGGER_BEARER_AUTH_NAME } from './common/constants/swagger.constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
-import { APP_CONFIG_KEY, appConfig } from './config';
+import {
+  AGENTS_CONFIG_KEY,
+  APP_CONFIG_KEY,
+  AUTH_CONFIG_KEY,
+  BOOTSTRAP_CONFIG_KEY,
+  agentsConfig,
+  appConfig,
+  authConfig,
+  bootstrapConfig,
+  buildCorsOptions,
+  assertSafeProductionConfiguration,
+} from './config';
 import { normalizeDatabaseEnvAliases } from './config/database-env.utils';
 import { prepareBootEnvironment } from './install/boot-mode';
 import { readInstallState } from './install/install-state';
@@ -38,9 +49,30 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const appSettings =
     configService.getOrThrow<ConfigType<typeof appConfig>>(APP_CONFIG_KEY);
+  const authSettings =
+    configService.getOrThrow<ConfigType<typeof authConfig>>(AUTH_CONFIG_KEY);
+  const bootstrapSettings =
+    configService.getOrThrow<ConfigType<typeof bootstrapConfig>>(
+      BOOTSTRAP_CONFIG_KEY,
+    );
+  const agentSettings =
+    configService.getOrThrow<ConfigType<typeof agentsConfig>>(
+      AGENTS_CONFIG_KEY,
+    );
   const logger = new Logger('Bootstrap');
   const { apiPrefix, corsOrigin, port, swaggerEnabled, swaggerPath } =
     appSettings;
+
+  assertSafeProductionConfiguration({
+    bootMode: bootMode === 'setup' ? 'setup' : 'installed',
+    nodeEnv: appSettings.nodeEnv,
+    corsOrigin,
+    jwtSecret: authSettings.jwtSecret,
+    secretsEncryptionKey: authSettings.secretsEncryptionKey,
+    adminEmail: bootstrapSettings.adminEmail,
+    adminPassword: bootstrapSettings.adminPassword,
+    agentEnrollmentToken: agentSettings.enrollmentToken,
+  });
 
   if (apiPrefix) {
     app.setGlobalPrefix(apiPrefix, {
@@ -57,13 +89,7 @@ async function bootstrap() {
     });
   }
 
-  app.enableCors({
-    origin:
-      corsOrigin === '*'
-        ? true
-        : corsOrigin.split(',').map((origin) => origin.trim()),
-    credentials: true,
-  });
+  app.enableCors(buildCorsOptions(corsOrigin));
 
   app.useGlobalPipes(
     new ValidationPipe({

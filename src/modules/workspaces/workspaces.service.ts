@@ -8,7 +8,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { EventSeverity } from '../events/entities/event-severity.enum';
-import { assertValidTimeZone, DEFAULT_TIMEZONE } from '../../common/utils/timezone.util';
+import {
+  assertValidTimeZone,
+  DEFAULT_TIMEZONE,
+} from '../../common/utils/timezone.util';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { EventEntity } from '../events/entities/event.entity';
@@ -194,8 +197,12 @@ export class WorkspacesService {
       automationTelegramEnabled: dto.automationTelegramEnabled ?? false,
       automationTelegramBotToken: dto.automationTelegramBotToken ?? null,
       automationTelegramChatId: dto.automationTelegramChatId ?? null,
-      automationEmailLevels: dto.automationEmailLevels ?? [EventSeverity.CRITICAL],
-      automationTelegramLevels: dto.automationTelegramLevels ?? [EventSeverity.CRITICAL],
+      automationEmailLevels: dto.automationEmailLevels ?? [
+        EventSeverity.CRITICAL,
+      ],
+      automationTelegramLevels: dto.automationTelegramLevels ?? [
+        EventSeverity.CRITICAL,
+      ],
     });
     const saved = await this.workspacesRepository.save(workspace);
 
@@ -310,30 +317,30 @@ export class WorkspacesService {
     if (dto.isArchived !== undefined) {
       workspace.isArchived = dto.isArchived;
     }
- 
-     if (dto.automationEmailEnabled !== undefined) {
-       workspace.automationEmailEnabled = dto.automationEmailEnabled;
-     }
- 
-     if (dto.automationTelegramEnabled !== undefined) {
-       workspace.automationTelegramEnabled = dto.automationTelegramEnabled;
-     }
- 
-     if (dto.automationTelegramBotToken !== undefined) {
-       workspace.automationTelegramBotToken = dto.automationTelegramBotToken;
-     }
- 
-     if (dto.automationTelegramChatId !== undefined) {
-       workspace.automationTelegramChatId = dto.automationTelegramChatId;
-     }
- 
-     if (dto.automationEmailLevels !== undefined) {
-       workspace.automationEmailLevels = dto.automationEmailLevels;
-     }
- 
-     if (dto.automationTelegramLevels !== undefined) {
-       workspace.automationTelegramLevels = dto.automationTelegramLevels;
-     }
+
+    if (dto.automationEmailEnabled !== undefined) {
+      workspace.automationEmailEnabled = dto.automationEmailEnabled;
+    }
+
+    if (dto.automationTelegramEnabled !== undefined) {
+      workspace.automationTelegramEnabled = dto.automationTelegramEnabled;
+    }
+
+    if (dto.automationTelegramBotToken !== undefined) {
+      workspace.automationTelegramBotToken = dto.automationTelegramBotToken;
+    }
+
+    if (dto.automationTelegramChatId !== undefined) {
+      workspace.automationTelegramChatId = dto.automationTelegramChatId;
+    }
+
+    if (dto.automationEmailLevels !== undefined) {
+      workspace.automationEmailLevels = dto.automationEmailLevels;
+    }
+
+    if (dto.automationTelegramLevels !== undefined) {
+      workspace.automationTelegramLevels = dto.automationTelegramLevels;
+    }
 
     const saved = await this.workspacesRepository.save(workspace);
 

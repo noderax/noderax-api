@@ -232,10 +232,10 @@ export async function createE2eApp(): Promise<INestApplication> {
   app.useGlobalInterceptors(new LoggingInterceptor());
   app.enableShutdownHooks();
 
-  await app.init();
+  await app.listen(0, '127.0.0.1');
 
   const logger = new Logger('E2eBootstrap');
-  logger.log('E2E application started');
+  logger.log(`E2E application started at ${await app.getUrl()}`);
 
   return app;
 }

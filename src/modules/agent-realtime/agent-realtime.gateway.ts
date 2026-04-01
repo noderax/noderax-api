@@ -10,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { HttpException, Logger, ValidationPipe } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
+import { buildRuntimeSocketCorsOptions } from '../../config';
 import {
   AGENT_REALTIME_SLOW_CLIENT_BUFFER_LIMIT,
   AGENT_REALTIME_CLIENT_EVENTS,
@@ -41,10 +42,7 @@ import { TerminalSessionsService } from '../terminal-sessions/terminal-sessions.
   namespace: AGENT_REALTIME_NAMESPACE,
   transports: ['websocket'],
   allowUpgrades: false,
-  cors: {
-    origin: '*',
-    credentials: true,
-  },
+  cors: buildRuntimeSocketCorsOptions(),
 })
 export class AgentRealtimeGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect

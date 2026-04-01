@@ -12,6 +12,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { Public } from '../../common/decorators/public.decorator';
 import { AuthenticatedSocket } from '../../common/types/authenticated-socket.type';
+import { buildRuntimeSocketCorsOptions } from '../../config';
 import {
   TERMINAL_ERROR_CODES,
   TERMINAL_EVENTS,
@@ -28,10 +29,7 @@ import { TerminalSessionsService } from './terminal-sessions.service';
 @Public()
 @WebSocketGateway({
   namespace: TERMINAL_NAMESPACE,
-  cors: {
-    origin: '*',
-    credentials: true,
-  },
+  cors: buildRuntimeSocketCorsOptions(),
 })
 export class TerminalGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect

@@ -93,7 +93,7 @@ export class EnrollmentsService {
 
     await this.enrollmentsRepository.save(enrollment);
 
-    void this.notificationsService.notifyEnrollmentInitiated({
+    await this.notificationsService.notifyEnrollmentInitiated({
       email,
       hostname,
       expiresAt,
@@ -562,6 +562,11 @@ export class EnrollmentsService {
     request: Request | undefined,
     fallback: string,
   ): string {
+    const configuredUrl = this.normalizePublicApiUrl(fallback);
+    if (configuredUrl) {
+      return configuredUrl;
+    }
+
     const proxiedUrl = this.normalizePublicApiUrl(
       request
         ? this.readHeaderValue(request, 'x-noderax-public-api-url')
@@ -576,11 +581,11 @@ export class EnrollmentsService {
       return requestUrl;
     }
 
-    const configuredUrl = this.normalizePublicApiUrl(
+    const envConfiguredUrl = this.normalizePublicApiUrl(
       process.env.AGENT_PUBLIC_API_URL,
     );
-    if (configuredUrl) {
-      return configuredUrl;
+    if (envConfiguredUrl) {
+      return envConfiguredUrl;
     }
 
     return fallback;

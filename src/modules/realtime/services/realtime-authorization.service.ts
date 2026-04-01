@@ -60,10 +60,7 @@ export class RealtimeAuthorizationService {
 
     if (
       user.role === UserRole.USER &&
-      (await this.workspacesService.findMembershipForUser(
-        workspaceId,
-        user.id,
-      ))
+      (await this.workspacesService.findMembershipForUser(workspaceId, user.id))
     ) {
       return;
     }

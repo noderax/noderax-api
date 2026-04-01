@@ -64,7 +64,11 @@ export class WorkspaceNodeInstallsController {
     @Body() body: CreateNodeInstallDto,
     @Req() request: Request,
   ) {
-    return this.enrollmentsService.createNodeInstall(workspaceId, body, request);
+    return this.enrollmentsService.createNodeInstall(
+      workspaceId,
+      body,
+      request,
+    );
   }
 
   @Get(':installId')

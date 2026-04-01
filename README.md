@@ -114,6 +114,7 @@ cp .env.example .env
 - `REDIS_HOST`
 - `REDIS_PORT`
 - `REDIS_PASSWORD`
+- `CORS_ORIGIN`
 - `NODERAX_STATE_DIR`
 - `JWT_SECRET`
 - `SECRETS_ENCRYPTION_KEY`
@@ -135,6 +136,10 @@ For installer-managed deployments, `NODERAX_STATE_DIR` should point to a writabl
 If `SMTP_HOST` is left blank, mail delivery remains disabled. Invite, reset-password, and operational email flows only send when SMTP is configured. In tests, the API uses JSON transport and exposes captured deliveries through the in-memory mailer service.
 
 `AGENT_PUBLIC_API_URL` should point to the externally reachable API origin used by target servers. In installer-managed setups, the setup flow populates this from the system API URL. `AGENT_INSTALL_SCRIPT_URL` controls the installer script URL embedded into the generated node install command.
+
+`CORS_ORIGIN` should be a comma-separated list of explicit web origins in production. The same policy is applied to HTTP, `/realtime`, `/terminal`, and `/agent-realtime`.
+
+Outside setup mode, production boot rejects unsafe placeholder values such as `CORS_ORIGIN=*`, default demo JWT and encryption secrets, and the example admin credentials.
 
 Platform runtime updates are restart-aware:
 
@@ -250,6 +255,7 @@ Production behavior:
 - PostgreSQL and Redis stay internal to the Docker network
 - PostgreSQL data, Redis data, and installer state are persisted in named volumes
 - Redis runs with AOF enabled and password protection
+- Runtime CORS must be configured with explicit origins before switching to production traffic
 
 ### First-time setup flow
 
@@ -267,6 +273,7 @@ After installation completes, the normal application surface becomes active.
 
 - Workspace owners, admins, and platform admins can create one-click install commands through `POST /workspaces/:workspaceId/node-installs`
 - The response includes the full `curl | sudo bash` installer command, the public API URL, the installer script URL, the install record ID, and the initial live status payload
+- When `AGENT_PUBLIC_API_URL` is configured, it is always used as the installer command origin so target hosts receive a deterministic public API endpoint
 - Install tokens are single-use and short-lived
 - Install status can be read through `GET /workspaces/:workspaceId/node-installs/:installId`
 - The installer reports progress stages through `POST /node-installs/progress`
@@ -556,7 +563,13 @@ pnpm build
 pnpm lint
 pnpm test
 pnpm test:e2e
+pnpm audit --audit-level high
 ```
+
+Dependency hardening notes:
+
+- The lockfile pins patched `path-to-regexp`, `picomatch`, `minimatch`, and `handlebars` transitive chains through `pnpm.overrides`.
+- `ts-jest` is kept on the latest `29.4.x` patch line to avoid the known vulnerable Handlebars dependency range.
 
 ## Notes
 

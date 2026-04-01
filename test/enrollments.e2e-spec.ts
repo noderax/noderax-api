@@ -371,7 +371,7 @@ describe('Enrollments (e2e)', () => {
       'https://cdn.example.com/noderax-agent/install.sh',
     );
     expect(createInstall.body.installCommand).toContain(
-      'curl -fsSL \'https://cdn.example.com/noderax-agent/install.sh\'',
+      "curl -fsSL 'https://cdn.example.com/noderax-agent/install.sh'",
     );
 
     const bootstrapToken = extractBootstrapToken(

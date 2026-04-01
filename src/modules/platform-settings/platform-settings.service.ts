@@ -223,7 +223,8 @@ export class PlatformSettingsService {
       input?.source ?? (installState ? 'install_state' : 'process_env');
     const editable = input?.editable ?? this.isEditableDeployment();
     const restartRequired =
-      input?.restartRequired ?? (editable ? this.hasPendingRestart(env) : false);
+      input?.restartRequired ??
+      (editable ? this.hasPendingRestart(env) : false);
     const settings = this.mapEnvToSettings(env);
 
     return {

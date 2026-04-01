@@ -195,7 +195,7 @@ describe('EnrollmentsService', () => {
     );
   });
 
-  it('initiates enrollment without waiting for notification delivery', async () => {
+  it('waits for enrollment notification delivery before resolving', async () => {
     enrollmentTokensService.issueEnrollmentToken.mockResolvedValue({
       token: 'raw-token',
       tokenHash: 'token-hash',
@@ -203,26 +203,35 @@ describe('EnrollmentsService', () => {
     });
 
     let resolveNotification: (() => void) | null = null;
+    let markNotificationStarted: (() => void) | null = null;
+    const notificationStarted = new Promise<void>((resolve) => {
+      markNotificationStarted = resolve;
+    });
     notificationsService.notifyEnrollmentInitiated.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
+          markNotificationStarted?.();
           resolveNotification = resolve;
         }),
     );
 
-    const result = await Promise.race([
-      service.initiate({
-        email: 'admin@example.com',
-        hostname: 'srv-enroll-01',
-      }),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('initiate did not resolve in time'));
-        }, 50);
-      }),
+    const initiatePromise = service.initiate({
+      email: 'admin@example.com',
+      hostname: 'srv-enroll-01',
+    });
+
+    await notificationStarted;
+    expect(resolveNotification).toEqual(expect.any(Function));
+
+    const raceResult = await Promise.race([
+      initiatePromise.then(() => 'resolved'),
+      Promise.resolve('pending'),
     ]);
 
+    expect(raceResult).toBe('pending');
+
     resolveNotification?.();
+    const result = await initiatePromise;
 
     expect(result).toEqual({
       token: 'raw-token',

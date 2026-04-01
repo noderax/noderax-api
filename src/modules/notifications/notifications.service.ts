@@ -147,26 +147,38 @@ export class NotificationsService {
           workspace.automationEmailLevels.includes(event.severity));
 
       if (shouldSendEmail) {
-        const [platformAdmins, workspaceAdminsWithPreference, allWorkspaceAdmins, node] =
-          await Promise.all([
-            this.usersRepository.find({
-              where: {
-                role: UserRole.PLATFORM_ADMIN,
-                isActive: true,
-                criticalEventEmailsEnabled: true,
-              },
-            }),
-            this.findWorkspaceAdmins(event.workspaceId, "criticalEventEmailsEnabled"),
-            this.findWorkspaceAdmins(event.workspaceId),
-            event.nodeId
-              ? this.nodesRepository.findOne({ where: { id: event.nodeId } })
-              : null,
-          ]);
+        const [
+          platformAdmins,
+          workspaceAdminsWithPreference,
+          allWorkspaceAdmins,
+          node,
+        ] = await Promise.all([
+          this.usersRepository.find({
+            where: {
+              role: UserRole.PLATFORM_ADMIN,
+              isActive: true,
+              criticalEventEmailsEnabled: true,
+            },
+          }),
+          this.findWorkspaceAdmins(
+            event.workspaceId,
+            'criticalEventEmailsEnabled',
+          ),
+          this.findWorkspaceAdmins(event.workspaceId),
+          event.nodeId
+            ? this.nodesRepository.findOne({ where: { id: event.nodeId } })
+            : null,
+        ]);
 
         const recipientEmails: string[] = [];
 
         if (event.severity === EventSeverity.CRITICAL) {
-          recipientEmails.push(...this.uniqueEmails([...platformAdmins, ...workspaceAdminsWithPreference]));
+          recipientEmails.push(
+            ...this.uniqueEmails([
+              ...platformAdmins,
+              ...workspaceAdminsWithPreference,
+            ]),
+          );
         }
 
         if (workspace.automationEmailEnabled) {
@@ -176,7 +188,9 @@ export class NotificationsService {
         const uniqueRecipientsList = Array.from(new Set(recipientEmails));
 
         if (uniqueRecipientsList.length > 0) {
-          const nodeDisplay = node ? `${node.name} (${node.id})` : (event.nodeId ?? 'n/a');
+          const nodeDisplay = node
+            ? `${node.name} (${node.id})`
+            : (event.nodeId ?? 'n/a');
           const email = this.buildStyledEmail({
             eyebrow: 'Event notification',
             title: `Event detected: ${event.type}`,
@@ -228,7 +242,9 @@ export class NotificationsService {
             : '🔵';
 
       const dashboardUrl = this.buildFrontendUrl('');
-      const nodeDisplay = node ? `${node.name} (${node.id})` : (event.nodeId ?? 'n/a');
+      const nodeDisplay = node
+        ? `${node.name} (${node.id})`
+        : (event.nodeId ?? 'n/a');
       const text =
         `<b>${severityEmoji} Noderax Event</b>\n\n` +
         `<b>Type:</b> ${this.escapeTelegramHtml(event.type)}\n` +
@@ -383,7 +399,7 @@ export class NotificationsService {
 
   private async findWorkspaceAdmins(
     workspaceId: string | string[],
-    preferenceKey?: "criticalEventEmailsEnabled" | "enrollmentEmailsEnabled",
+    preferenceKey?: 'criticalEventEmailsEnabled' | 'enrollmentEmailsEnabled',
   ): Promise<UserEntity[]> {
     const workspaceIds = Array.isArray(workspaceId)
       ? workspaceId
