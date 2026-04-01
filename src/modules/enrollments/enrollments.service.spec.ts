@@ -1,4 +1,5 @@
 import { Repository } from 'typeorm';
+import { Request } from 'express';
 import { RedisService } from '../../redis/redis.service';
 import { NodesService } from '../nodes/nodes.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -57,6 +58,7 @@ describe('EnrollmentsService', () => {
   let notificationsService: jest.Mocked<NotificationsService>;
   let realtimeGateway: jest.Mocked<RealtimeGateway>;
   let redisService: jest.Mocked<RedisService>;
+  let configService: { getOrThrow: jest.Mock };
   let service: EnrollmentsService;
 
   beforeEach(() => {
@@ -110,6 +112,13 @@ describe('EnrollmentsService', () => {
       getInstanceId: jest.fn().mockReturnValue('instance-1'),
     } as unknown as jest.Mocked<RedisService>;
 
+    configService = {
+      getOrThrow: jest.fn().mockReturnValue({
+        publicApiUrl: 'https://api.example.com',
+        installScriptUrl: 'https://cdn.example.com/install.sh',
+      }),
+    };
+
     service = new EnrollmentsService(
       enrollmentsRepository as unknown as Repository<EnrollmentEntity>,
       nodeInstallsRepository as unknown as Repository<NodeInstallEntity>,
@@ -125,15 +134,14 @@ describe('EnrollmentsService', () => {
           id: 'workspace-1',
         }),
       } as never,
-      {
-        getOrThrow: jest.fn().mockReturnValue({
-          publicApiUrl: 'https://api.example.com',
-          installScriptUrl: 'https://cdn.example.com/install.sh',
-        }),
-      } as never,
+      configService as never,
       realtimeGateway,
       redisService,
     );
+  });
+
+  afterEach(() => {
+    delete process.env.AGENT_PUBLIC_API_URL;
   });
 
   it('approves a pending enrollment and defaults os/arch to unknown when metadata is missing', async () => {
@@ -275,5 +283,40 @@ describe('EnrollmentsService', () => {
         progressPercent: 5,
       }),
     );
+  });
+
+  it('prefers the proxied public API header over a localhost agent API configuration', async () => {
+    process.env.AGENT_PUBLIC_API_URL = 'http://localhost:3000';
+    configService.getOrThrow.mockReturnValue({
+      publicApiUrl: 'http://localhost:3000',
+      installScriptUrl: 'https://cdn.example.com/install.sh',
+    });
+    enrollmentTokensService.issueEnrollmentToken.mockResolvedValue({
+      token: 'raw-install-token',
+      tokenHash: 'token-hash',
+      tokenLookupHash: 'lookup-hash',
+    });
+
+    const request = {
+      headers: {
+        'x-noderax-public-api-url': 'https://api.noderax.net/api/v1',
+      },
+      protocol: 'https',
+    } as Partial<Request> as Request;
+
+    const result = await service.createNodeInstall(
+      'workspace-1',
+      {
+        nodeName: 'Production Node',
+      },
+      request,
+    );
+
+    expect(result.apiUrl).toBe('https://api.noderax.net');
+    expect(result.installCommand).toContain(
+      "--api-url 'https://api.noderax.net'",
+    );
+
+    delete process.env.AGENT_PUBLIC_API_URL;
   });
 });

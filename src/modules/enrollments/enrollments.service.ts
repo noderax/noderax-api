@@ -241,8 +241,12 @@ export class EnrollmentsService {
       this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
         AGENTS_CONFIG_KEY,
       );
+    const explicitPublicApiUrl = this.normalizePublicApiUrl(
+      process.env.AGENT_PUBLIC_API_URL,
+    );
     const publicApiUrl = this.resolveNodeInstallApiUrl(
       request,
+      explicitPublicApiUrl,
       agents.publicApiUrl,
     );
 
@@ -560,35 +564,30 @@ export class EnrollmentsService {
 
   private resolveNodeInstallApiUrl(
     request: Request | undefined,
+    configuredUrl: string | null,
     fallback: string,
   ): string {
-    const configuredUrl = this.normalizePublicApiUrl(fallback);
-    if (configuredUrl) {
-      return configuredUrl;
-    }
-
     const proxiedUrl = this.normalizePublicApiUrl(
       request
         ? this.readHeaderValue(request, 'x-noderax-public-api-url')
         : null,
     );
-    if (proxiedUrl) {
-      return proxiedUrl;
-    }
-
     const requestUrl = this.resolveRequestPublicApiUrl(request);
-    if (requestUrl) {
-      return requestUrl;
+    const discoveredPublicUrl = proxiedUrl ?? requestUrl;
+
+    if (configuredUrl && !this.isLoopbackPublicApiUrl(configuredUrl)) {
+      return configuredUrl;
     }
 
-    const envConfiguredUrl = this.normalizePublicApiUrl(
-      process.env.AGENT_PUBLIC_API_URL,
-    );
-    if (envConfiguredUrl) {
-      return envConfiguredUrl;
+    if (discoveredPublicUrl) {
+      return discoveredPublicUrl;
     }
 
-    return fallback;
+    if (configuredUrl) {
+      return configuredUrl;
+    }
+
+    return this.normalizePublicApiUrl(fallback) ?? fallback;
   }
 
   private resolveRequestPublicApiUrl(request?: Request): string | null {
@@ -638,6 +637,17 @@ export class EnrollmentsService {
       return url.toString().replace(/\/$/, '');
     } catch {
       return null;
+    }
+  }
+
+  private isLoopbackPublicApiUrl(value: string): boolean {
+    try {
+      const url = new URL(value);
+      return ['localhost', '127.0.0.1', '::1'].includes(
+        url.hostname.toLowerCase(),
+      );
+    } catch {
+      return false;
     }
   }
 
