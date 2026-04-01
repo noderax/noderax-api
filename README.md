@@ -136,6 +136,13 @@ If `SMTP_HOST` is left blank, mail delivery remains disabled. Invite, reset-pass
 
 `AGENT_PUBLIC_API_URL` should point to the externally reachable API origin used by target servers. In installer-managed setups, the setup flow populates this from the system API URL. `AGENT_INSTALL_SCRIPT_URL` controls the installer script URL embedded into the generated node install command.
 
+Platform runtime updates are restart-aware:
+
+- `PATCH /platform-settings` writes the next boot configuration into installer state
+- `POST /platform-settings/restart` asks the current API process to exit after the response flushes
+- the process is expected to come back through Docker restart policy, systemd, or another supervisor
+- the health payload now includes `startedAt` and `bootId` so operators and the web app can confirm that a new process instance is live
+
 If you want the API to create the first platform admin automatically, set:
 
 - `SEED_DEFAULT_ADMIN=true`
@@ -155,6 +162,18 @@ Default URLs:
 - API base: `http://localhost:3000/api/v1`
 - Swagger UI: `http://localhost:3000/api/v1/docs`
 - OpenAPI JSON: `http://localhost:3000/api/v1/docs-json`
+
+Health response shape:
+
+```json
+{
+  "service": "noderax-api",
+  "status": "ok",
+  "timestamp": "2026-04-01T08:45:00.000Z",
+  "startedAt": "2026-04-01T08:42:13.000Z",
+  "bootId": "2e0b7a58-7d0a-4d4a-a909-e246e74f1c6a"
+}
+```
 
 ### Docker development with hot reload
 
@@ -272,6 +291,17 @@ Important behavior:
   Existing schema and env-driven installs continue to boot without installer ownership.
 
 If the state directory is not writable, setup and platform-settings flows will warn or fail. In containers, use a writable mounted directory instead of writing under a read-only application path.
+
+Platform Settings behavior:
+
+- `GET /platform-settings` returns the effective installer-managed snapshot plus:
+  - `editable`
+  - `source`
+  - `restartRequired`
+  - `message`
+- `restartRequired=true` means installer state differs from the current process environment and a restart is still pending
+- `POST /platform-settings/restart` is `platform_admin` only and is intentionally supervisor-driven; it does not invoke Docker or systemd directly
+- duplicate restart requests are treated idempotently while a shutdown is already scheduled
 
 ## Roles And Workspace Model
 
