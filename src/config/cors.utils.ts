@@ -5,11 +5,58 @@ type ParsedCorsOrigins = {
   origins: string[];
 };
 
+const unquote = (value: string) => {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
+};
+
+const extractHostCandidate = (value: string) =>
+  value
+    .trim()
+    .replace(/^[a-z]+:\/\//i, '')
+    .split('/')[0]
+    ?.trim()
+    .toLowerCase() ?? '';
+
+const inferDefaultProtocol = (value: string) => {
+  const hostCandidate = extractHostCandidate(value);
+  if (
+    hostCandidate === 'localhost' ||
+    hostCandidate.startsWith('localhost:') ||
+    hostCandidate === '127.0.0.1' ||
+    hostCandidate.startsWith('127.0.0.1:') ||
+    hostCandidate === '[::1]' ||
+    hostCandidate.startsWith('[::1]:')
+  ) {
+    return 'http://';
+  }
+
+  return 'https://';
+};
+
 const normalizeOrigin = (value: string): string => {
+  const normalizedValue = unquote(value).replace(/\/$/, '');
+  if (!normalizedValue || normalizedValue === '*') {
+    return normalizedValue;
+  }
+
+  const hasExplicitScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(normalizedValue);
+
   try {
-    return new URL(value).origin;
+    return new URL(
+      hasExplicitScheme
+        ? normalizedValue
+        : `${inferDefaultProtocol(normalizedValue)}${normalizedValue}`,
+    ).origin;
   } catch {
-    return value.trim().replace(/\/$/, '');
+    return normalizedValue;
   }
 };
 

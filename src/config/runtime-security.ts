@@ -24,7 +24,9 @@ export const assertSafeProductionConfiguration = (
   const issues: string[] = [];
 
   if (isWildcardCorsOrigin(input.corsOrigin)) {
-    issues.push('CORS_ORIGIN must list explicit origins in production.');
+    issues.push(
+      `CORS_ORIGIN must list explicit origins in production. Use values such as "https://dash.noderax.net". Current value: "${input.corsOrigin || '*'}".`,
+    );
   }
 
   if (equalsAny(input.jwtSecret, ['noderax-local-secret', 'test-secret'])) {

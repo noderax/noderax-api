@@ -26,6 +26,14 @@ export type InstallStateHealth = {
   error: string | null;
 };
 
+export type InstallStateEnvMergeOptions = {
+  shouldPreserveExisting?: (input: {
+    key: string;
+    currentValue: string | undefined;
+    incomingValue: string;
+  }) => boolean;
+};
+
 export const INSTALL_STATE_FILENAME = 'install-state.json';
 export const INSTALLER_MANAGED_FLAG = 'NODERAX_INSTALLER_MANAGED';
 export const BOOT_MODE_ENV = 'NODERAX_BOOT_MODE';
@@ -158,8 +166,21 @@ export const readInstallState = (): InstallState | null => {
 
 export const hasInstallState = () => existsSync(getInstallStatePath());
 
-export const applyInstallStateEnv = (state: InstallState) => {
+export const applyInstallStateEnv = (
+  state: InstallState,
+  options?: InstallStateEnvMergeOptions,
+) => {
   for (const [key, value] of Object.entries(state.runtimeEnv)) {
+    if (
+      options?.shouldPreserveExisting?.({
+        key,
+        currentValue: process.env[key],
+        incomingValue: value,
+      })
+    ) {
+      continue;
+    }
+
     process.env[key] = value;
   }
 

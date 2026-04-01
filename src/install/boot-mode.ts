@@ -5,6 +5,7 @@ import {
 } from './install-state';
 import { Client } from 'pg';
 import { normalizeDatabaseEnvAliases } from '../config/database-env.utils';
+import { isWildcardCorsOrigin } from '../config/cors.utils';
 
 export type BootMode = 'setup' | 'installed' | 'legacy';
 
@@ -32,6 +33,66 @@ const hasRequiredValue = (value?: string | null) =>
 const isTrue = (value?: string | null) =>
   typeof value === 'string' &&
   ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+
+const trim = (value?: string | null) =>
+  typeof value === 'string' ? value.trim() : '';
+
+const equalsAny = (value: string, candidates: string[]) =>
+  candidates.some((candidate) => trim(value) === candidate);
+
+export const shouldPreferProcessEnvOverInstallState = (input: {
+  key: string;
+  currentValue: string | undefined;
+  incomingValue: string;
+}) => {
+  const currentValue = trim(input.currentValue);
+  const incomingValue = trim(input.incomingValue);
+
+  if (!currentValue || !incomingValue) {
+    return false;
+  }
+
+  switch (input.key) {
+    case 'CORS_ORIGIN':
+      return (
+        !isWildcardCorsOrigin(currentValue) &&
+        isWildcardCorsOrigin(incomingValue)
+      );
+    case 'JWT_SECRET':
+      return (
+        !equalsAny(currentValue, ['noderax-local-secret', 'test-secret']) &&
+        equalsAny(incomingValue, ['noderax-local-secret', 'test-secret'])
+      );
+    case 'SECRETS_ENCRYPTION_KEY':
+      return (
+        !equalsAny(currentValue, [
+          'noderax-local-secrets-key-change-me',
+          'test-secrets-encryption-key',
+        ]) &&
+        equalsAny(incomingValue, [
+          'noderax-local-secrets-key-change-me',
+          'test-secrets-encryption-key',
+        ])
+      );
+    case 'ADMIN_EMAIL':
+      return (
+        !equalsAny(currentValue, ['admin@example.com']) &&
+        equalsAny(incomingValue, ['admin@example.com'])
+      );
+    case 'ADMIN_PASSWORD':
+      return (
+        !equalsAny(currentValue, ['ChangeMe123!', 'change-me', 'password']) &&
+        equalsAny(incomingValue, ['ChangeMe123!', 'change-me', 'password'])
+      );
+    case 'AGENT_ENROLLMENT_TOKEN':
+      return (
+        !equalsAny(currentValue, ['secret-enrollment-token', 'change-me']) &&
+        equalsAny(incomingValue, ['secret-enrollment-token', 'change-me'])
+      );
+    default:
+      return false;
+  }
+};
 
 export const hasLegacyRuntimeEnv = () => {
   normalizeDatabaseEnvAliases();
@@ -125,7 +186,9 @@ export const prepareBootEnvironment = async (
   const bootMode = await resolveBootMode(installState);
 
   if (installState) {
-    applyInstallStateEnv(installState);
+    applyInstallStateEnv(installState, {
+      shouldPreserveExisting: shouldPreferProcessEnvOverInstallState,
+    });
   }
 
   normalizeDatabaseEnvAliases();
