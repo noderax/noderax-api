@@ -304,7 +304,10 @@ export class EnrollmentsService {
         : normalized.progressPercent;
     normalized.statusMessage =
       body.statusMessage?.trim() ||
-      this.resolveDefaultNodeInstallMessage(normalized.stage, normalized.status);
+      this.resolveDefaultNodeInstallMessage(
+        normalized.stage,
+        normalized.status,
+      );
     normalized.startedAt ??= new Date();
 
     const saved = await this.nodeInstallsRepository.save(normalized);
@@ -641,8 +644,7 @@ export class EnrollmentsService {
     nodeInstall: Pick<NodeInstallEntity, 'expiresAt' | 'consumedAt'>,
   ): boolean {
     return (
-      !nodeInstall.consumedAt &&
-      nodeInstall.expiresAt.getTime() <= Date.now()
+      !nodeInstall.consumedAt && nodeInstall.expiresAt.getTime() <= Date.now()
     );
   }
 

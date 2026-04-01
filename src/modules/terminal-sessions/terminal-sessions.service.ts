@@ -1457,10 +1457,10 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     session.transcriptBytes = String(transcriptBytes);
     session.updatedAt =
       rawUpdateResult && typeof rawUpdateResult === 'object'
-        ? this.readDateReturningValue(rawUpdateResult, [
+        ? (this.readDateReturningValue(rawUpdateResult, [
             'updatedAt',
             'updatedat',
-          ]) ?? new Date()
+          ]) ?? new Date())
         : new Date();
   }
 
