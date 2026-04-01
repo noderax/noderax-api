@@ -246,3 +246,20 @@ export class PlatformSettingsResponseDto extends PlatformSettingsValuesDto {
 }
 
 export class UpdatePlatformSettingsDto extends PlatformSettingsValuesDto {}
+
+export class PlatformApiRestartResponseDto {
+  @ApiProperty({ example: true })
+  accepted: true;
+
+  @ApiProperty({
+    example: '2026-04-01T10:15:00.000Z',
+    format: 'date-time',
+  })
+  requestedAt: string;
+
+  @ApiProperty({
+    example:
+      'API restart requested. The current process will exit and should come back if it is supervised by Docker, systemd, or another process manager.',
+  })
+  message: string;
+}

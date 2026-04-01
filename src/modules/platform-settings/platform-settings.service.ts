@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
 } from '@nestjs/common';
 import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
 import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
@@ -15,6 +16,7 @@ import {
 import { verifySmtpConnection } from '../../common/utils/smtp.util';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
+  PlatformApiRestartResponseDto,
   PlatformSettingsResponseDto,
   type PlatformSettingsValuesDto,
   UpdatePlatformSettingsDto,
@@ -67,12 +69,13 @@ type PlatformSettingsEnvKey = (typeof PLATFORM_SETTINGS_ENV_KEYS)[number];
 
 @Injectable()
 export class PlatformSettingsService {
+  private readonly logger = new Logger(PlatformSettingsService.name);
+  private restartScheduled = false;
+
   constructor(private readonly auditLogsService: AuditLogsService) {}
 
   getSettings(): PlatformSettingsResponseDto {
-    return this.buildResponse({
-      restartRequired: false,
-    });
+    return this.buildResponse();
   }
 
   updateSettings(
@@ -133,9 +136,6 @@ export class PlatformSettingsService {
       env: nextEnv,
       source: 'install_state',
       editable: true,
-      restartRequired: true,
-      message:
-        'Changes were written to installer state. Restart the API container to apply them.',
     });
   }
 
@@ -159,6 +159,57 @@ export class PlatformSettingsService {
     };
   }
 
+  createRestartResponse(): PlatformApiRestartResponseDto {
+    return {
+      accepted: true,
+      requestedAt: new Date().toISOString(),
+      message: this.restartScheduled
+        ? 'API restart is already in progress. Wait for the process supervisor to bring the service back.'
+        : 'API restart requested. The current process will exit and should come back if it is supervised by Docker, systemd, or another process manager.',
+    };
+  }
+
+  scheduleApiRestart(actor?: AuthenticatedUser) {
+    if (this.restartScheduled) {
+      return;
+    }
+
+    this.restartScheduled = true;
+    this.logger.warn('API restart requested. Exiting current process shortly.');
+
+    if (actor) {
+      void this.auditLogsService.record({
+        scope: 'platform',
+        action: 'platform.api.restart.requested',
+        targetType: 'platform_settings',
+        targetLabel: 'api-process',
+        context: {
+          actorType: 'user',
+          actorUserId: actor.id,
+          actorEmailSnapshot: actor.email,
+        },
+      });
+    }
+
+    const restartTimer = setTimeout(() => {
+      try {
+        process.kill(process.pid, 'SIGTERM');
+      } catch (error) {
+        this.logger.error(
+          `Graceful shutdown signal failed: ${(error as Error).message}. Falling back to process.exit(0).`,
+        );
+        process.exit(0);
+      }
+
+      const forceExitTimer = setTimeout(() => {
+        process.exit(0);
+      }, 1_000);
+      forceExitTimer.unref();
+    }, 250);
+
+    restartTimer.unref();
+  }
+
   private buildResponse(input?: {
     env?: Record<string, string>;
     source?: 'install_state' | 'process_env';
@@ -171,17 +222,21 @@ export class PlatformSettingsService {
     const source =
       input?.source ?? (installState ? 'install_state' : 'process_env');
     const editable = input?.editable ?? this.isEditableDeployment();
+    const restartRequired =
+      input?.restartRequired ?? (editable ? this.hasPendingRestart(env) : false);
     const settings = this.mapEnvToSettings(env);
 
     return {
       ...settings,
       source,
       editable,
-      restartRequired: input?.restartRequired ?? false,
+      restartRequired,
       message:
         input?.message ??
         (editable
-          ? 'Changes are stored in installer state and will apply after the API restarts.'
+          ? restartRequired
+            ? 'Saved settings are waiting for an API restart.'
+            : 'Installer-managed settings are active.'
           : 'This deployment is using process environment values, so platform settings are read-only here.'),
     };
   }
@@ -203,6 +258,12 @@ export class PlatformSettingsService {
       ...envFromProcess,
       ...(installState?.runtimeEnv ?? {}),
     };
+  }
+
+  private hasPendingRestart(expectedEnv: Record<string, string>) {
+    return PLATFORM_SETTINGS_ENV_KEYS.some(
+      (key) => (expectedEnv[key] ?? '') !== (process.env[key] ?? ''),
+    );
   }
 
   private mapEnvToSettings(

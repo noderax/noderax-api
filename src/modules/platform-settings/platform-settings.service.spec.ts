@@ -24,6 +24,9 @@ jest.mock('../../common/utils/smtp.util', () => ({
 
 describe('PlatformSettingsService', () => {
   let service: PlatformSettingsService;
+  const auditLogsService = {
+    record: jest.fn(),
+  };
   const envSnapshot = { ...process.env };
 
   beforeEach(() => {
@@ -31,7 +34,8 @@ describe('PlatformSettingsService', () => {
     process.env = { ...envSnapshot };
     delete process.env[INSTALLER_MANAGED_FLAG];
     jest.clearAllMocks();
-    service = new PlatformSettingsService({ record: jest.fn() } as never);
+    jest.useRealTimers();
+    service = new PlatformSettingsService(auditLogsService as never);
   });
 
   afterAll(() => {
@@ -68,6 +72,7 @@ describe('PlatformSettingsService', () => {
     const response = service.updateSettings(buildPlatformSettings());
 
     expect(response.mail).toEqual(buildMailDto());
+    expect(response.restartRequired).toBe(true);
     expect(installStateValue?.runtimeEnv).toMatchObject({
       SMTP_HOST: 'smtp.resend.com',
       SMTP_PORT: '587',
@@ -78,6 +83,25 @@ describe('PlatformSettingsService', () => {
       SMTP_FROM_NAME: 'Noderax Support',
       WEB_APP_URL: 'https://app.noderax.net',
     });
+  });
+
+  it('reports installer-managed settings as active once process env matches install state', () => {
+    installStateValue = {
+      version: 1,
+      source: 'installer',
+      installedAt: new Date().toISOString(),
+      runtimeEnv: buildRuntimeEnv(),
+    };
+    process.env = {
+      ...process.env,
+      ...installStateValue.runtimeEnv,
+      [INSTALLER_MANAGED_FLAG]: 'true',
+    };
+
+    const settings = service.getSettings();
+
+    expect(settings.restartRequired).toBe(false);
+    expect(settings.message).toBe('Installer-managed settings are active.');
   });
 
   it('validates SMTP using the submitted draft values instead of process env', async () => {
@@ -97,6 +121,33 @@ describe('PlatformSettingsService', () => {
       smtpUsername: 'resend',
       smtpPassword: 'secret',
     });
+  });
+
+  it('schedules a single process restart and records an audit event', () => {
+    jest.useFakeTimers();
+    const killSpy = jest
+      .spyOn(process, 'kill')
+      .mockImplementation(() => true as never);
+
+    service.scheduleApiRestart({
+      id: 'user-1',
+      email: 'admin@noderax.net',
+    } as never);
+    service.scheduleApiRestart({
+      id: 'user-1',
+      email: 'admin@noderax.net',
+    } as never);
+
+    jest.advanceTimersByTime(250);
+
+    expect(killSpy).toHaveBeenCalledTimes(1);
+    expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+    expect(auditLogsService.record).toHaveBeenCalledTimes(1);
+    expect(service.createRestartResponse().message).toContain(
+      'already in progress',
+    );
+
+    killSpy.mockRestore();
   });
 });
 
@@ -155,4 +206,47 @@ const buildPlatformSettings = () => ({
     enrollmentToken: 'agent-token',
     highCpuThreshold: 90,
   },
+});
+
+const buildRuntimeEnv = () => ({
+  CORS_ORIGIN: '*',
+  SWAGGER_ENABLED: 'true',
+  SWAGGER_PATH: 'docs',
+  DB_HOST: '127.0.0.1',
+  DB_PORT: '5432',
+  DB_USERNAME: 'postgres',
+  DB_PASSWORD: 'postgres',
+  DB_NAME: 'noderax',
+  DB_SYNCHRONIZE: 'false',
+  DB_LOGGING: 'false',
+  DB_SSL: 'false',
+  REDIS_ENABLED: 'true',
+  REDIS_URL: '',
+  REDIS_HOST: '127.0.0.1',
+  REDIS_PORT: '6379',
+  REDIS_PASSWORD: '',
+  REDIS_DB: '0',
+  REDIS_KEY_PREFIX: 'noderax:',
+  JWT_SECRET: 'jwt-secret',
+  JWT_EXPIRES_IN: '1d',
+  BCRYPT_SALT_ROUNDS: '12',
+  SMTP_HOST: 'smtp.resend.com',
+  SMTP_PORT: '587',
+  SMTP_SECURE: 'false',
+  SMTP_USERNAME: 'resend',
+  SMTP_PASSWORD: 'secret',
+  SMTP_FROM_EMAIL: 'info@noderax.net',
+  SMTP_FROM_NAME: 'Noderax Support',
+  WEB_APP_URL: 'https://app.noderax.net',
+  AGENT_HEARTBEAT_TIMEOUT_SECONDS: '90',
+  AGENT_OFFLINE_CHECK_INTERVAL_SECONDS: '90',
+  AGENT_REALTIME_PING_TIMEOUT_SECONDS: '45',
+  AGENT_REALTIME_PING_CHECK_INTERVAL_SECONDS: '5',
+  AGENT_TASK_CLAIM_LEASE_SECONDS: '60',
+  AGENT_STALE_TASK_CHECK_INTERVAL_SECONDS: '15',
+  AGENT_STALE_QUEUED_TASK_TIMEOUT_SECONDS: '120',
+  AGENT_STALE_RUNNING_TASK_TIMEOUT_SECONDS: '1800',
+  ENABLE_REALTIME_TASK_DISPATCH: 'false',
+  AGENT_ENROLLMENT_TOKEN: 'agent-token',
+  AGENT_HIGH_CPU_THRESHOLD: '90',
 });

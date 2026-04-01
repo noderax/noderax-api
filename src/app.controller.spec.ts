@@ -20,6 +20,8 @@ describe('AppController', () => {
         service: 'noderax-api',
         status: 'ok',
       });
+      expect(appController.getHealth().startedAt).toEqual(expect.any(String));
+      expect(appController.getHealth().bootId).toEqual(expect.any(String));
     });
   });
 });

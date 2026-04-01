@@ -7,8 +7,11 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
+  ApiAcceptedResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiOkResponse,
@@ -24,6 +27,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { UserRole } from '../users/entities/user-role.enum';
 import {
+  PlatformApiRestartResponseDto,
   PlatformSettingsResponseDto,
   UpdatePlatformSettingsDto,
 } from './dto/platform-settings.dto';
@@ -91,5 +95,30 @@ export class PlatformSettingsController {
   })
   async validateSmtp(@Body() dto: MailSettingsDto) {
     return this.platformSettingsService.validateSmtp(dto);
+  }
+
+  @Post('restart')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary: 'Restart the API process',
+    description:
+      'Requests a controlled API restart. The response is flushed before the current process exits, and an external supervisor should bring the service back.',
+  })
+  @ApiAcceptedResponse({
+    description: 'API restart accepted.',
+    type: PlatformApiRestartResponseDto,
+  })
+  restartApi(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Res({ passthrough: true }) response: Response,
+  ): PlatformApiRestartResponseDto {
+    const payload = this.platformSettingsService.createRestartResponse();
+
+    response.once('finish', () => {
+      this.platformSettingsService.scheduleApiRestart(actor);
+    });
+
+    return payload;
   }
 }
