@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsString, IsUUID, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 
 export class AgentAuthMessageDto {
   @ApiProperty({
@@ -23,4 +23,13 @@ export class AgentAuthMessageDto {
   @IsString()
   @MinLength(16)
   agentToken: string;
+
+  @ApiPropertyOptional({
+    example: '1.0.0',
+    description:
+      'Optional runtime agent version reported during realtime authentication.',
+  })
+  @IsOptional()
+  @IsString()
+  agentVersion?: string;
 }

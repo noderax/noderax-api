@@ -4,6 +4,7 @@ export type AgentAuthMessage = {
   type?: 'agent.auth';
   nodeId: string;
   agentToken: string;
+  agentVersion?: string;
 };
 
 export type AgentTaskStartedMessage = {

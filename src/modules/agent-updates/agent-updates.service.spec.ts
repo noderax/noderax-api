@@ -1,4 +1,5 @@
 import { Repository } from 'typeorm';
+import { NodeEntity } from '../nodes/entities/node.entity';
 import { TaskEntity } from '../tasks/entities/task.entity';
 import { TaskStatus } from '../tasks/entities/task-status.enum';
 import { AgentUpdatesService } from './agent-updates.service';
@@ -23,6 +24,18 @@ function createActiveTargetsQueryBuilder(
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     getMany: jest.fn().mockResolvedValue(targets),
+  };
+}
+
+function createObservedTargetQueryBuilder(
+  target: AgentUpdateRolloutTargetEntity | null,
+) {
+  return {
+    innerJoin: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    getOne: jest.fn().mockResolvedValue(target),
   };
 }
 
@@ -103,6 +116,11 @@ describe('AgentUpdatesService', () => {
   let rolloutsRepository: MockRepository<AgentUpdateRolloutEntity>;
   let targetsRepository: MockRepository<AgentUpdateRolloutTargetEntity>;
   let tasksRepository: MockRepository<TaskEntity>;
+  let nodesRepository: MockRepository<{
+    id: string;
+    status?: string;
+    agentVersion?: string | null;
+  }>;
   let service: AgentUpdatesService;
 
   beforeEach(() => {
@@ -117,11 +135,14 @@ describe('AgentUpdatesService', () => {
     tasksRepository = {
       find: jest.fn().mockResolvedValue([]),
     };
+    nodesRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
 
     service = new AgentUpdatesService(
       rolloutsRepository as unknown as Repository<AgentUpdateRolloutEntity>,
       targetsRepository as unknown as Repository<AgentUpdateRolloutTargetEntity>,
-      {} as never,
+      nodesRepository as unknown as Repository<NodeEntity>,
       tasksRepository as unknown as Repository<TaskEntity>,
       {} as never,
       {} as never,
@@ -195,6 +216,44 @@ describe('AgentUpdatesService', () => {
         id: rollout.id,
         status: 'paused',
         statusMessage: 'srv-prod-01 timed out while waiting for dispatched.',
+      }),
+    );
+  });
+
+  it('completes waiting reconnect targets when the node already reports the target version', async () => {
+    const rollout = buildRollout({ status: 'paused' });
+    const target = buildTarget({
+      status: 'waiting_for_reconnect',
+      progressPercent: 95,
+      statusMessage: 'Waiting for reconnect.',
+    });
+    const completedTarget = {
+      ...target,
+      status: 'completed',
+      progressPercent: 100,
+      statusMessage: 'Agent reconnect confirmed 1.0.0.',
+    };
+
+    targetsRepository.createQueryBuilder
+      ?.mockReturnValueOnce(createActiveTargetsQueryBuilder([target]))
+      .mockReturnValueOnce(createObservedTargetQueryBuilder(target));
+    nodesRepository.findOne?.mockResolvedValue({
+      id: 'node-1',
+      status: 'online',
+      agentVersion: '1.0.0',
+    });
+    targetsRepository.save = jest.fn().mockResolvedValue(completedTarget);
+    rolloutsRepository.findOne?.mockResolvedValue(rollout);
+
+    const pausedTargets = await service.reconcileActiveTargets();
+
+    expect(pausedTargets).toBe(0);
+    expect(targetsRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: target.id,
+        status: 'completed',
+        progressPercent: 100,
+        statusMessage: 'Agent reconnect confirmed 1.0.0.',
       }),
     );
   });

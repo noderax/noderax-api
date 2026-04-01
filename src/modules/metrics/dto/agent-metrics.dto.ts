@@ -28,6 +28,15 @@ export class AgentMetricsDto {
   @MinLength(32)
   agentToken: string;
 
+  @ApiPropertyOptional({
+    example: '1.0.0',
+    description:
+      'Optional runtime agent version reported alongside the metrics snapshot.',
+  })
+  @IsOptional()
+  @IsString()
+  agentVersion?: string;
+
   @ApiProperty({
     example: 42.5,
     minimum: 0,

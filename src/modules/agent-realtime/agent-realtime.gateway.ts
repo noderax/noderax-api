@@ -173,6 +173,7 @@ export class AgentRealtimeGateway
           socketId: client.id,
           nodeId: body.nodeId,
           agentToken: body.agentToken,
+          agentVersion: body.agentVersion,
         });
 
       if (previousSocketId && previousSocketId !== client.id) {

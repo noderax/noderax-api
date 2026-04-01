@@ -484,7 +484,7 @@ export class AgentUpdatesService {
       ...target,
       status: 'completed',
       progressPercent: 100,
-      statusMessage: `Agent heartbeat confirmed ${node.agentVersion}.`,
+      statusMessage: `Agent reconnect confirmed ${node.agentVersion}.`,
       completedAt: new Date(),
     });
 
@@ -527,6 +527,21 @@ export class AgentUpdatesService {
 
     let pausedTargets = 0;
     for (const target of targets) {
+      const node = await this.nodesRepository.findOne({
+        where: { id: target.nodeId },
+      });
+
+      if (
+        node?.status === 'online' &&
+        node.agentVersion === target.targetVersion
+      ) {
+        await this.observeNodeVersion({
+          id: target.nodeId,
+          agentVersion: node.agentVersion,
+        });
+        continue;
+      }
+
       const rollout = await this.findRolloutEntityOrFail(target.rolloutId);
       const failedTask = target.taskId
         ? (failedTasksById.get(target.taskId) ?? null)

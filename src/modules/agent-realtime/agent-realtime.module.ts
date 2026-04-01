@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AgentUpdatesModule } from '../agent-updates/agent-updates.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { TasksModule } from '../tasks/tasks.module';
@@ -13,6 +14,7 @@ import { AgentTaskLifecycleEventEntity } from './entities/agent-task-lifecycle-e
     TypeOrmModule.forFeature([AgentTaskLifecycleEventEntity]),
     NodesModule,
     MetricsModule,
+    forwardRef(() => AgentUpdatesModule),
     forwardRef(() => TasksModule),
     forwardRef(() => TerminalSessionsModule),
   ],

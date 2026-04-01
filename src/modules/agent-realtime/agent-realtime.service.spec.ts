@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { AGENT_REALTIME_SERVER_EVENTS } from '../../common/constants/agent-realtime.constants';
 import { RedisService } from '../../redis/redis.service';
+import { AgentUpdatesService } from '../agent-updates/agent-updates.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { NodeStatus } from '../nodes/entities/node-status.enum';
 import { NodesService } from '../nodes/nodes.service';
@@ -19,6 +20,8 @@ describe('AgentRealtimeService', () => {
   >;
   let nodesService: jest.Mocked<NodesService>;
   let redisService: jest.Mocked<RedisService>;
+  let metricsService: jest.Mocked<MetricsService>;
+  let agentUpdatesService: jest.Mocked<AgentUpdatesService>;
 
   beforeEach(async () => {
     lifecycleRepository = {
@@ -60,6 +63,14 @@ describe('AgentRealtimeService', () => {
       publish: jest.fn(),
     } as unknown as jest.Mocked<RedisService>;
 
+    metricsService = {
+      ingest: jest.fn(),
+    } as unknown as jest.Mocked<MetricsService>;
+
+    agentUpdatesService = {
+      observeNodeVersion: jest.fn(),
+    } as unknown as jest.Mocked<AgentUpdatesService>;
+
     const configService = {
       getOrThrow: jest.fn().mockReturnValue({
         enableRealtimeTaskDispatch: true,
@@ -72,10 +83,6 @@ describe('AgentRealtimeService', () => {
       findQueuedForNode: jest.fn().mockResolvedValue([]),
     } as unknown as TasksService;
 
-    const metricsService = {
-      ingest: jest.fn(),
-    } as unknown as MetricsService;
-
     service = new AgentRealtimeService(
       lifecycleRepository,
       nodesService,
@@ -83,6 +90,7 @@ describe('AgentRealtimeService', () => {
       configService,
       tasksService,
       metricsService,
+      agentUpdatesService,
     );
 
     await service.onModuleInit();
@@ -153,5 +161,75 @@ describe('AgentRealtimeService', () => {
         },
       },
     );
+  });
+
+  it('observes rollout completion when realtime auth reports the target version', async () => {
+    nodesService.markOnline.mockResolvedValueOnce({
+      node: {
+        id: 'node-1',
+        hostname: 'node-1.local',
+        status: NodeStatus.ONLINE,
+        agentVersion: '1.0.0',
+        lastSeenAt: new Date('2026-03-20T10:00:00.000Z'),
+      } as never,
+      transitionedToOnline: false,
+    });
+
+    await service.authenticateSocket({
+      socketId: 'socket-1',
+      nodeId: 'node-1',
+      agentToken: 'token-1',
+      agentVersion: '1.0.0',
+    });
+
+    expect(nodesService.markOnline).toHaveBeenCalledWith('node-1', {
+      agentVersion: '1.0.0',
+    });
+    expect(agentUpdatesService.observeNodeVersion).toHaveBeenCalledWith({
+      id: 'node-1',
+      agentVersion: '1.0.0',
+    });
+  });
+
+  it('observes rollout completion when realtime metrics carry a newer version', async () => {
+    await service.authenticateSocket({
+      socketId: 'socket-1',
+      nodeId: 'node-1',
+      agentToken: 'token-1',
+    });
+
+    nodesService.markOnline.mockResolvedValueOnce({
+      node: {
+        id: 'node-1',
+        hostname: 'node-1.local',
+        status: NodeStatus.ONLINE,
+        agentVersion: '1.0.1',
+        lastSeenAt: new Date('2026-03-20T10:00:00.000Z'),
+      } as never,
+      transitionedToOnline: false,
+    });
+
+    await service.ingestRealtimeMetrics('socket-1', {
+      agentVersion: '1.0.1',
+      cpuUsage: 10,
+      memoryUsage: 20,
+      diskUsage: 30,
+      networkStats: {},
+    });
+
+    expect(metricsService.ingest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: 'node-1',
+        agentToken: 'token-1',
+        agentVersion: '1.0.1',
+      }),
+    );
+    expect(nodesService.markOnline).toHaveBeenLastCalledWith('node-1', {
+      agentVersion: '1.0.1',
+    });
+    expect(agentUpdatesService.observeNodeVersion).toHaveBeenLastCalledWith({
+      id: 'node-1',
+      agentVersion: '1.0.1',
+    });
   });
 });

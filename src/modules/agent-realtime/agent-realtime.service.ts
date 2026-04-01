@@ -19,6 +19,7 @@ import {
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { RedisService } from '../../redis/redis.service';
+import { AgentUpdatesService } from '../agent-updates/agent-updates.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodeStatus } from '../nodes/entities/node-status.enum';
@@ -81,6 +82,8 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     @Inject(forwardRef(() => TasksService))
     private readonly tasksService: TasksService,
     private readonly metricsService: MetricsService,
+    @Inject(forwardRef(() => AgentUpdatesService))
+    private readonly agentUpdatesService: AgentUpdatesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -229,6 +232,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     socketId: string;
     nodeId: string;
     agentToken: string;
+    agentVersion?: string;
   }): Promise<{ node: NodeEntity; previousSocketId: string | null }> {
     const node = await this.nodesService.authenticateAgent(
       input.nodeId,
@@ -251,8 +255,14 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
 
     await this.upsertNodeRoute(node.id, input.socketId);
 
-    const { node: onlineNode } = await this.nodesService.markOnline(node.id);
+    const { node: onlineNode } = await this.nodesService.markOnline(node.id, {
+      agentVersion: input.agentVersion ?? null,
+    });
     await this.nodesService.broadcastStatusUpdate(onlineNode);
+    await this.agentUpdatesService.observeNodeVersion({
+      id: onlineNode.id,
+      agentVersion: onlineNode.agentVersion,
+    });
     this.incrementCounter('auth.success');
 
     return { node: onlineNode, previousSocketId };
@@ -292,6 +302,16 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       nodeId: session.nodeId,
       agentToken: session.agentToken,
     });
+
+    if (payload.agentVersion) {
+      const { node } = await this.nodesService.markOnline(session.nodeId, {
+        agentVersion: payload.agentVersion,
+      });
+      await this.agentUpdatesService.observeNodeVersion({
+        id: node.id,
+        agentVersion: node.agentVersion,
+      });
+    }
 
     this.incrementCounter('metrics.ingested');
   }
