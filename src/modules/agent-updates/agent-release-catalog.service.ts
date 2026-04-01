@@ -47,11 +47,35 @@ export class AgentReleaseCatalogService {
       };
     }
 
-    const nextCache = await this.refreshCatalog();
-    return {
-      releases: nextCache.releases,
-      checkedAt: nextCache.checkedAt,
-    };
+    try {
+      const nextCache = await this.refreshCatalog();
+      return {
+        releases: nextCache.releases,
+        checkedAt: nextCache.checkedAt,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Agent release catalog refresh failed: ${this.describeError(error)}`,
+      );
+
+      if (this.cache) {
+        return {
+          releases: this.cache.releases,
+          checkedAt: this.cache.checkedAt,
+        };
+      }
+
+      const emptyCache = {
+        checkedAt: new Date(),
+        releases: [],
+      } satisfies ReleaseCatalogCache;
+      this.cache = emptyCache;
+
+      return {
+        releases: emptyCache.releases,
+        checkedAt: emptyCache.checkedAt,
+      };
+    }
   }
 
   async findRelease(version: string): Promise<AgentReleaseDto | null> {
@@ -100,12 +124,19 @@ export class AgentReleaseCatalogService {
       );
     }
 
-    const releases = await this.fetchCatalogFromGithub();
-    this.cache = {
-      checkedAt: new Date(),
-      releases,
-    };
-    return this.cache;
+    try {
+      const releases = await this.fetchCatalogFromGithub();
+      this.cache = {
+        checkedAt: new Date(),
+        releases,
+      };
+      return this.cache;
+    } catch (error) {
+      this.logger.warn(
+        `GitHub release catalog fallback failed: ${this.describeError(error)}`,
+      );
+      throw error;
+    }
   }
 
   private async fetchCatalogFromCdn(): Promise<AgentReleaseDto[]> {
