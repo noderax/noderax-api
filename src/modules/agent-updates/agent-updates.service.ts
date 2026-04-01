@@ -15,6 +15,8 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { EventsService } from '../events/events.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodesService } from '../nodes/nodes.service';
+import { TaskEntity } from '../tasks/entities/task.entity';
+import { TaskStatus } from '../tasks/entities/task-status.enum';
 import { TasksService } from '../tasks/tasks.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { AgentReleaseCatalogService } from './agent-release-catalog.service';
@@ -49,6 +51,8 @@ export class AgentUpdatesService {
     private readonly targetsRepository: Repository<AgentUpdateRolloutTargetEntity>,
     @InjectRepository(NodeEntity)
     private readonly nodesRepository: Repository<NodeEntity>,
+    @InjectRepository(TaskEntity)
+    private readonly tasksRepository: Repository<TaskEntity>,
     private readonly releaseCatalogService: AgentReleaseCatalogService,
     private readonly nodesService: NodesService,
     private readonly tasksService: TasksService,
@@ -501,7 +505,7 @@ export class AgentUpdatesService {
     }
   }
 
-  async markTimedOutTargets(): Promise<number> {
+  async reconcileActiveTargets(): Promise<number> {
     const now = Date.now();
     const targets = await this.targetsRepository
       .createQueryBuilder('target')
@@ -519,17 +523,33 @@ export class AgentUpdatesService {
       .orderBy('target.updatedAt', 'ASC')
       .getMany();
 
-    let timedOut = 0;
+    const failedTasksById = await this.loadFailedTasksById(targets);
+
+    let pausedTargets = 0;
     for (const target of targets) {
-      const thresholdMs =
-        target.status === 'waiting_for_reconnect'
-          ? 5 * 60 * 1000
-          : 15 * 60 * 1000;
+      const rollout = await this.findRolloutEntityOrFail(target.rolloutId);
+      const failedTask = target.taskId
+        ? (failedTasksById.get(target.taskId) ?? null)
+        : null;
+
+      if (failedTask) {
+        await this.pauseRolloutForTargetFailure(
+          rollout,
+          {
+            ...target,
+            completedAt: new Date(),
+          },
+          this.buildTaskFailureMessage(target, failedTask),
+        );
+        pausedTargets += 1;
+        continue;
+      }
+
+      const thresholdMs = this.resolveTargetTimeoutThresholdMs(target.status);
       if (now - target.updatedAt.getTime() < thresholdMs) {
         continue;
       }
 
-      const rollout = await this.findRolloutEntityOrFail(target.rolloutId);
       await this.pauseRolloutForTargetFailure(
         rollout,
         {
@@ -540,10 +560,14 @@ export class AgentUpdatesService {
         },
         `${target.nodeNameSnapshot} timed out while waiting for ${target.status.replace(/_/g, ' ')}.`,
       );
-      timedOut += 1;
+      pausedTargets += 1;
     }
 
-    return timedOut;
+    return pausedTargets;
+  }
+
+  async markTimedOutTargets(): Promise<number> {
+    return this.reconcileActiveTargets();
   }
 
   async findActiveRollout(): Promise<AgentUpdateRolloutDto | null> {
@@ -900,6 +924,92 @@ export class AgentUpdatesService {
     return (
       AGENT_UPDATE_TARGET_TERMINAL_STATUSES as readonly AgentUpdateTargetStatus[]
     ).includes(status);
+  }
+
+  private async loadFailedTasksById(
+    targets: AgentUpdateRolloutTargetEntity[],
+  ): Promise<Map<string, TaskEntity>> {
+    const taskIds = Array.from(
+      new Set(
+        targets
+          .map((target) => target.taskId)
+          .filter((taskId): taskId is string => Boolean(taskId)),
+      ),
+    );
+
+    if (!taskIds.length) {
+      return new Map();
+    }
+
+    const failedTasks = await this.tasksRepository.find({
+      where: {
+        id: In(taskIds),
+        status: In([TaskStatus.FAILED, TaskStatus.CANCELLED]),
+      },
+    });
+
+    return new Map(failedTasks.map((task) => [task.id, task]));
+  }
+
+  private resolveTargetTimeoutThresholdMs(
+    status: AgentUpdateTargetStatus,
+  ): number {
+    switch (status) {
+      case 'dispatched':
+        return 2 * 60 * 1000;
+      case 'waiting_for_reconnect':
+        return 5 * 60 * 1000;
+      default:
+        return 15 * 60 * 1000;
+    }
+  }
+
+  private buildTaskFailureMessage(
+    target: AgentUpdateRolloutTargetEntity,
+    task: TaskEntity,
+  ): string {
+    const detail = this.extractTaskFailureDetail(task);
+    const baseMessage = `${target.nodeNameSnapshot} update task ${task.id} ${task.status} before detached updater progress was received.`;
+
+    if (!detail) {
+      return baseMessage;
+    }
+
+    return `${baseMessage} ${detail}`;
+  }
+
+  private extractTaskFailureDetail(task: TaskEntity): string | null {
+    const output = typeof task.output === 'string' ? task.output.trim() : '';
+    if (output) {
+      return `Last task output: ${this.truncateTaskFailureDetail(output)}.`;
+    }
+
+    const error =
+      typeof task.result?.['error'] === 'string'
+        ? task.result['error'].trim()
+        : '';
+    if (error) {
+      return `Reported error: ${this.truncateTaskFailureDetail(error)}.`;
+    }
+
+    const message =
+      typeof task.result?.['message'] === 'string'
+        ? task.result['message'].trim()
+        : '';
+    if (message) {
+      return `Reported message: ${this.truncateTaskFailureDetail(message)}.`;
+    }
+
+    return null;
+  }
+
+  private truncateTaskFailureDetail(value: string): string {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= 240) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, 237)}...`;
   }
 
   private async recordRolloutEvent(

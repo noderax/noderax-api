@@ -14,6 +14,7 @@ import { AgentUpdatesService } from './agent-updates.service';
 import { AgentUpdateSchemaBootstrap } from './bootstrap/agent-update-schema.bootstrap';
 import { AgentUpdateRolloutEntity } from './entities/agent-update-rollout.entity';
 import { AgentUpdateRolloutTargetEntity } from './entities/agent-update-rollout-target.entity';
+import { TaskEntity } from '../tasks/entities/task.entity';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AgentUpdateRolloutTargetEntity } from './entities/agent-update-rollout-
       AgentUpdateRolloutEntity,
       AgentUpdateRolloutTargetEntity,
       NodeEntity,
+      TaskEntity,
     ]),
     NodesModule,
     TasksModule,

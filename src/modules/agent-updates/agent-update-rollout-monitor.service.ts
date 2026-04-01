@@ -9,11 +9,12 @@ export class AgentUpdateRolloutMonitorService {
   constructor(private readonly agentUpdatesService: AgentUpdatesService) {}
 
   @Cron('*/15 * * * * *')
-  async markTimedOutTargets(): Promise<void> {
-    const timedOut = await this.agentUpdatesService.markTimedOutTargets();
-    if (timedOut > 0) {
+  async reconcileActiveTargets(): Promise<void> {
+    const pausedTargets =
+      await this.agentUpdatesService.reconcileActiveTargets();
+    if (pausedTargets > 0) {
       this.logger.warn(
-        `Paused ${timedOut} agent update target${timedOut === 1 ? '' : 's'} after timeout detection.`,
+        `Paused ${pausedTargets} agent update target${pausedTargets === 1 ? '' : 's'} after rollout health checks.`,
       );
     }
   }
