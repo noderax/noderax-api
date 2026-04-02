@@ -82,11 +82,13 @@ export class MetricsService {
       });
     }
 
-    this.realtimeGateway.emitMetricIngested(
-      savedMetric as unknown as Record<string, unknown>,
-    );
+    this.realtimeGateway.emitMetricIngested({
+      ...(savedMetric as unknown as Record<string, unknown>),
+      agentVersion: agentMetricsDto.agentVersion ?? null,
+    });
     await this.redisService.publish(PUBSUB_CHANNELS.METRICS_INGESTED, {
       ...(savedMetric as unknown as Record<string, unknown>),
+      agentVersion: agentMetricsDto.agentVersion ?? null,
       sourceInstanceId: this.redisService.getInstanceId(),
     });
 

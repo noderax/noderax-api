@@ -596,13 +596,23 @@ export class NodesService {
   }
 
   async broadcastStatusUpdate(
-    node: Pick<NodeEntity, 'id' | 'hostname' | 'status' | 'lastSeenAt'>,
+    node: Pick<
+      NodeEntity,
+      | 'id'
+      | 'hostname'
+      | 'status'
+      | 'lastSeenAt'
+      | 'agentVersion'
+      | 'lastVersionReportedAt'
+    >,
   ): Promise<void> {
     const statusPayload = {
       nodeId: node.id,
       hostname: node.hostname,
       status: node.status,
       lastSeenAt: node.lastSeenAt,
+      agentVersion: node.agentVersion ?? null,
+      lastVersionReportedAt: node.lastVersionReportedAt ?? null,
     };
 
     this.realtimeGateway.emitNodeStatusUpdate(statusPayload);
