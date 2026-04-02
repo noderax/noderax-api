@@ -130,6 +130,7 @@ describe('AgentUpdatesService', () => {
     };
     targetsRepository = {
       createQueryBuilder: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
       save: jest.fn(async (value) => value),
     };
     tasksRepository = {
@@ -248,6 +249,60 @@ describe('AgentUpdatesService', () => {
     const pausedTargets = await service.reconcileActiveTargets();
 
     expect(pausedTargets).toBe(0);
+    expect(targetsRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: target.id,
+        status: 'completed',
+        progressPercent: 100,
+        statusMessage: 'Agent reconnect confirmed 1.0.0.',
+      }),
+    );
+  });
+
+  it('re-observes node version when waiting_for_reconnect arrives after the node is already updated', async () => {
+    const rollout = buildRollout();
+    const target = buildTarget({
+      status: 'restarting',
+      progressPercent: 90,
+      statusMessage: 'Restarting noderax-agent.service.',
+    });
+
+    targetsRepository.findOne = jest.fn().mockResolvedValue(target);
+    targetsRepository.save = jest.fn(async (value) => value);
+    rolloutsRepository.findOne?.mockResolvedValue(rollout);
+    nodesRepository.findOne?.mockResolvedValue({
+      id: 'node-1',
+      agentVersion: '1.0.0',
+    });
+    targetsRepository.createQueryBuilder?.mockReturnValue(
+      createObservedTargetQueryBuilder({
+        ...target,
+        status: 'waiting_for_reconnect',
+        progressPercent: 95,
+        statusMessage: 'Restart requested. Waiting for reconnect.',
+      }),
+    );
+
+    await service.handleAgentProgress(
+      target.id,
+      {
+        status: 'waiting_for_reconnect',
+        progressPercent: 95,
+        message:
+          'Restart requested. Waiting for the noderax-agent.service heartbeat to confirm agent 1.0.0.',
+      },
+      {
+        nodeId: 'node-1',
+      } as never,
+    );
+
+    expect(targetsRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: target.id,
+        status: 'waiting_for_reconnect',
+        progressPercent: 95,
+      }),
+    );
     expect(targetsRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({
         id: target.id,

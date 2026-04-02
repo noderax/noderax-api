@@ -447,6 +447,23 @@ export class AgentUpdatesService {
       });
     }
 
+    if (dto.status === 'waiting_for_reconnect') {
+      const node = await this.nodesRepository.findOne({
+        where: { id: nextTarget.nodeId },
+        select: {
+          id: true,
+          agentVersion: true,
+        },
+      });
+
+      if (node?.agentVersion === nextTarget.targetVersion) {
+        await this.observeNodeVersion({
+          id: node.id,
+          agentVersion: node.agentVersion,
+        });
+      }
+    }
+
     return this.toTargetDto(nextTarget);
   }
 
