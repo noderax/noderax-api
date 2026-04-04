@@ -156,6 +156,15 @@ export class EnrollmentsService {
       os: this.resolveNodeOs(enrollment.additionalInfo),
       arch: this.resolveNodeArch(enrollment.additionalInfo),
       agentTokenHash: this.nodesService.hashAgentToken(agentToken),
+      agentVersion: this.readString(enrollment.additionalInfo, [
+        'agentVersion',
+      ]),
+      platformVersion: this.readString(enrollment.additionalInfo, [
+        'platformVersion',
+      ]),
+      kernelVersion: this.readString(enrollment.additionalInfo, [
+        'kernelVersion',
+      ]),
     });
 
     enrollment.status = EnrollmentStatus.APPROVED;
