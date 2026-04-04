@@ -116,6 +116,9 @@ describe('AgentUpdatesService', () => {
   let rolloutsRepository: MockRepository<AgentUpdateRolloutEntity>;
   let targetsRepository: MockRepository<AgentUpdateRolloutTargetEntity>;
   let tasksRepository: MockRepository<TaskEntity>;
+  let tasksServiceMock: {
+    requestTaskCancellation: jest.Mock;
+  };
   let nodesRepository: MockRepository<{
     id: string;
     status?: string;
@@ -136,6 +139,9 @@ describe('AgentUpdatesService', () => {
     tasksRepository = {
       find: jest.fn().mockResolvedValue([]),
     };
+    tasksServiceMock = {
+      requestTaskCancellation: jest.fn().mockResolvedValue(undefined),
+    };
     nodesRepository = {
       findOne: jest.fn().mockResolvedValue(null),
     };
@@ -147,7 +153,7 @@ describe('AgentUpdatesService', () => {
       tasksRepository as unknown as Repository<TaskEntity>,
       {} as never,
       {} as never,
-      {} as never,
+      tasksServiceMock as never,
       {
         record: jest.fn().mockResolvedValue(undefined),
       } as never,
@@ -309,6 +315,83 @@ describe('AgentUpdatesService', () => {
         status: 'completed',
         progressPercent: 100,
         statusMessage: 'Agent reconnect confirmed 1.0.0.',
+      }),
+    );
+  });
+
+  it('cancels pending and active targets and requests cancellation for active task ids', async () => {
+    const rollout = buildRollout({ status: 'running' });
+    const pendingTarget = buildTarget({
+      id: 'target-pending',
+      taskId: null,
+      status: 'pending',
+      progressPercent: 0,
+    });
+    const activeTarget = buildTarget({
+      id: 'target-active',
+      taskId: 'task-active',
+      status: 'waiting_for_reconnect',
+      progressPercent: 95,
+    });
+    const completedTarget = buildTarget({
+      id: 'target-completed',
+      status: 'completed',
+      progressPercent: 100,
+      completedAt: new Date('2026-04-02T10:04:00.000Z'),
+    });
+
+    rolloutsRepository.findOne = jest.fn().mockResolvedValue(rollout);
+    rolloutsRepository.save = jest.fn(async (value) => value);
+    targetsRepository.find = jest
+      .fn()
+      .mockResolvedValueOnce([pendingTarget, activeTarget, completedTarget])
+      .mockResolvedValueOnce([pendingTarget, activeTarget, completedTarget]);
+    targetsRepository.save = jest.fn(async (value) => value);
+
+    await service.cancelRollout('rollout-1', {
+      actorType: 'user',
+      actorUserId: 'user-1',
+      actorEmailSnapshot: 'ops@noderax.dev',
+      ipAddress: null,
+      userAgent: null,
+    });
+
+    expect(targetsRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'target-pending',
+        status: 'cancelled',
+        progressPercent: 0,
+      }),
+    );
+    expect(targetsRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'target-active',
+        status: 'cancelled',
+        progressPercent: 95,
+      }),
+    );
+    expect(tasksServiceMock.requestTaskCancellation).toHaveBeenCalledWith(
+      'task-active',
+      expect.objectContaining({
+        reason: 'Rollout cancelled by operator.',
+      }),
+      activeTarget.workspaceId,
+    );
+  });
+
+  it('does not consider cancelled rollouts when observing node version confirmations', async () => {
+    const queryBuilder = createObservedTargetQueryBuilder(null);
+    targetsRepository.createQueryBuilder?.mockReturnValue(queryBuilder);
+
+    await service.observeNodeVersion({
+      id: 'node-1',
+      agentVersion: '1.0.0',
+    });
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'rollout.status IN (:...rolloutStatuses)',
+      expect.objectContaining({
+        rolloutStatuses: ['running', 'paused'],
       }),
     );
   });

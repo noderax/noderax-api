@@ -285,12 +285,14 @@ export class AgentUpdatesService {
       throw new ConflictException('This rollout is already terminal.');
     }
 
+    const cancelledAt = new Date();
+
     await this.rolloutsRepository.save({
       ...rollout,
       status: 'cancelled',
       statusMessage:
-        'Rollout cancelled by an operator. No further targets will be dispatched.',
-      cancelledAt: new Date(),
+        'Rollout cancelled by an operator. Pending targets were cancelled and active targets received cancellation requests.',
+      cancelledAt,
     });
 
     const targets = await this.targetsRepository.find({
@@ -304,9 +306,27 @@ export class AgentUpdatesService {
           ...target,
           status: 'cancelled',
           statusMessage: 'Cancelled before dispatch.',
-          completedAt: new Date(),
+          completedAt: cancelledAt,
           progressPercent: 0,
         });
+        continue;
+      }
+
+      if (
+        (
+          AGENT_UPDATE_TARGET_ACTIVE_STATUSES as readonly AgentUpdateTargetStatus[]
+        ).includes(target.status)
+      ) {
+        await this.targetsRepository.save({
+          ...target,
+          status: 'cancelled',
+          statusMessage:
+            'Cancelled by operator. In-flight updater was asked to stop; local update may still complete if it already passed handoff.',
+          completedAt: cancelledAt,
+          progressPercent: target.progressPercent,
+        });
+
+        await this.requestTaskCancellationForTarget(target);
       }
     }
 
@@ -482,11 +502,7 @@ export class AgentUpdatesService {
         terminalStatuses: AGENT_UPDATE_TARGET_TERMINAL_STATUSES,
       })
       .andWhere('rollout.status IN (:...rolloutStatuses)', {
-        rolloutStatuses: [
-          'running',
-          'paused',
-          'cancelled',
-        ] as AgentUpdateRolloutStatus[],
+        rolloutStatuses: ['running', 'paused'] as AgentUpdateRolloutStatus[],
       })
       .orderBy('target.sequence', 'ASC')
       .getOne();
@@ -1065,5 +1081,27 @@ export class AgentUpdatesService {
       message,
       metadata,
     });
+  }
+
+  private async requestTaskCancellationForTarget(
+    target: AgentUpdateRolloutTargetEntity,
+  ): Promise<void> {
+    if (!target.taskId) {
+      return;
+    }
+
+    try {
+      await this.tasksService.requestTaskCancellation(
+        target.taskId,
+        {
+          reason: 'Rollout cancelled by operator.',
+        },
+        target.workspaceId,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to request cancellation for rollout target ${target.id} task ${target.taskId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }
