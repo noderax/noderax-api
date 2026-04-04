@@ -234,6 +234,8 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     nodeId: string;
     agentToken: string;
     agentVersion?: string;
+    platformVersion?: string;
+    kernelVersion?: string;
     rootAccess?: {
       appliedProfile?: NodeRootAccessProfile | null;
       lastAppliedAt?: string | null;
@@ -263,6 +265,8 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
 
     const { node: onlineNode } = await this.nodesService.markOnline(node.id, {
       agentVersion: input.agentVersion ?? null,
+      platformVersion: input.platformVersion ?? null,
+      kernelVersion: input.kernelVersion ?? null,
     });
     const rootedNode =
       (await this.nodesService.recordAgentRootAccessState(

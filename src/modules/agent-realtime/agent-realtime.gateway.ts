@@ -176,6 +176,8 @@ export class AgentRealtimeGateway
           nodeId: body.nodeId,
           agentToken: body.agentToken,
           agentVersion: body.agentVersion,
+          platformVersion: body.platformVersion,
+          kernelVersion: body.kernelVersion,
           rootAccess: body.rootAccess,
         });
 

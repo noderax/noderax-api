@@ -37,6 +37,24 @@ export class AgentAuthMessageDto {
   agentVersion?: string;
 
   @ApiPropertyOptional({
+    example: '24.04',
+    description:
+      'Optional platform version reported during realtime authentication.',
+  })
+  @IsOptional()
+  @IsString()
+  platformVersion?: string;
+
+  @ApiPropertyOptional({
+    example: '6.8.0-57-generic',
+    description:
+      'Optional kernel version reported during realtime authentication.',
+  })
+  @IsOptional()
+  @IsString()
+  kernelVersion?: string;
+
+  @ApiPropertyOptional({
     type: NodeRootAccessAgentReportDto,
   })
   @IsOptional()

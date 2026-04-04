@@ -185,6 +185,8 @@ describe('AgentRealtimeService', () => {
 
     expect(nodesService.markOnline).toHaveBeenCalledWith('node-1', {
       agentVersion: '1.0.0',
+      platformVersion: null,
+      kernelVersion: null,
     });
     expect(agentUpdatesService.observeNodeVersion).toHaveBeenCalledWith({
       id: 'node-1',

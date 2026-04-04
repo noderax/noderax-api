@@ -5,6 +5,8 @@ export type AgentAuthMessage = {
   nodeId: string;
   agentToken: string;
   agentVersion?: string;
+  platformVersion?: string;
+  kernelVersion?: string;
   rootAccess?: {
     appliedProfile?: string;
     lastAppliedAt?: string | null;
