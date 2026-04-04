@@ -592,7 +592,13 @@ export class NodesService {
   }
 
   assertNodeAllowsOperationalRoot(node: NodeEntity): void {
-    this.assertNodeAllowsRootSurface(node, 'operational');
+    if (this.canNodeUseOperationalRoot(node)) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Node ${node.hostname} does not currently allow operational root access. Applied profile is ${node.rootAccessAppliedProfile}, desired profile is ${node.rootAccessProfile}, and sync status is ${node.rootAccessSyncStatus}.`,
+    );
   }
 
   assertNodeAllowsTaskRoot(node: NodeEntity): void {
@@ -604,12 +610,26 @@ export class NodesService {
   }
 
   canNodeUseOperationalRoot(
-    node: Pick<NodeEntity, 'rootAccessAppliedProfile'>,
+    node: Pick<
+      NodeEntity,
+      'rootAccessAppliedProfile' | 'rootAccessProfile' | 'rootAccessSyncStatus'
+    >,
   ): boolean {
-    return this.profileAllowsSurface(node.rootAccessAppliedProfile, 'operational');
+    if (
+      this.profileAllowsSurface(node.rootAccessAppliedProfile, 'operational')
+    ) {
+      return true;
+    }
+
+    return (
+      this.profileAllowsSurface(node.rootAccessProfile, 'operational') &&
+      node.rootAccessSyncStatus !== NodeRootAccessSyncStatus.FAILED
+    );
   }
 
-  canNodeUseTaskRoot(node: Pick<NodeEntity, 'rootAccessAppliedProfile'>): boolean {
+  canNodeUseTaskRoot(
+    node: Pick<NodeEntity, 'rootAccessAppliedProfile'>,
+  ): boolean {
     return this.profileAllowsSurface(node.rootAccessAppliedProfile, 'task');
   }
 
@@ -826,7 +846,9 @@ export class NodesService {
       rootAccessSyncStatus: node.rootAccessSyncStatus,
       rootAccessUpdatedAt: this.formatTimestamp(node.rootAccessUpdatedAt),
       rootAccessUpdatedByUserId: node.rootAccessUpdatedByUserId ?? null,
-      rootAccessLastAppliedAt: this.formatTimestamp(node.rootAccessLastAppliedAt),
+      rootAccessLastAppliedAt: this.formatTimestamp(
+        node.rootAccessLastAppliedAt,
+      ),
       rootAccessLastError: node.rootAccessLastError ?? null,
     };
 
