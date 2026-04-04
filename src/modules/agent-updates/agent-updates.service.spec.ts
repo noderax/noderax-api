@@ -138,6 +138,8 @@ describe('AgentUpdatesService', () => {
     };
     tasksRepository = {
       find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
+      save: jest.fn(async (value) => value),
     };
     tasksServiceMock = {
       requestTaskCancellation: jest.fn().mockResolvedValue(undefined),
@@ -206,6 +208,12 @@ describe('AgentUpdatesService', () => {
     targetsRepository.createQueryBuilder?.mockReturnValue(
       createActiveTargetsQueryBuilder([target]),
     );
+    tasksRepository.findOne = jest.fn().mockResolvedValue(
+      buildTask({
+        id: 'task-1',
+        status: TaskStatus.RUNNING,
+      }),
+    );
     rolloutsRepository.findOne?.mockResolvedValue(rollout);
 
     const pausedTargets = await service.reconcileActiveTargets();
@@ -223,6 +231,12 @@ describe('AgentUpdatesService', () => {
         id: rollout.id,
         status: 'paused',
         statusMessage: 'srv-prod-01 timed out while waiting for dispatched.',
+      }),
+    );
+    expect(tasksRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'task-1',
+        status: TaskStatus.FAILED,
       }),
     );
   });
@@ -250,6 +264,14 @@ describe('AgentUpdatesService', () => {
       agentVersion: '1.0.0',
     });
     targetsRepository.save = jest.fn().mockResolvedValue(completedTarget);
+    tasksRepository.findOne = jest.fn().mockResolvedValue(
+      buildTask({
+        id: 'task-1',
+        status: TaskStatus.RUNNING,
+        output: null,
+        result: null,
+      }),
+    );
     rolloutsRepository.findOne?.mockResolvedValue(rollout);
 
     const pausedTargets = await service.reconcileActiveTargets();
@@ -261,6 +283,13 @@ describe('AgentUpdatesService', () => {
         status: 'completed',
         progressPercent: 100,
         statusMessage: 'Agent reconnect confirmed 1.0.0.',
+      }),
+    );
+    expect(tasksRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'task-1',
+        status: TaskStatus.SUCCESS,
+        output: 'Agent reconnect confirmed 1.0.0.',
       }),
     );
   });

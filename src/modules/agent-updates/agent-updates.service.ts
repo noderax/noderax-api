@@ -516,13 +516,19 @@ export class AgentUpdatesService {
     }
 
     const rollout = await this.findRolloutEntityOrFail(target.rolloutId);
-    await this.targetsRepository.save({
+    const completedTarget = await this.targetsRepository.save({
       ...target,
       status: 'completed',
       progressPercent: 100,
       statusMessage: `Agent reconnect confirmed ${node.agentVersion}.`,
       completedAt: new Date(),
     });
+
+    await this.syncLinkedTaskTerminalState(
+      completedTarget,
+      TaskStatus.SUCCESS,
+      `Agent reconnect confirmed ${node.agentVersion}.`,
+    );
 
     await this.recordRolloutEvent(
       target.nodeId,
@@ -758,6 +764,12 @@ export class AgentUpdatesService {
       status: 'paused',
       statusMessage: message,
     });
+
+    await this.syncLinkedTaskTerminalState(
+      failedTarget,
+      TaskStatus.FAILED,
+      message,
+    );
 
     await this.recordRolloutEvent(
       failedTarget.nodeId,
@@ -1103,5 +1115,46 @@ export class AgentUpdatesService {
         `Failed to request cancellation for rollout target ${target.id} task ${target.taskId}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  private async syncLinkedTaskTerminalState(
+    target: Pick<AgentUpdateRolloutTargetEntity, 'id' | 'taskId'>,
+    status: TaskStatus.SUCCESS | TaskStatus.FAILED,
+    detail: string,
+  ): Promise<void> {
+    if (!target.taskId) {
+      return;
+    }
+
+    const linkedTask = await this.tasksRepository.findOne({
+      where: { id: target.taskId },
+    });
+    if (!linkedTask || this.isTaskTerminalStatus(linkedTask.status)) {
+      return;
+    }
+
+    const finishedAt = new Date();
+    await this.tasksRepository.save({
+      ...linkedTask,
+      status,
+      finishedAt: linkedTask.finishedAt ?? finishedAt,
+      leaseUntil: null,
+      claimedBy: null,
+      claimToken: null,
+      output: linkedTask.output ?? detail,
+      result: {
+        ...(linkedTask.result ?? {}),
+        source: 'agent-update-rollout-monitor',
+        detail,
+      },
+    });
+  }
+
+  private isTaskTerminalStatus(status: TaskStatus): boolean {
+    return (
+      status === TaskStatus.SUCCESS ||
+      status === TaskStatus.FAILED ||
+      status === TaskStatus.CANCELLED
+    );
   }
 }
