@@ -1010,16 +1010,22 @@ export class NodesService {
       case 'operational':
         return (
           profile === NodeRootAccessProfile.OPERATIONAL ||
+          profile === NodeRootAccessProfile.OPERATIONAL_TASK ||
+          profile === NodeRootAccessProfile.OPERATIONAL_TERMINAL ||
           profile === NodeRootAccessProfile.ALL
         );
       case 'task':
         return (
           profile === NodeRootAccessProfile.TASK ||
+          profile === NodeRootAccessProfile.OPERATIONAL_TASK ||
+          profile === NodeRootAccessProfile.TASK_TERMINAL ||
           profile === NodeRootAccessProfile.ALL
         );
       case 'terminal':
         return (
           profile === NodeRootAccessProfile.TERMINAL ||
+          profile === NodeRootAccessProfile.OPERATIONAL_TERMINAL ||
+          profile === NodeRootAccessProfile.TASK_TERMINAL ||
           profile === NodeRootAccessProfile.ALL
         );
       default:

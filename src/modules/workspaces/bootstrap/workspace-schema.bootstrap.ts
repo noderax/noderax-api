@@ -342,17 +342,37 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
 
   private async ensureNodeRootAccessProfileEnumExists(): Promise<void> {
     await this.dataSource
-      .query(`
-        CREATE TYPE "node_root_access_profile_enum" AS ENUM ('off', 'operational', 'task', 'terminal', 'all')
-      `)
+      .query(
+        `
+        CREATE TYPE "node_root_access_profile_enum" AS ENUM ('off', 'operational', 'task', 'terminal', 'operational_task', 'operational_terminal', 'task_terminal', 'all')
+      `,
+      )
       .catch(() => undefined);
+
+    const requiredValues = [
+      'operational_task',
+      'operational_terminal',
+      'task_terminal',
+    ];
+
+    for (const value of requiredValues) {
+      await this.dataSource
+        .query(
+          `
+            ALTER TYPE "node_root_access_profile_enum" ADD VALUE IF NOT EXISTS '${value}'
+          `,
+        )
+        .catch(() => undefined);
+    }
   }
 
   private async ensureNodeRootAccessSyncStatusEnumExists(): Promise<void> {
     await this.dataSource
-      .query(`
+      .query(
+        `
         CREATE TYPE "node_root_access_sync_status_enum" AS ENUM ('pending', 'applied', 'failed')
-      `)
+      `,
+      )
       .catch(() => undefined);
   }
 
