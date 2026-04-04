@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { IsIn, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { ValidateNested } from 'class-validator';
+import { NodeRootAccessAgentReportDto } from '../../nodes/dto/node-root-access-state.dto';
 
 export class AgentAuthMessageDto {
   @ApiProperty({
@@ -32,4 +35,12 @@ export class AgentAuthMessageDto {
   @IsOptional()
   @IsString()
   agentVersion?: string;
+
+  @ApiPropertyOptional({
+    type: NodeRootAccessAgentReportDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NodeRootAccessAgentReportDto)
+  rootAccess?: NodeRootAccessAgentReportDto;
 }

@@ -75,6 +75,7 @@ src/
   - inactive users cannot log in or receive new assignments
 - Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
 - Linux node inventory with online/offline detection, maintenance mode, team ownership, and version telemetry
+- API-authored per-node root access profiles with desired/applied/sync metadata and realtime propagation
 - Workspace-scoped one-click node bootstrap with short-lived install commands, live install progress tracking, installer consumption, and legacy enrollment compatibility
 - Official agent release catalog resolution through CDN-first metadata with GitHub Releases fallback
 - Platform-admin agent update rollouts with sequential dispatch, retry, skip, resume, cancel, rollback, and heartbeat-confirmed completion
@@ -82,12 +83,32 @@ src/
 - Task creation, team-targeted dispatch, batch dispatch, long-poll task claiming, lifecycle updates, and logs
 - Workspace-scoped task templates
 - Scheduled task creation with workspace timezone support and team targeting
+- Root-aware shell task and scheduled shell task creation with `runAsRoot` and `rootScope`
 - Package operations through the shared task pipeline
 - Platform settings persistence through installer state, including SMTP settings validation
-- Realtime updates for node state, metrics, tasks, events, and node install progress
+- Realtime updates for node state, root access state, metrics, tasks, events, and node install progress
 - Interactive terminal sessions over a dedicated JWT-authenticated Socket.IO namespace
-- Terminal transcript persistence with ordered base64 I/O chunks, 7-day retention, and retention cleanup
+- Terminal transcript persistence with ordered base64 I/O chunks, 7-day retention, retention cleanup, and optional root-session launch
 - Agent realtime terminal bridge for start, input, resize, stop, opened, output, exited, and error events
+
+## Root Access Model
+
+The API is the source of truth for per-node root access. Each node stores:
+
+- `rootAccessProfile`: desired profile chosen by an operator
+- `rootAccessAppliedProfile`: profile most recently reported as applied by the agent
+- `rootAccessSyncStatus`: `pending`, `applied`, or `failed`
+- `rootAccessUpdatedAt`, `rootAccessUpdatedByUserId`, `rootAccessLastAppliedAt`, `rootAccessLastError`
+
+Supported profiles:
+
+- `off`: no privileged panel surfaces
+- `operational`: package install/remove/purge plus `apt-get update`, `reboot`, and `restart-agent`
+- `task`: root `shell.exec` and scheduled shell tasks
+- `terminal`: root interactive terminal sessions
+- `all`: union of all surfaces
+
+The desired profile is returned on every agent claim poll and realtime auth acknowledgement. Agents report their applied profile and last sync error back through the same control channel.
 
 ## Installation
 

@@ -28,6 +28,7 @@ import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-member
 import { CreateNodeDto } from './dto/create-node.dto';
 import { EnableNodeMaintenanceDto } from './dto/enable-node-maintenance.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
+import { UpdateNodeRootAccessDto } from './dto/update-node-root-access.dto';
 import { UpdateNodeTeamDto } from './dto/update-node-team.dto';
 import { NodeEntity } from './entities/node.entity';
 import { NodesService } from './nodes.service';
@@ -150,6 +151,31 @@ export class WorkspaceNodesController {
       ipAddress: request.ip ?? null,
       userAgent: request.headers['user-agent'] ?? null,
     });
+  }
+
+  @Post(':id/root-access')
+  @UseGuards(WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  updateRootAccess(
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateNodeRootAccessDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.updateRootAccessProfile(
+      id,
+      workspaceId,
+      actor,
+      dto,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
   }
 
   @Delete(':id')

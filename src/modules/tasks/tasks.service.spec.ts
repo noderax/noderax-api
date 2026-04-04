@@ -228,6 +228,7 @@ describe('TasksService.createScheduledShellTask', () => {
     expect(task.payload).toEqual({
       title: 'Daily hostname check',
       command: 'hostname',
+      runAsRoot: false,
       scheduleId: 'schedule-1',
       scheduleName: 'Daily hostname check',
     });

@@ -4,6 +4,7 @@ export const SYSTEM_EVENT_TYPES = {
   AGENT_UPDATE_TARGET_DISPATCHED: 'agent.update.target.dispatched',
   AGENT_UPDATE_TARGET_FAILED: 'agent.update.target.failed',
   HIGH_CPU: 'high.cpu',
+  NODE_ROOT_ACCESS_UPDATED: 'node.root-access.updated',
   NODE_OFFLINE: 'node.offline',
   NODE_ONLINE: 'node.online',
   NODE_REGISTERED: 'node.registered',

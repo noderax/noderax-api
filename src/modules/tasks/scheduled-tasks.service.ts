@@ -316,12 +316,16 @@ export class ScheduledTasksService {
       }
 
       for (const target of targets) {
+        if (scheduledTask.runAsRoot) {
+          this.nodesService.assertNodeAllowsTaskRoot(target);
+        }
         const createdTask = await this.tasksService.createScheduledShellTask({
           nodeId: target.id,
           workspaceId: scheduledTask.workspaceId,
           scheduleId: scheduledTask.id,
           scheduleName: scheduledTask.name,
           command: scheduledTask.command,
+          runAsRoot: scheduledTask.runAsRoot,
           targetTeamId: scheduledTask.targetTeamId,
           targetTeamName: scheduledTask.targetTeamName ?? null,
           templateId: scheduledTask.templateId,
@@ -470,6 +474,7 @@ export class ScheduledTasksService {
       return {
         name,
         command,
+        runAsRoot: Boolean(input.runAsRoot),
         cadence: input.cadence,
         minute: 0,
         hour: null,
@@ -494,6 +499,7 @@ export class ScheduledTasksService {
       return {
         name,
         command,
+        runAsRoot: Boolean(input.runAsRoot),
         cadence: input.cadence,
         minute: 0,
         hour: null,
@@ -516,6 +522,7 @@ export class ScheduledTasksService {
       return {
         name,
         command,
+        runAsRoot: Boolean(input.runAsRoot),
         cadence: input.cadence,
         minute: input.minute,
         hour: null,
@@ -540,6 +547,7 @@ export class ScheduledTasksService {
       return {
         name,
         command,
+        runAsRoot: Boolean(input.runAsRoot),
         cadence: input.cadence,
         minute: input.minute,
         hour: input.hour,
@@ -563,6 +571,7 @@ export class ScheduledTasksService {
     return {
       name,
       command,
+      runAsRoot: Boolean(input.runAsRoot),
       cadence: input.cadence,
       minute: input.minute,
       hour: input.hour,
@@ -596,9 +605,12 @@ export class ScheduledTasksService {
       ? await this.resolveTemplateOrFail(templateId, workspace.id)
       : null;
     await Promise.all(
-      nodeIds.map((nodeId) =>
-        this.nodesService.ensureExists(nodeId, workspace.id),
-      ),
+      nodeIds.map(async (nodeId) => {
+        const node = await this.nodesService.ensureExists(nodeId, workspace.id);
+        if (normalized.runAsRoot) {
+          this.nodesService.assertNodeAllowsTaskRoot(node);
+        }
+      }),
     );
 
     const now = new Date();
@@ -621,6 +633,7 @@ export class ScheduledTasksService {
         ownerUserId: owner.id,
         name: normalized.name,
         command: normalized.command,
+        runAsRoot: normalized.runAsRoot,
         cadence: normalized.cadence,
         minute: normalized.minute,
         hour: normalized.hour,
@@ -692,6 +705,13 @@ export class ScheduledTasksService {
       workspace.id,
       teamId,
     );
+    if (normalized.runAsRoot) {
+      const targetNodes = await this.nodesService.listTeamOwnedNodes(
+        workspace.id,
+        team.id,
+      );
+      targetNodes.forEach((node) => this.nodesService.assertNodeAllowsTaskRoot(node));
+    }
     const template = templateId
       ? await this.resolveTemplateOrFail(templateId, workspace.id)
       : null;
@@ -712,6 +732,7 @@ export class ScheduledTasksService {
       ownerUserId: owner.id,
       name: normalized.name,
       command: normalized.command,
+      runAsRoot: normalized.runAsRoot,
       cadence: normalized.cadence,
       minute: normalized.minute,
       hour: normalized.hour,
@@ -833,6 +854,7 @@ type ScheduledTaskInputShape =
       | 'hour'
       | 'dayOfWeek'
       | 'intervalMinutes'
+      | 'runAsRoot'
     >
   | Pick<
       CreateBatchScheduledTaskDto,
@@ -843,11 +865,13 @@ type ScheduledTaskInputShape =
       | 'hour'
       | 'dayOfWeek'
       | 'intervalMinutes'
+      | 'runAsRoot'
     >;
 
 type NormalizedScheduleInput = {
   name: string;
   command: string;
+  runAsRoot: boolean;
   cadence: ScheduledTaskEntity['cadence'];
   minute: number;
   hour: number | null;

@@ -112,6 +112,14 @@ export class RealtimeGateway
     }
   }
 
+  emitNodeRootAccessUpdate(payload: Record<string, unknown>) {
+    if (payload.nodeId) {
+      this.server
+        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
+        .emit(REALTIME_EVENTS.NODE_ROOT_ACCESS_UPDATED, payload);
+    }
+  }
+
   emitMetricIngested(payload: Record<string, unknown>) {
     if (payload.nodeId) {
       this.server

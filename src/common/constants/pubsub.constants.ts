@@ -4,6 +4,7 @@ export const PUBSUB_CHANNELS = {
   EVENTS_CREATED: 'events.created',
   METRICS_INGESTED: 'metrics.ingested',
   NODE_INSTALLS_UPDATED: 'node-installs.updated',
+  NODES_ROOT_ACCESS_UPDATED: 'nodes.root-access.updated',
   NODES_STATUS_UPDATED: 'nodes.status.updated',
   TERMINAL_SESSION_CLOSED: 'terminal.session.closed',
   TERMINAL_SESSION_ERROR: 'terminal.session.error',

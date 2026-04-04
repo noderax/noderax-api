@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsIn,
   IsInt,
+  IsBoolean,
   IsOptional,
   IsString,
   IsUUID,
@@ -101,4 +102,12 @@ export class CreateScheduledTaskDto {
   @Min(1)
   @Max(10_080)
   intervalMinutes?: number;
+
+  @ApiPropertyOptional({
+    example: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  runAsRoot?: boolean;
 }

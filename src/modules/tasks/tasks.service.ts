@@ -62,6 +62,8 @@ const TERMINAL_TASK_STATUSES = new Set<TaskStatus>([
 ]);
 
 const CLAIM_POLL_INTERVAL_MS = 500;
+const ROOT_SCOPE_TASK = 'task';
+const ROOT_SCOPE_OPERATIONAL = 'operational';
 
 @Injectable()
 export class TasksService {
@@ -143,6 +145,7 @@ export class TasksService {
     scheduleId: string;
     scheduleName: string;
     command: string;
+    runAsRoot?: boolean;
     workspaceId?: string;
     targetTeamId?: string | null;
     targetTeamName?: string | null;
@@ -160,6 +163,8 @@ export class TasksService {
       payload: {
         title: input.scheduleName,
         command: input.command,
+        runAsRoot: Boolean(input.runAsRoot),
+        ...(input.runAsRoot ? { rootScope: 'task' } : {}),
         scheduleId: input.scheduleId,
         scheduleName: input.scheduleName,
       },
@@ -597,6 +602,12 @@ export class TasksService {
     agent: AuthenticatedAgent,
     claimDto: ClaimAgentTasksDto,
   ): Promise<ClaimAgentTaskResponseDto> {
+    const node = await this.nodesService.findOneOrFail(agent.nodeId);
+    await this.nodesService.recordAgentRootAccessState(
+      agent.nodeId,
+      claimDto.rootAccess ?? null,
+    );
+    const rootAccess = this.nodesService.buildDesiredRootAccessSnapshot(node);
     this.lastClaimAt = new Date();
     const startedAt = Date.now();
     const waitMs = Math.max(claimDto.waitMs ?? 15000, 0);
@@ -641,6 +652,7 @@ export class TasksService {
           return {
             task,
             outputTruncated: Boolean(task.outputTruncated),
+            rootAccess,
           };
         }
 
@@ -660,6 +672,7 @@ export class TasksService {
           return {
             task: null,
             outputTruncated: false,
+            rootAccess,
           };
         }
 
@@ -1440,6 +1453,7 @@ export class TasksService {
       (await this.nodesService.ensureExists(input.nodeId, input.workspaceId));
     await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
     this.nodesService.assertNodeAcceptingNewWork(node);
+    this.assertRequestedRootAccessAllowed(node, input.type, input.payload);
     const template =
       input.templateId && !input.templateName
         ? await this.resolveTemplateOrFail(input.templateId, node.workspaceId)
@@ -1592,6 +1606,95 @@ export class TasksService {
       taskType: task.type,
       taskStatus: task.status,
     };
+  }
+
+  private assertRequestedRootAccessAllowed(
+    node: NodeEntity,
+    taskType: string,
+    payload: Record<string, unknown>,
+  ): void {
+    if (this.isPackageMutationTaskType(taskType)) {
+      this.nodesService.assertNodeAllowsOperationalRoot(node);
+      return;
+    }
+
+    if (taskType !== 'shell.exec') {
+      return;
+    }
+
+    const rootRequest = this.readShellExecRootRequest(payload);
+    if (!rootRequest.runAsRoot) {
+      return;
+    }
+
+    if (rootRequest.rootScope === ROOT_SCOPE_TASK) {
+      this.nodesService.assertNodeAllowsTaskRoot(node);
+      return;
+    }
+
+    this.assertOperationalRootShellPayloadAllowed(rootRequest.command);
+    this.nodesService.assertNodeAllowsOperationalRoot(node);
+  }
+
+  private readShellExecRootRequest(payload: Record<string, unknown>): {
+    command: string | null;
+    runAsRoot: boolean;
+    rootScope: typeof ROOT_SCOPE_TASK | typeof ROOT_SCOPE_OPERATIONAL | null;
+  } {
+    const command =
+      typeof payload.command === 'string' ? payload.command.trim() : null;
+    const runAsRoot = payload.runAsRoot === true;
+
+    if (!runAsRoot) {
+      return {
+        command,
+        runAsRoot: false,
+        rootScope: null,
+      };
+    }
+
+    const rootScope =
+      typeof payload.rootScope === 'string' ? payload.rootScope.trim() : null;
+
+    if (
+      rootScope !== ROOT_SCOPE_TASK &&
+      rootScope !== ROOT_SCOPE_OPERATIONAL
+    ) {
+      throw new BadRequestException(
+        'rootScope must be "task" or "operational" when runAsRoot is enabled.',
+      );
+    }
+
+    return {
+      command,
+      runAsRoot: true,
+      rootScope,
+    };
+  }
+
+  private assertOperationalRootShellPayloadAllowed(command: string | null): void {
+    const normalizedCommand = command?.replace(/\s+/g, ' ').trim() ?? '';
+    const allowedCommands = new Set([
+      'reboot',
+      'systemctl restart noderax-agent',
+      'apt-get update',
+    ]);
+
+    if (allowedCommands.has(normalizedCommand)) {
+      return;
+    }
+
+    throw new BadRequestException(
+      'Operational root access is limited to reboot, restarting noderax-agent, and apt-get update.',
+    );
+  }
+
+  private isPackageMutationTaskType(taskType: string): boolean {
+    return (
+      taskType === TASK_TYPES.PACKAGE_INSTALL ||
+      taskType === TASK_TYPES.PACKAGE_REMOVE ||
+      taskType === TASK_TYPES.PACKAGE_PURGE
+    );
   }
 
   private assertTaskIdMatchesRoute(

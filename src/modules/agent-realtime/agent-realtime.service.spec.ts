@@ -43,6 +43,7 @@ describe('AgentRealtimeService', () => {
           lastSeenAt: new Date('2026-03-20T10:00:00.000Z'),
         },
       }),
+      recordAgentRootAccessState: jest.fn().mockResolvedValue(null),
       broadcastStatusUpdate: jest.fn(),
       markOffline: jest.fn().mockResolvedValue({
         node: {

@@ -11,6 +11,12 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { NodeRootAccessProfile as NodeRootAccessProfileValue } from './node-root-access-profile.enum';
+import {
+  NodeRootAccessProfile,
+} from './node-root-access-profile.enum';
+import type { NodeRootAccessSyncStatus as NodeRootAccessSyncStatusValue } from './node-root-access-sync-status.enum';
+import { NodeRootAccessSyncStatus } from './node-root-access-sync-status.enum';
 import { NodeStatus } from './node-status.enum';
 
 @Entity({ name: 'nodes' })
@@ -97,6 +103,72 @@ export class NodeEntity {
   })
   @Column({ type: 'boolean', default: false })
   maintenanceMode?: boolean;
+
+  @ApiProperty({
+    enum: NodeRootAccessProfile,
+    enumName: 'NodeRootAccessProfile',
+    example: NodeRootAccessProfile.OFF,
+  })
+  @Column({
+    type: 'enum',
+    enum: NodeRootAccessProfile,
+    enumName: 'node_root_access_profile_enum',
+    default: NodeRootAccessProfile.OFF,
+  })
+  rootAccessProfile: NodeRootAccessProfileValue;
+
+  @ApiProperty({
+    enum: NodeRootAccessProfile,
+    enumName: 'NodeRootAccessProfile',
+    example: NodeRootAccessProfile.OFF,
+  })
+  @Column({
+    type: 'enum',
+    enum: NodeRootAccessProfile,
+    enumName: 'node_root_access_profile_enum',
+    default: NodeRootAccessProfile.OFF,
+  })
+  rootAccessAppliedProfile: NodeRootAccessProfileValue;
+
+  @ApiProperty({
+    enum: NodeRootAccessSyncStatus,
+    enumName: 'NodeRootAccessSyncStatus',
+    example: NodeRootAccessSyncStatus.PENDING,
+  })
+  @Column({
+    type: 'enum',
+    enum: NodeRootAccessSyncStatus,
+    enumName: 'node_root_access_sync_status_enum',
+    default: NodeRootAccessSyncStatus.PENDING,
+  })
+  rootAccessSyncStatus: NodeRootAccessSyncStatusValue;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  rootAccessUpdatedAt?: Date | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  rootAccessUpdatedByUserId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  rootAccessLastAppliedAt?: Date | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+  })
+  @Column({ type: 'text', nullable: true })
+  rootAccessLastError?: string | null;
 
   @ApiPropertyOptional({
     nullable: true,

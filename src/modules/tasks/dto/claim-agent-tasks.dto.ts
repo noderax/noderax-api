@@ -1,14 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsInt,
   IsOptional,
   IsString,
+  ValidateNested,
   Max,
   Min,
 } from 'class-validator';
 import { clampInteger } from '../../../common/utils/clamp-integer.util';
+import { NodeRootAccessAgentReportDto } from '../../nodes/dto/node-root-access-state.dto';
 
 export class ClaimAgentTasksDto {
   @ApiPropertyOptional({
@@ -48,4 +51,12 @@ export class ClaimAgentTasksDto {
   @IsArray()
   @IsString({ each: true })
   capabilities?: string[];
+
+  @ApiPropertyOptional({
+    type: NodeRootAccessAgentReportDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NodeRootAccessAgentReportDto)
+  rootAccess?: NodeRootAccessAgentReportDto;
 }

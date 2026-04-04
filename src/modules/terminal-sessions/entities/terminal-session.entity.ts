@@ -77,6 +77,10 @@ export class TerminalSessionEntity {
   @Column({ type: 'int', default: 34 })
   rows: number;
 
+  @ApiProperty({ example: false })
+  @Column({ type: 'boolean', default: false })
+  runAsRoot: boolean;
+
   @ApiProperty({ format: 'date-time' })
   @Column({ type: 'timestamptz' })
   retentionExpiresAt: Date;

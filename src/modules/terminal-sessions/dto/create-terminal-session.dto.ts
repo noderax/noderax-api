@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class CreateTerminalSessionDto {
   @ApiPropertyOptional({ example: 120, default: 120 })
@@ -18,4 +18,9 @@ export class CreateTerminalSessionDto {
   @Min(10)
   @Max(200)
   rows?: number;
+
+  @ApiPropertyOptional({ example: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  runAsRoot?: boolean;
 }

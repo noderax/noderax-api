@@ -27,6 +27,7 @@ import { UserRole } from '../users/entities/user-role.enum';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { EnableNodeMaintenanceDto } from './dto/enable-node-maintenance.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
+import { UpdateNodeRootAccessDto } from './dto/update-node-root-access.dto';
 import { UpdateNodeTeamDto } from './dto/update-node-team.dto';
 import { NodeEntity } from './entities/node.entity';
 import { NodesService } from './nodes.service';
@@ -150,6 +151,29 @@ export class NodesController {
       ipAddress: request.ip ?? null,
       userAgent: request.headers['user-agent'] ?? null,
     });
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Post(':id/root-access')
+  updateRootAccess(
+    @Param('id') id: string,
+    @Body() dto: UpdateNodeRootAccessDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.updateRootAccessProfile(
+      id,
+      undefined,
+      actor,
+      dto,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
   }
 
   @Roles(UserRole.PLATFORM_ADMIN)

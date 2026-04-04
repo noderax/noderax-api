@@ -29,6 +29,7 @@ describe('ScheduledTasksService', () => {
     ensureExists: jest.fn(),
     findOneOrFail: jest.fn(),
     listTeamOwnedNodes: jest.fn(),
+    assertNodeAllowsTaskRoot: jest.fn(),
   };
 
   const eventsService = {
@@ -247,6 +248,7 @@ function buildSchedule(
     lastRunAt: null,
     lastRunTaskId: null,
     lastError: null,
+    runAsRoot: false,
     leaseUntil: null,
     claimedBy: null,
     claimToken: null,

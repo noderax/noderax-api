@@ -22,6 +22,8 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
 
     await this.ensureWorkspaceMembershipRoleEnumExists();
     await this.ensureTimezoneSourceEnumExists();
+    await this.ensureNodeRootAccessProfileEnumExists();
+    await this.ensureNodeRootAccessSyncStatusEnumExists();
     await this.ensurePlatformAdminRoleExists();
     await this.ensureWorkspaceTables();
     await this.ensureResourceWorkspaceColumns();
@@ -122,6 +124,13 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
       ADD COLUMN IF NOT EXISTS "workspaceId" uuid NULL,
       ADD COLUMN IF NOT EXISTS "teamId" uuid NULL,
       ADD COLUMN IF NOT EXISTS "maintenanceMode" boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "rootAccessProfile" "node_root_access_profile_enum" NOT NULL DEFAULT 'off',
+      ADD COLUMN IF NOT EXISTS "rootAccessAppliedProfile" "node_root_access_profile_enum" NOT NULL DEFAULT 'off',
+      ADD COLUMN IF NOT EXISTS "rootAccessSyncStatus" "node_root_access_sync_status_enum" NOT NULL DEFAULT 'pending',
+      ADD COLUMN IF NOT EXISTS "rootAccessUpdatedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "rootAccessUpdatedByUserId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "rootAccessLastAppliedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "rootAccessLastError" text NULL,
       ADD COLUMN IF NOT EXISTS "maintenanceReason" text NULL,
       ADD COLUMN IF NOT EXISTS "maintenanceStartedAt" TIMESTAMPTZ NULL,
       ADD COLUMN IF NOT EXISTS "maintenanceByUserId" uuid NULL,
@@ -154,7 +163,8 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
     await this.dataSource.query(`
       ALTER TABLE "scheduled_tasks"
       ADD COLUMN IF NOT EXISTS "workspaceId" uuid NULL,
-      ADD COLUMN IF NOT EXISTS "timezoneSource" "scheduled_task_timezone_source_enum" NOT NULL DEFAULT 'legacy_fixed'
+      ADD COLUMN IF NOT EXISTS "timezoneSource" "scheduled_task_timezone_source_enum" NOT NULL DEFAULT 'legacy_fixed',
+      ADD COLUMN IF NOT EXISTS "runAsRoot" boolean NOT NULL DEFAULT false
     `);
 
     await this.dataSource.query(`
@@ -327,6 +337,22 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
       FOREIGN KEY ("teamId") REFERENCES "teams"("id") ON DELETE SET NULL
     `,
       )
+      .catch(() => undefined);
+  }
+
+  private async ensureNodeRootAccessProfileEnumExists(): Promise<void> {
+    await this.dataSource
+      .query(`
+        CREATE TYPE "node_root_access_profile_enum" AS ENUM ('off', 'operational', 'task', 'terminal', 'all')
+      `)
+      .catch(() => undefined);
+  }
+
+  private async ensureNodeRootAccessSyncStatusEnumExists(): Promise<void> {
+    await this.dataSource
+      .query(`
+        CREATE TYPE "node_root_access_sync_status_enum" AS ENUM ('pending', 'applied', 'failed')
+      `)
       .catch(() => undefined);
   }
 

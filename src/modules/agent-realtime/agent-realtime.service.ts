@@ -22,6 +22,7 @@ import { RedisService } from '../../redis/redis.service';
 import { AgentUpdatesService } from '../agent-updates/agent-updates.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
+import { NodeRootAccessProfile } from '../nodes/entities/node-root-access-profile.enum';
 import { NodeStatus } from '../nodes/entities/node-status.enum';
 import { NodesService } from '../nodes/nodes.service';
 import { TasksService } from '../tasks/tasks.service';
@@ -233,6 +234,11 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     nodeId: string;
     agentToken: string;
     agentVersion?: string;
+    rootAccess?: {
+      appliedProfile?: NodeRootAccessProfile | null;
+      lastAppliedAt?: string | null;
+      lastError?: string | null;
+    };
   }): Promise<{ node: NodeEntity; previousSocketId: string | null }> {
     const node = await this.nodesService.authenticateAgent(
       input.nodeId,
@@ -258,14 +264,19 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     const { node: onlineNode } = await this.nodesService.markOnline(node.id, {
       agentVersion: input.agentVersion ?? null,
     });
-    await this.nodesService.broadcastStatusUpdate(onlineNode);
+    const rootedNode =
+      (await this.nodesService.recordAgentRootAccessState(
+        node.id,
+        input.rootAccess,
+      )) ?? onlineNode;
+    await this.nodesService.broadcastStatusUpdate(rootedNode);
     await this.agentUpdatesService.observeNodeVersion({
-      id: onlineNode.id,
-      agentVersion: onlineNode.agentVersion,
+      id: rootedNode.id,
+      agentVersion: rootedNode.agentVersion,
     });
     this.incrementCounter('auth.success');
 
-    return { node: onlineNode, previousSocketId };
+    return { node: rootedNode, previousSocketId };
   }
 
   async registerPing(socketId: string, timestamp?: string): Promise<void> {
@@ -413,6 +424,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       sessionId: string;
       cols: number;
       rows: number;
+      runAsRoot?: boolean;
     },
   ): Promise<boolean> {
     return this.emitEventToNode(
@@ -423,6 +435,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
         sessionId: payload.sessionId,
         cols: payload.cols,
         rows: payload.rows,
+        runAsRoot: payload.runAsRoot === true,
       },
     );
   }

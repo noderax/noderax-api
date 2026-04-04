@@ -6,7 +6,6 @@ import {
   HttpStatus,
   Param,
   Post,
-  Res,
   UseGuards,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -15,14 +14,12 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiHeader,
-  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { Response } from 'express';
 import { CurrentAgent } from '../../common/decorators/current-agent.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
@@ -65,11 +62,8 @@ export class AgentTasksController {
   })
   @ApiBody({ type: ClaimAgentTasksDto })
   @ApiOkResponse({
-    description: 'Task claimed.',
+    description: 'Task claim state plus current root-access configuration.',
     type: ClaimAgentTaskResponseDto,
-  })
-  @ApiNoContentResponse({
-    description: 'No task available in the requested polling window.',
   })
   @ApiUnauthorizedResponse({
     description: 'Invalid agent authentication headers.',
@@ -77,15 +71,8 @@ export class AgentTasksController {
   async claim(
     @CurrentAgent() agent: AuthenticatedAgent,
     @Body() claimDto: ClaimAgentTasksDto,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<ClaimAgentTaskResponseDto | void> {
-    const claim = await this.tasksService.claimForAgent(agent, claimDto);
-    if (!claim.task) {
-      response.status(HttpStatus.NO_CONTENT);
-      return;
-    }
-
-    return claim;
+  ): Promise<ClaimAgentTaskResponseDto> {
+    return this.tasksService.claimForAgent(agent, claimDto);
   }
 
   @Post(':taskId/accepted')

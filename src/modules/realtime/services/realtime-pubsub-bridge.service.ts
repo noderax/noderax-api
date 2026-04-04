@@ -37,6 +37,12 @@ export class RealtimePubsubBridgeService
         },
       ),
       await this.redisService.subscribe(
+        PUBSUB_CHANNELS.NODES_ROOT_ACCESS_UPDATED,
+        (payload) => {
+          this.forwardNodeRootAccess(payload as PubsubPayload);
+        },
+      ),
+      await this.redisService.subscribe(
         PUBSUB_CHANNELS.METRICS_INGESTED,
         (payload) => {
           this.forwardMetric(payload as PubsubPayload);
@@ -78,6 +84,14 @@ export class RealtimePubsubBridgeService
     }
 
     this.realtimeGateway.emitNodeStatusUpdate(payload);
+  }
+
+  private forwardNodeRootAccess(payload: PubsubPayload): void {
+    if (this.isSameInstance(payload)) {
+      return;
+    }
+
+    this.realtimeGateway.emitNodeRootAccessUpdate(payload);
   }
 
   private forwardMetric(payload: PubsubPayload): void {

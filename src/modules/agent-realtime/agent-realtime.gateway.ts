@@ -35,6 +35,7 @@ import { AgentTerminalOpenedMessageDto } from './dto/agent-terminal-opened-messa
 import { AgentTerminalOutputMessageDto } from './dto/agent-terminal-output-message.dto';
 import { AgentTerminalExitedMessageDto } from './dto/agent-terminal-exited-message.dto';
 import { AgentTerminalErrorMessageDto } from './dto/agent-terminal-error-message.dto';
+import { NodesService } from '../nodes/nodes.service';
 import { TerminalSessionsService } from '../terminal-sessions/terminal-sessions.service';
 
 @Public()
@@ -60,6 +61,7 @@ export class AgentRealtimeGateway
   constructor(
     private readonly tasksService: TasksService,
     private readonly agentRealtimeService: AgentRealtimeService,
+    private readonly nodesService: NodesService,
     private readonly terminalSessionsService: TerminalSessionsService,
   ) {}
 
@@ -174,6 +176,7 @@ export class AgentRealtimeGateway
           nodeId: body.nodeId,
           agentToken: body.agentToken,
           agentVersion: body.agentVersion,
+          rootAccess: body.rootAccess,
         });
 
       if (previousSocketId && previousSocketId !== client.id) {
@@ -186,10 +189,13 @@ export class AgentRealtimeGateway
         }
       }
 
+      const rootAccess = this.nodesService.buildDesiredRootAccessSnapshot(node);
+
       client.emit(AGENT_REALTIME_SERVER_EVENTS.AUTH_ACK, {
         type: AGENT_REALTIME_SERVER_EVENTS.AUTH_ACK,
         authenticated: true,
         nodeId: node.id,
+        rootAccess,
       });
 
       await this.agentRealtimeService.dispatchQueuedTasks(node.id);
@@ -198,6 +204,7 @@ export class AgentRealtimeGateway
         type: AGENT_REALTIME_SERVER_EVENTS.AUTH_ACK,
         authenticated: true,
         nodeId: node.id,
+        rootAccess,
       };
     } catch (error) {
       this.agentRealtimeService.incrementCounter('auth.failed');

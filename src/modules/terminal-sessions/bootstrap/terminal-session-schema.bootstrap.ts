@@ -33,6 +33,7 @@ export class TerminalSessionSchemaBootstrap implements OnModuleInit {
         "exitCode" integer NULL,
         "cols" integer NOT NULL DEFAULT 120,
         "rows" integer NOT NULL DEFAULT 34,
+        "runAsRoot" boolean NOT NULL DEFAULT false,
         "retentionExpiresAt" TIMESTAMPTZ NOT NULL,
         "transcriptBytes" bigint NOT NULL DEFAULT 0,
         "chunkCount" integer NOT NULL DEFAULT 0,
@@ -41,6 +42,11 @@ export class TerminalSessionSchemaBootstrap implements OnModuleInit {
         "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
         CONSTRAINT "PK_terminal_sessions_id" PRIMARY KEY ("id")
       )
+    `);
+
+    await this.dataSource.query(`
+      ALTER TABLE "terminal_sessions"
+      ADD COLUMN IF NOT EXISTS "runAsRoot" boolean NOT NULL DEFAULT false
     `);
 
     await this.dataSource.query(`

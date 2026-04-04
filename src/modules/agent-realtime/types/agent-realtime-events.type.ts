@@ -5,6 +5,11 @@ export type AgentAuthMessage = {
   nodeId: string;
   agentToken: string;
   agentVersion?: string;
+  rootAccess?: {
+    appliedProfile?: string;
+    lastAppliedAt?: string | null;
+    lastError?: string | null;
+  };
 };
 
 export type AgentTaskStartedMessage = {
@@ -22,6 +27,15 @@ export type AgentTaskAcceptedMessage = {
 export type AgentPingMessage = {
   type: 'agent.ping';
   timestamp?: string;
+};
+
+export type AgentAuthAckMessage = {
+  authenticated: boolean;
+  nodeId?: string;
+  rootAccess?: {
+    profile: string;
+    updatedAt?: string | null;
+  } | null;
 };
 
 export type AgentTaskLogEntryMessage = {

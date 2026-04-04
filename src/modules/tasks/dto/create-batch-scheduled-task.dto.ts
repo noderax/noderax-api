@@ -3,6 +3,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -104,4 +105,12 @@ export class CreateBatchScheduledTaskDto {
   @Min(1)
   @Max(10_080)
   intervalMinutes?: number;
+
+  @ApiPropertyOptional({
+    example: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  runAsRoot?: boolean;
 }

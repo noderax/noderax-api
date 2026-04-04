@@ -114,6 +114,12 @@ export class ScheduledTaskEntity {
   command: string;
 
   @ApiProperty({
+    example: false,
+  })
+  @Column({ type: 'boolean', default: false })
+  runAsRoot: boolean;
+
+  @ApiProperty({
     enum: SCHEDULED_TASK_CADENCES,
     example: 'daily',
   })

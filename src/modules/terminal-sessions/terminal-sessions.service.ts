@@ -172,6 +172,11 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    const runAsRoot = dto.runAsRoot === true;
+    if (runAsRoot) {
+      this.nodesService.assertNodeAllowsTerminalRoot(node);
+    }
+
     const session = await this.sessionsRepository.save(
       this.sessionsRepository.create({
         workspaceId,
@@ -185,6 +190,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
         exitCode: null,
         cols: dto.cols ?? 120,
         rows: dto.rows ?? 34,
+        runAsRoot,
         retentionExpiresAt: this.buildRetentionExpiry(),
         transcriptBytes: '0',
         chunkCount: 0,
@@ -215,6 +221,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
         nodeId: node.id,
         cols: session.cols,
         rows: session.rows,
+        runAsRoot: session.runAsRoot,
       },
       context,
     });
@@ -228,6 +235,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
         sessionId: session.id,
         cols: session.cols,
         rows: session.rows,
+        runAsRoot: session.runAsRoot,
       },
     );
 

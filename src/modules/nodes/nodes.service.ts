@@ -23,8 +23,22 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
+import { UpdateNodeRootAccessDto } from './dto/update-node-root-access.dto';
 import { NodeEntity } from './entities/node.entity';
+import {
+  NODE_ROOT_ACCESS_PROFILES,
+  NodeRootAccessProfile,
+} from './entities/node-root-access-profile.enum';
+import { NodeRootAccessSyncStatus } from './entities/node-root-access-sync-status.enum';
 import { NodeStatus } from './entities/node-status.enum';
+
+type NodeRootAccessSurface = 'operational' | 'task' | 'terminal';
+
+type NodeRootAccessSyncReport = {
+  appliedProfile?: NodeRootAccessProfile | null;
+  lastAppliedAt?: string | null;
+  lastError?: string | null;
+};
 
 @Injectable()
 export class NodesService {
@@ -68,6 +82,13 @@ export class NodesService {
       status: NodeStatus.OFFLINE,
       teamId: team?.id ?? null,
       maintenanceMode: false,
+      rootAccessProfile: NodeRootAccessProfile.OFF,
+      rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
+      rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
+      rootAccessUpdatedAt: null,
+      rootAccessUpdatedByUserId: null,
+      rootAccessLastAppliedAt: null,
+      rootAccessLastError: null,
       maintenanceReason: null,
       maintenanceStartedAt: null,
       maintenanceByUserId: null,
@@ -207,6 +228,13 @@ export class NodesService {
           ? new Date()
           : null,
       teamId: team?.id ?? null,
+      rootAccessProfile: NodeRootAccessProfile.OFF,
+      rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
+      rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
+      rootAccessUpdatedAt: null,
+      rootAccessUpdatedByUserId: null,
+      rootAccessLastAppliedAt: null,
+      rootAccessLastError: null,
     });
 
     return this.populateTeamMetadata(await this.nodesRepository.save(node));
@@ -265,6 +293,13 @@ export class NodesService {
         input.agentVersion || input.platformVersion || input.kernelVersion
           ? now
           : null,
+      rootAccessProfile: NodeRootAccessProfile.OFF,
+      rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
+      rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
+      rootAccessUpdatedAt: null,
+      rootAccessUpdatedByUserId: null,
+      rootAccessLastAppliedAt: null,
+      rootAccessLastError: null,
     });
 
     return this.nodesRepository.save(node);
@@ -417,6 +452,118 @@ export class NodesService {
     return saved;
   }
 
+  async updateRootAccessProfile(
+    nodeId: string,
+    workspaceId: string | undefined,
+    actor: AuthenticatedUser,
+    dto: UpdateNodeRootAccessDto,
+    context?: RequestAuditContext,
+  ): Promise<NodeEntity> {
+    const node = await this.findOneOrFail(nodeId, workspaceId);
+    await this.workspacesService.assertWorkspaceAdmin(node.workspaceId, actor);
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+
+    const previousProfile = node.rootAccessProfile;
+    const previousSyncStatus = node.rootAccessSyncStatus;
+    const previousLastError = node.rootAccessLastError ?? null;
+
+    node.rootAccessProfile = dto.profile;
+    node.rootAccessSyncStatus = NodeRootAccessSyncStatus.PENDING;
+    node.rootAccessUpdatedAt = new Date();
+    node.rootAccessUpdatedByUserId = actor.id;
+    node.rootAccessLastError = null;
+
+    const saved = await this.populateTeamMetadata(
+      await this.nodesRepository.save(node),
+    );
+
+    await this.eventsService.record({
+      nodeId: saved.id,
+      type: SYSTEM_EVENT_TYPES.NODE_ROOT_ACCESS_UPDATED,
+      severity: EventSeverity.WARNING,
+      message:
+        saved.rootAccessProfile === NodeRootAccessProfile.OFF
+          ? `Node ${saved.hostname} root access profile was disabled.`
+          : `Node ${saved.hostname} root access profile set to ${saved.rootAccessProfile}.`,
+      metadata: {
+        previousProfile,
+        nextProfile: saved.rootAccessProfile,
+        syncStatus: saved.rootAccessSyncStatus,
+      },
+    });
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: saved.workspaceId,
+      action: 'node.root-access.updated',
+      targetType: 'node',
+      targetId: saved.id,
+      targetLabel: saved.hostname,
+      changes: {
+        before: {
+          rootAccessProfile: previousProfile,
+          rootAccessSyncStatus: previousSyncStatus,
+          rootAccessLastError: previousLastError,
+        },
+        after: {
+          rootAccessProfile: saved.rootAccessProfile,
+          rootAccessSyncStatus: saved.rootAccessSyncStatus,
+          rootAccessLastError: saved.rootAccessLastError ?? null,
+        },
+      },
+      context,
+    });
+
+    await this.broadcastRootAccessUpdate(saved);
+    return saved;
+  }
+
+  async recordAgentRootAccessState(
+    nodeId: string,
+    report?: NodeRootAccessSyncReport | null,
+  ): Promise<NodeEntity | null> {
+    if (!report) {
+      return null;
+    }
+
+    const node = await this.findOneOrFail(nodeId);
+    const nextAppliedProfile = this.normalizeRootAccessProfile(
+      report.appliedProfile,
+      node.rootAccessAppliedProfile,
+    );
+    const nextLastAppliedAt = this.parseOptionalDate(
+      report.lastAppliedAt,
+      node.rootAccessLastAppliedAt ?? null,
+    );
+    const nextLastError = report.lastError?.trim() || null;
+    const nextSyncStatus = this.resolveRootAccessSyncStatus(
+      node.rootAccessProfile,
+      nextAppliedProfile,
+      nextLastError,
+    );
+
+    if (
+      node.rootAccessAppliedProfile === nextAppliedProfile &&
+      node.rootAccessLastError === nextLastError &&
+      this.formatTimestamp(node.rootAccessLastAppliedAt) ===
+        this.formatTimestamp(nextLastAppliedAt) &&
+      node.rootAccessSyncStatus === nextSyncStatus
+    ) {
+      return node;
+    }
+
+    node.rootAccessAppliedProfile = nextAppliedProfile;
+    node.rootAccessLastAppliedAt = nextLastAppliedAt;
+    node.rootAccessLastError = nextLastError;
+    node.rootAccessSyncStatus = nextSyncStatus;
+
+    const saved = await this.populateTeamMetadata(
+      await this.nodesRepository.save(node),
+    );
+    await this.broadcastRootAccessUpdate(saved);
+    return saved;
+  }
+
   async listTeamOwnedNodes(
     workspaceId: string,
     teamId: string,
@@ -442,6 +589,43 @@ export class NodesService {
         `Node ${node.hostname} is in maintenance mode and cannot accept new work.`,
       );
     }
+  }
+
+  assertNodeAllowsOperationalRoot(node: NodeEntity): void {
+    this.assertNodeAllowsRootSurface(node, 'operational');
+  }
+
+  assertNodeAllowsTaskRoot(node: NodeEntity): void {
+    this.assertNodeAllowsRootSurface(node, 'task');
+  }
+
+  assertNodeAllowsTerminalRoot(node: NodeEntity): void {
+    this.assertNodeAllowsRootSurface(node, 'terminal');
+  }
+
+  canNodeUseOperationalRoot(
+    node: Pick<NodeEntity, 'rootAccessAppliedProfile'>,
+  ): boolean {
+    return this.profileAllowsSurface(node.rootAccessAppliedProfile, 'operational');
+  }
+
+  canNodeUseTaskRoot(node: Pick<NodeEntity, 'rootAccessAppliedProfile'>): boolean {
+    return this.profileAllowsSurface(node.rootAccessAppliedProfile, 'task');
+  }
+
+  canNodeUseTerminalRoot(
+    node: Pick<NodeEntity, 'rootAccessAppliedProfile'>,
+  ): boolean {
+    return this.profileAllowsSurface(node.rootAccessAppliedProfile, 'terminal');
+  }
+
+  buildDesiredRootAccessSnapshot(
+    node: Pick<NodeEntity, 'rootAccessProfile' | 'rootAccessUpdatedAt'>,
+  ): { profile: NodeRootAccessProfile; updatedAt: string | null } {
+    return {
+      profile: node.rootAccessProfile,
+      updatedAt: this.formatTimestamp(node.rootAccessUpdatedAt),
+    };
   }
 
   async authenticateAgent(
@@ -622,6 +806,37 @@ export class NodesService {
     });
   }
 
+  async broadcastRootAccessUpdate(
+    node: Pick<
+      NodeEntity,
+      | 'id'
+      | 'rootAccessProfile'
+      | 'rootAccessAppliedProfile'
+      | 'rootAccessSyncStatus'
+      | 'rootAccessUpdatedAt'
+      | 'rootAccessUpdatedByUserId'
+      | 'rootAccessLastAppliedAt'
+      | 'rootAccessLastError'
+    >,
+  ): Promise<void> {
+    const payload = {
+      nodeId: node.id,
+      rootAccessProfile: node.rootAccessProfile,
+      rootAccessAppliedProfile: node.rootAccessAppliedProfile,
+      rootAccessSyncStatus: node.rootAccessSyncStatus,
+      rootAccessUpdatedAt: this.formatTimestamp(node.rootAccessUpdatedAt),
+      rootAccessUpdatedByUserId: node.rootAccessUpdatedByUserId ?? null,
+      rootAccessLastAppliedAt: this.formatTimestamp(node.rootAccessLastAppliedAt),
+      rootAccessLastError: node.rootAccessLastError ?? null,
+    };
+
+    this.realtimeGateway.emitNodeRootAccessUpdate(payload);
+    await this.redisService.publish(PUBSUB_CHANNELS.NODES_ROOT_ACCESS_UPDATED, {
+      ...payload,
+      sourceInstanceId: this.redisService.getInstanceId(),
+    });
+  }
+
   async markStaleNodesOffline(): Promise<number> {
     const agents =
       this.configService.getOrThrow<ConfigType<typeof agentsConfig>>(
@@ -697,6 +912,81 @@ export class NodesService {
     }
 
     return value instanceof Date ? value.toISOString() : value;
+  }
+
+  private parseOptionalDate(
+    value: string | null | undefined,
+    fallback: Date | null,
+  ): Date | null {
+    if (!value) {
+      return fallback;
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+  }
+
+  private normalizeRootAccessProfile(
+    value: string | null | undefined,
+    fallback: NodeRootAccessProfile,
+  ): NodeRootAccessProfile {
+    return NODE_ROOT_ACCESS_PROFILES.includes(value as NodeRootAccessProfile)
+      ? (value as NodeRootAccessProfile)
+      : fallback;
+  }
+
+  private resolveRootAccessSyncStatus(
+    desiredProfile: NodeRootAccessProfile,
+    appliedProfile: NodeRootAccessProfile,
+    lastError: string | null,
+  ) {
+    if (lastError) {
+      return NodeRootAccessSyncStatus.FAILED;
+    }
+
+    if (desiredProfile === appliedProfile) {
+      return NodeRootAccessSyncStatus.APPLIED;
+    }
+
+    return NodeRootAccessSyncStatus.PENDING;
+  }
+
+  private assertNodeAllowsRootSurface(
+    node: NodeEntity,
+    surface: NodeRootAccessSurface,
+  ): void {
+    if (this.profileAllowsSurface(node.rootAccessAppliedProfile, surface)) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Node ${node.hostname} does not currently allow ${surface} root access. Applied profile is ${node.rootAccessAppliedProfile}.`,
+    );
+  }
+
+  private profileAllowsSurface(
+    profile: NodeRootAccessProfile,
+    surface: NodeRootAccessSurface,
+  ): boolean {
+    switch (surface) {
+      case 'operational':
+        return (
+          profile === NodeRootAccessProfile.OPERATIONAL ||
+          profile === NodeRootAccessProfile.ALL
+        );
+      case 'task':
+        return (
+          profile === NodeRootAccessProfile.TASK ||
+          profile === NodeRootAccessProfile.ALL
+        );
+      case 'terminal':
+        return (
+          profile === NodeRootAccessProfile.TERMINAL ||
+          profile === NodeRootAccessProfile.ALL
+        );
+      default:
+        return false;
+    }
   }
 
   private async populateTeamMetadata<T extends NodeEntity | NodeEntity[]>(
