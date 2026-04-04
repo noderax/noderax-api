@@ -235,4 +235,33 @@ describe('AgentRealtimeService', () => {
       agentVersion: '1.0.1',
     });
   });
+
+  it('dispatches protocol-compliant root access update payload to local socket', async () => {
+    const emit = jest.fn().mockReturnValue(true);
+    service.bindSocketEmitter(emit);
+
+    await service.authenticateSocket({
+      socketId: 'socket-1',
+      nodeId: 'node-1',
+      agentToken: 'token-1',
+    });
+
+    const dispatched = await service.dispatchRootAccessUpdate('node-1', {
+      profile: 'operational' as never,
+      updatedAt: '2026-04-04T17:25:00.000Z',
+    });
+
+    expect(dispatched).toBe(true);
+    expect(emit).toHaveBeenCalledWith(
+      'socket-1',
+      AGENT_REALTIME_SERVER_EVENTS.ROOT_ACCESS_UPDATED,
+      {
+        type: AGENT_REALTIME_SERVER_EVENTS.ROOT_ACCESS_UPDATED,
+        rootAccess: {
+          profile: 'operational',
+          updatedAt: '2026-04-04T17:25:00.000Z',
+        },
+      },
+    );
+  });
 });

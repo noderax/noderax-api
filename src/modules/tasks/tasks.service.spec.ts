@@ -310,3 +310,59 @@ describe('TasksService operational root gating', () => {
     expect(nodesService.assertNodeAllowsOperationalRoot).not.toHaveBeenCalled();
   });
 });
+
+describe('TasksService.claimForAgent root access sync', () => {
+  it('returns the latest desired root access snapshot at response time', async () => {
+    const tasksService = createService();
+    const initialNode = {
+      id: 'node-1',
+      rootAccessProfile: 'off',
+      rootAccessUpdatedAt: new Date('2026-04-04T17:00:00.000Z'),
+    };
+    const updatedNode = {
+      id: 'node-1',
+      rootAccessProfile: 'operational',
+      rootAccessUpdatedAt: new Date('2026-04-04T17:00:05.000Z'),
+    };
+    const nodesService = {
+      findOneOrFail: jest
+        .fn()
+        .mockResolvedValueOnce(initialNode)
+        .mockResolvedValueOnce(updatedNode),
+      recordAgentRootAccessState: jest.fn().mockResolvedValue(null),
+      buildDesiredRootAccessSnapshot: jest.fn((node) => ({
+        profile: node.rootAccessProfile,
+        updatedAt: node.rootAccessUpdatedAt.toISOString(),
+      })),
+    };
+
+    (
+      tasksService as unknown as {
+        nodesService: typeof nodesService;
+      }
+    ).nodesService = nodesService;
+
+    (
+      tasksService as unknown as {
+        claimNextTaskOnce: jest.Mock;
+      }
+    ).claimNextTaskOnce = jest.fn().mockResolvedValue(null);
+
+    const response = await tasksService.claimForAgent(
+      {
+        nodeId: 'node-1',
+        agentToken: 'token-1',
+      } as never,
+      {
+        waitMs: 0,
+      } as never,
+    );
+
+    expect(response.rootAccess).toEqual({
+      profile: 'operational',
+      updatedAt: '2026-04-04T17:00:05.000Z',
+    });
+    expect(nodesService.findOneOrFail).toHaveBeenNthCalledWith(1, 'node-1');
+    expect(nodesService.findOneOrFail).toHaveBeenNthCalledWith(2, 'node-1');
+  });
+});

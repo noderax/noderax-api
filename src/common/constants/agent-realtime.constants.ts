@@ -18,6 +18,7 @@ export const AGENT_REALTIME_SERVER_EVENTS = {
   AUTH_ACK: 'agent.auth.ack',
   AUTH_ERROR: 'agent.auth.error',
   ERROR: 'agent.error',
+  ROOT_ACCESS_UPDATED: 'root-access.updated',
   TERMINAL_INPUT: 'terminal.input',
   TERMINAL_RESIZE: 'terminal.resize',
   TERMINAL_START: 'terminal.start',

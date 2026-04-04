@@ -80,3 +80,11 @@ export type AgentTaskDispatchPayload = {
     timeoutSeconds: number;
   };
 };
+
+export type AgentRootAccessUpdatedPayload = {
+  type: 'root-access.updated';
+  rootAccess?: {
+    profile: string;
+    updatedAt?: string | null;
+  } | null;
+};

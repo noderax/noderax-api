@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AgentRealtimeModule } from '../agent-realtime/agent-realtime.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { EventsModule } from '../events/events.module';
 import { RealtimeModule } from '../realtime/realtime.module';
@@ -13,6 +14,7 @@ import { WorkspaceNodesController } from './workspace-nodes.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([NodeEntity]),
+    forwardRef(() => AgentRealtimeModule),
     AuditLogsModule,
     EventsModule,
     RealtimeModule,

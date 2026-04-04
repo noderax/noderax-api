@@ -303,6 +303,27 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     this.incrementCounter('ping.received');
   }
 
+  async dispatchRootAccessUpdate(
+    nodeId: string,
+    rootAccess: {
+      profile: NodeRootAccessProfile;
+      updatedAt: string | null;
+    },
+  ): Promise<boolean> {
+    try {
+      return await this.emitEventToNode(
+        nodeId,
+        AGENT_REALTIME_SERVER_EVENTS.ROOT_ACCESS_UPDATED,
+        this.buildRootAccessUpdatePayload(rootAccess),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to dispatch root access update to node ${nodeId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+  }
+
   async ingestRealtimeMetrics(
     socketId: string,
     payload: Omit<AgentMetricsDto, 'nodeId' | 'agentToken'>,
@@ -540,18 +561,36 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  private buildRootAccessUpdatePayload(rootAccess: {
+    profile: NodeRootAccessProfile;
+    updatedAt: string | null;
+  }): Record<string, unknown> {
+    return {
+      type: AGENT_REALTIME_SERVER_EVENTS.ROOT_ACCESS_UPDATED,
+      rootAccess,
+    };
+  }
+
+  private counterPrefixForEvent(event: string): string {
+    switch (event) {
+      case AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH:
+        return 'dispatch';
+      case AGENT_REALTIME_SERVER_EVENTS.ROOT_ACCESS_UPDATED:
+        return 'root-access';
+      default:
+        return 'terminal';
+    }
+  }
+
   private async emitEventToNode(
     nodeId: string,
     event: string,
     payload: Record<string, unknown>,
   ): Promise<boolean> {
+    const counterPrefix = this.counterPrefixForEvent(event);
     const localSocketId = this.nodeToSocketId.get(nodeId);
     if (localSocketId && this.emitRawEvent(localSocketId, event, payload)) {
-      this.incrementCounter(
-        event === AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH
-          ? 'dispatch.local.success'
-          : 'terminal.local.success',
-      );
+      this.incrementCounter(`${counterPrefix}.local.success`);
       return true;
     }
 
@@ -572,11 +611,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       },
     );
 
-    this.incrementCounter(
-      event === AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH
-        ? 'dispatch.routed'
-        : 'terminal.routed',
-    );
+    this.incrementCounter(`${counterPrefix}.routed`);
     return true;
   }
 
@@ -598,13 +633,10 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       message.event,
       message.payload,
     );
+    const counterPrefix = this.counterPrefixForEvent(message.event);
 
     if (!delivered) {
-      this.incrementCounter(
-        message.event === AGENT_REALTIME_SERVER_EVENTS.TASK_DISPATCH
-          ? 'dispatch.routed.failed'
-          : 'terminal.routed.failed',
-      );
+      this.incrementCounter(`${counterPrefix}.routed.failed`);
       this.logger.warn(
         `Realtime routing failed for node ${message.nodeId} on ${this.instanceId} event=${message.event}`,
       );

@@ -12,7 +12,7 @@ import { AgentTaskLifecycleEventEntity } from './entities/agent-task-lifecycle-e
 @Module({
   imports: [
     TypeOrmModule.forFeature([AgentTaskLifecycleEventEntity]),
-    NodesModule,
+    forwardRef(() => NodesModule),
     MetricsModule,
     forwardRef(() => AgentUpdatesModule),
     forwardRef(() => TasksModule),

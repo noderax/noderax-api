@@ -602,12 +602,11 @@ export class TasksService {
     agent: AuthenticatedAgent,
     claimDto: ClaimAgentTasksDto,
   ): Promise<ClaimAgentTaskResponseDto> {
-    const node = await this.nodesService.findOneOrFail(agent.nodeId);
+    await this.nodesService.findOneOrFail(agent.nodeId);
     await this.nodesService.recordAgentRootAccessState(
       agent.nodeId,
       claimDto.rootAccess ?? null,
     );
-    const rootAccess = this.nodesService.buildDesiredRootAccessSnapshot(node);
     this.lastClaimAt = new Date();
     const startedAt = Date.now();
     const waitMs = Math.max(claimDto.waitMs ?? 15000, 0);
@@ -652,7 +651,7 @@ export class TasksService {
           return {
             task,
             outputTruncated: Boolean(task.outputTruncated),
-            rootAccess,
+            rootAccess: await this.loadDesiredRootAccessSnapshot(agent.nodeId),
           };
         }
 
@@ -672,7 +671,7 @@ export class TasksService {
           return {
             task: null,
             outputTruncated: false,
-            rootAccess,
+            rootAccess: await this.loadDesiredRootAccessSnapshot(agent.nodeId),
           };
         }
 
@@ -693,6 +692,11 @@ export class TasksService {
       );
       throw error;
     }
+  }
+
+  private async loadDesiredRootAccessSnapshot(nodeId: string) {
+    const node = await this.nodesService.findOneOrFail(nodeId);
+    return this.nodesService.buildDesiredRootAccessSnapshot(node);
   }
 
   recordClaimUnauthorizedAttempt(input: {

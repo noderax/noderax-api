@@ -24,6 +24,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { Request } from 'express';
 import { UserRole } from '../users/entities/user-role.enum';
+import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { EnableNodeMaintenanceDto } from './dto/enable-node-maintenance.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
@@ -39,7 +40,10 @@ import { NodesService } from './nodes.service';
 })
 @Controller('nodes')
 export class NodesController {
-  constructor(private readonly nodesService: NodesService) {}
+  constructor(
+    private readonly nodesService: NodesService,
+    private readonly agentRealtimeService: AgentRealtimeService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -155,13 +159,13 @@ export class NodesController {
 
   @Roles(UserRole.PLATFORM_ADMIN)
   @Post(':id/root-access')
-  updateRootAccess(
+  async updateRootAccess(
     @Param('id') id: string,
     @Body() dto: UpdateNodeRootAccessDto,
     @CurrentUser() actor: AuthenticatedUser,
     @Req() request: Request,
   ) {
-    return this.nodesService.updateRootAccessProfile(
+    const node = await this.nodesService.updateRootAccessProfile(
       id,
       undefined,
       actor,
@@ -174,6 +178,13 @@ export class NodesController {
         userAgent: request.headers['user-agent'] ?? null,
       },
     );
+
+    await this.agentRealtimeService.dispatchRootAccessUpdate(
+      node.id,
+      this.nodesService.buildDesiredRootAccessSnapshot(node),
+    );
+
+    return node;
   }
 
   @Roles(UserRole.PLATFORM_ADMIN)

@@ -25,6 +25,7 @@ import { WorkspaceRolesGuard } from '../../common/guards/workspace-roles.guard';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { Request } from 'express';
 import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-membership-role.enum';
+import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { EnableNodeMaintenanceDto } from './dto/enable-node-maintenance.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
@@ -41,7 +42,10 @@ import { NodesService } from './nodes.service';
 @Controller('workspaces/:workspaceId/nodes')
 @UseGuards(WorkspaceMembershipGuard)
 export class WorkspaceNodesController {
-  constructor(private readonly nodesService: NodesService) {}
+  constructor(
+    private readonly nodesService: NodesService,
+    private readonly agentRealtimeService: AgentRealtimeService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -156,14 +160,14 @@ export class WorkspaceNodesController {
   @Post(':id/root-access')
   @UseGuards(WorkspaceRolesGuard)
   @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
-  updateRootAccess(
+  async updateRootAccess(
     @Param('workspaceId') workspaceId: string,
     @Param('id') id: string,
     @Body() dto: UpdateNodeRootAccessDto,
     @CurrentUser() actor: AuthenticatedUser,
     @Req() request: Request,
   ) {
-    return this.nodesService.updateRootAccessProfile(
+    const node = await this.nodesService.updateRootAccessProfile(
       id,
       workspaceId,
       actor,
@@ -176,6 +180,13 @@ export class WorkspaceNodesController {
         userAgent: request.headers['user-agent'] ?? null,
       },
     );
+
+    await this.agentRealtimeService.dispatchRootAccessUpdate(
+      node.id,
+      this.nodesService.buildDesiredRootAccessSnapshot(node),
+    );
+
+    return node;
   }
 
   @Delete(':id')
