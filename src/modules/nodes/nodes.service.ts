@@ -33,7 +33,8 @@ import { NodeRootAccessSyncStatus } from './entities/node-root-access-sync-statu
 import { NodeStatus } from './entities/node-status.enum';
 
 type NodeRootAccessSurface = 'operational' | 'task' | 'terminal';
-const ROOT_PROFILE_HELPER_MISSING_ERROR = 'root profile helper is not installed';
+const ROOT_PROFILE_HELPER_MISSING_ERROR =
+  'root profile helper is not installed';
 
 type NodeRootAccessSyncReport = {
   appliedProfile?: NodeRootAccessProfile | null;
