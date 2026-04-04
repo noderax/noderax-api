@@ -69,7 +69,7 @@ describe('PackagesService compatibility hardening', () => {
     );
   });
 
-  it('normalizes purge removals to packageRemove while preserving purge intent in payload', async () => {
+  it('queues purge removals as packagePurge while preserving purge intent in payload', async () => {
     await service.remove('node-1', 'nginx', {
       purge: 'true',
     });
@@ -77,7 +77,7 @@ describe('PackagesService compatibility hardening', () => {
     expect(tasksService.create).toHaveBeenCalledWith(
       {
         nodeId: 'node-1',
-        type: TASK_TYPES.PACKAGE_REMOVE,
+        type: TASK_TYPES.PACKAGE_PURGE,
         payload: {
           names: ['nginx'],
           packages: ['nginx'],

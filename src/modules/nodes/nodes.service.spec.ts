@@ -56,14 +56,26 @@ describe('NodesService.assertNodeAllowsOperationalRoot', () => {
     expect(() => service.assertNodeAllowsOperationalRoot(node)).not.toThrow();
   });
 
-  it('allows operational root while desired profile is pending sync', () => {
+  it('allows operational root when applied profile is a combined operational profile', () => {
+    const node = buildNode({
+      rootAccessAppliedProfile: NodeRootAccessProfile.OPERATIONAL_TASK,
+      rootAccessProfile: NodeRootAccessProfile.OPERATIONAL_TASK,
+      rootAccessSyncStatus: NodeRootAccessSyncStatus.APPLIED,
+    });
+
+    expect(() => service.assertNodeAllowsOperationalRoot(node)).not.toThrow();
+  });
+
+  it('rejects operational root while desired profile is pending sync', () => {
     const node = buildNode({
       rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
       rootAccessProfile: NodeRootAccessProfile.OPERATIONAL,
       rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
     });
 
-    expect(() => service.assertNodeAllowsOperationalRoot(node)).not.toThrow();
+    expect(() => service.assertNodeAllowsOperationalRoot(node)).toThrow(
+      BadRequestException,
+    );
   });
 
   it('rejects operational root when desired profile failed to apply', () => {
@@ -79,7 +91,7 @@ describe('NodesService.assertNodeAllowsOperationalRoot', () => {
     );
   });
 
-  it('allows operational root for legacy helper-missing failed state', () => {
+  it('rejects operational root for helper-missing failed state', () => {
     const node = buildNode({
       rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
       rootAccessProfile: NodeRootAccessProfile.ALL,
@@ -87,6 +99,8 @@ describe('NodesService.assertNodeAllowsOperationalRoot', () => {
       rootAccessLastError: 'root profile helper is not installed',
     });
 
-    expect(() => service.assertNodeAllowsOperationalRoot(node)).not.toThrow();
+    expect(() => service.assertNodeAllowsOperationalRoot(node)).toThrow(
+      BadRequestException,
+    );
   });
 });

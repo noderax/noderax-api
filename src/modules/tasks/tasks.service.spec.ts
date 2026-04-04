@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { TASK_TYPES } from '../../common/constants/task-types.constants';
 import { TaskStatus } from './entities/task-status.enum';
 import { TaskEntity } from './entities/task.entity';
@@ -232,5 +233,80 @@ describe('TasksService.createScheduledShellTask', () => {
       scheduleId: 'schedule-1',
       scheduleName: 'Daily hostname check',
     });
+  });
+});
+
+describe('TasksService operational root gating', () => {
+  it('validates operational shell tasks against operational root access', () => {
+    const tasksService = createService();
+    const nodesService = {
+      assertNodeAllowsOperationalRoot: jest.fn(),
+      assertNodeAllowsTaskRoot: jest.fn(),
+    };
+
+    (
+      tasksService as unknown as {
+        nodesService: typeof nodesService;
+      }
+    ).nodesService = nodesService;
+
+    (
+      tasksService as unknown as {
+        assertRequestedRootAccessAllowed: (
+          node: Record<string, unknown>,
+          taskType: string,
+          payload: Record<string, unknown>,
+        ) => void;
+      }
+    ).assertRequestedRootAccessAllowed(
+      { hostname: 'srv-01.example' },
+      'shell.exec',
+      {
+        command: 'reboot',
+        runAsRoot: true,
+        rootScope: 'operational',
+      },
+    );
+
+    expect(nodesService.assertNodeAllowsOperationalRoot).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(nodesService.assertNodeAllowsTaskRoot).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported operational root shell commands before queueing', () => {
+    const tasksService = createService();
+    const nodesService = {
+      assertNodeAllowsOperationalRoot: jest.fn(),
+      assertNodeAllowsTaskRoot: jest.fn(),
+    };
+
+    (
+      tasksService as unknown as {
+        nodesService: typeof nodesService;
+      }
+    ).nodesService = nodesService;
+
+    expect(() =>
+      (
+        tasksService as unknown as {
+          assertRequestedRootAccessAllowed: (
+            node: Record<string, unknown>,
+            taskType: string,
+            payload: Record<string, unknown>,
+          ) => void;
+        }
+      ).assertRequestedRootAccessAllowed(
+        { hostname: 'srv-01.example' },
+        'shell.exec',
+        {
+          command: 'apt install nginx',
+          runAsRoot: true,
+          rootScope: 'operational',
+        },
+      ),
+    ).toThrow(BadRequestException);
+
+    expect(nodesService.assertNodeAllowsOperationalRoot).not.toHaveBeenCalled();
   });
 });

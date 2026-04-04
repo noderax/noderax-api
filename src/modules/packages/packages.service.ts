@@ -116,11 +116,10 @@ export class PackagesService {
     const operation = purge
       ? TASK_TYPES.PACKAGE_PURGE
       : TASK_TYPES.PACKAGE_REMOVE;
-    const queuedTaskType = TASK_TYPES.PACKAGE_REMOVE;
     const task = await this.tasksService.create(
       {
         nodeId,
-        type: queuedTaskType,
+        type: operation,
         payload: {
           names: [name],
           packages: [name],
