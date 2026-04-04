@@ -33,6 +33,7 @@ import { NodeRootAccessSyncStatus } from './entities/node-root-access-sync-statu
 import { NodeStatus } from './entities/node-status.enum';
 
 type NodeRootAccessSurface = 'operational' | 'task' | 'terminal';
+const ROOT_PROFILE_HELPER_MISSING_ERROR = 'root profile helper is not installed';
 
 type NodeRootAccessSyncReport = {
   appliedProfile?: NodeRootAccessProfile | null;
@@ -535,7 +536,13 @@ export class NodesService {
       report.lastAppliedAt,
       node.rootAccessLastAppliedAt ?? null,
     );
-    const nextLastError = report.lastError?.trim() || null;
+    const reportedLastError = report.lastError?.trim() || null;
+    const nextLastError = this.shouldIgnoreRootAccessSyncError(
+      node.rootAccessProfile,
+      reportedLastError,
+    )
+      ? null
+      : reportedLastError;
     const nextSyncStatus = this.resolveRootAccessSyncStatus(
       node.rootAccessProfile,
       nextAppliedProfile,
@@ -612,7 +619,10 @@ export class NodesService {
   canNodeUseOperationalRoot(
     node: Pick<
       NodeEntity,
-      'rootAccessAppliedProfile' | 'rootAccessProfile' | 'rootAccessSyncStatus'
+      | 'rootAccessAppliedProfile'
+      | 'rootAccessProfile'
+      | 'rootAccessSyncStatus'
+      | 'rootAccessLastError'
     >,
   ): boolean {
     if (
@@ -621,9 +631,14 @@ export class NodesService {
       return true;
     }
 
+    const helperMissingFailure =
+      node.rootAccessSyncStatus === NodeRootAccessSyncStatus.FAILED &&
+      this.isRootProfileHelperMissingError(node.rootAccessLastError ?? null);
+
     return (
       this.profileAllowsSurface(node.rootAccessProfile, 'operational') &&
-      node.rootAccessSyncStatus !== NodeRootAccessSyncStatus.FAILED
+      (node.rootAccessSyncStatus !== NodeRootAccessSyncStatus.FAILED ||
+        helperMissingFailure)
     );
   }
 
@@ -1009,6 +1024,22 @@ export class NodesService {
       default:
         return false;
     }
+  }
+
+  private shouldIgnoreRootAccessSyncError(
+    desiredProfile: NodeRootAccessProfile,
+    reportedError: string | null,
+  ): boolean {
+    return (
+      desiredProfile !== NodeRootAccessProfile.OFF &&
+      this.isRootProfileHelperMissingError(reportedError)
+    );
+  }
+
+  private isRootProfileHelperMissingError(error: string | null): boolean {
+    return Boolean(
+      error?.toLowerCase().includes(ROOT_PROFILE_HELPER_MISSING_ERROR),
+    );
   }
 
   private async populateTeamMetadata<T extends NodeEntity | NodeEntity[]>(

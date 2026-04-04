@@ -30,6 +30,7 @@ function buildNode(partial: Partial<NodeEntity>): NodeEntity {
     rootAccessProfile: NodeRootAccessProfile.OFF,
     rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
     rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
+    rootAccessLastError: null,
     createdAt: new Date('2026-04-04T10:00:00.000Z'),
     updatedAt: new Date('2026-04-04T10:00:00.000Z'),
     lastSeenAt: null,
@@ -70,10 +71,22 @@ describe('NodesService.assertNodeAllowsOperationalRoot', () => {
       rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
       rootAccessProfile: NodeRootAccessProfile.OPERATIONAL,
       rootAccessSyncStatus: NodeRootAccessSyncStatus.FAILED,
+      rootAccessLastError: 'sudo: a password is required',
     });
 
     expect(() => service.assertNodeAllowsOperationalRoot(node)).toThrow(
       BadRequestException,
     );
+  });
+
+  it('allows operational root for legacy helper-missing failed state', () => {
+    const node = buildNode({
+      rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
+      rootAccessProfile: NodeRootAccessProfile.ALL,
+      rootAccessSyncStatus: NodeRootAccessSyncStatus.FAILED,
+      rootAccessLastError: 'root profile helper is not installed',
+    });
+
+    expect(() => service.assertNodeAllowsOperationalRoot(node)).not.toThrow();
   });
 });
