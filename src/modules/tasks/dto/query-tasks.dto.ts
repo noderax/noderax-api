@@ -1,6 +1,14 @@
 import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 import { clampInteger } from '../../../common/utils/clamp-integer.util';
 import { TaskStatus } from '../entities/task-status.enum';
 
@@ -21,6 +29,27 @@ export class QueryTasksDto {
   @IsOptional()
   @IsEnum(TaskStatus)
   status?: TaskStatus;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'When true, include internal system tasks such as background log scans.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'true' || normalized === '1';
+    }
+
+    return false;
+  })
+  @IsBoolean()
+  includeInternal?: boolean;
 
   @ApiPropertyOptional({
     minimum: 1,

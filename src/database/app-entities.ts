@@ -5,6 +5,10 @@ import { AgentTaskLifecycleEventEntity } from '../modules/agent-realtime/entitie
 import { EnrollmentEntity } from '../modules/enrollments/entities/enrollment.entity';
 import { NodeInstallEntity } from '../modules/enrollments/entities/node-install.entity';
 import { EventEntity } from '../modules/events/entities/event.entity';
+import { IncidentAnalysisEntity } from '../modules/incidents/entities/incident-analysis.entity';
+import { IncidentEntity } from '../modules/incidents/entities/incident.entity';
+import { LogMonitorCursorEntity } from '../modules/incidents/entities/log-monitor-cursor.entity';
+import { LogMonitorRuleEntity } from '../modules/incidents/entities/log-monitor-rule.entity';
 import { MetricEntity } from '../modules/metrics/entities/metric.entity';
 import { NodeEntity } from '../modules/nodes/entities/node.entity';
 import { ScheduledTaskEntity } from '../modules/tasks/entities/scheduled-task.entity';
@@ -39,6 +43,10 @@ export const APP_ENTITIES = [
   ScheduledTaskEntity,
   EventEntity,
   MetricEntity,
+  LogMonitorRuleEntity,
+  LogMonitorCursorEntity,
+  IncidentEntity,
+  IncidentAnalysisEntity,
   EnrollmentEntity,
   NodeInstallEntity,
   OidcProviderEntity,

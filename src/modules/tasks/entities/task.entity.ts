@@ -69,6 +69,15 @@ export class TaskEntity {
   @Column({ length: 120 })
   type: string;
 
+  @ApiPropertyOptional({
+    example: false,
+    nullable: false,
+    description:
+      'Internal tasks are used by platform subsystems and are hidden from default operator task listings.',
+  })
+  @Column({ type: 'boolean', default: false })
+  isInternal: boolean;
+
   @ApiProperty({
     example: {
       command: 'docker ps',

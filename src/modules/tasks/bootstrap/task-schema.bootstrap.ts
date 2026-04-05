@@ -39,7 +39,8 @@ export class TaskSchemaBootstrap implements OnModuleInit {
       ADD COLUMN IF NOT EXISTS "claimToken" uuid NULL,
       ADD COLUMN IF NOT EXISTS "targetTeamId" uuid NULL,
       ADD COLUMN IF NOT EXISTS "templateId" uuid NULL,
-      ADD COLUMN IF NOT EXISTS "templateName" varchar(160) NULL
+      ADD COLUMN IF NOT EXISTS "templateName" varchar(160) NULL,
+      ADD COLUMN IF NOT EXISTS "isInternal" boolean NOT NULL DEFAULT false
     `);
 
     if (!(await this.hasTable('task_logs'))) {

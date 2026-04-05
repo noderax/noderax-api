@@ -1,9 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -21,6 +24,7 @@ import { AuthenticatedAgent } from '../../common/types/authenticated-agent.type'
 import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
+import { IncidentsService } from '../incidents/incidents.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodesService } from '../nodes/nodes.service';
@@ -86,12 +90,16 @@ export class TasksService {
     private readonly agentRealtimeService: AgentRealtimeService,
     private readonly configService: ConfigService,
     private readonly workspacesService: WorkspacesService,
+    @Optional()
+    @Inject(forwardRef(() => IncidentsService))
+    private readonly incidentsService?: IncidentsService,
   ) {}
 
   async create(
     createTaskDto: CreateTaskDto,
     workspaceId?: string,
     context?: import('../../common/types/request-audit-context.type').RequestAuditContext,
+    isInternal = false,
   ): Promise<TaskEntity> {
     return this.queueTask(
       {
@@ -100,6 +108,7 @@ export class TasksService {
         payload: createTaskDto.payload ?? {},
         workspaceId,
         templateId: createTaskDto.templateId,
+        isInternal,
       },
       undefined,
       context,
@@ -271,6 +280,10 @@ export class TasksService {
       tasksQuery.andWhere('task.status = :status', { status: query.status });
     }
 
+    if (query.includeInternal !== true) {
+      tasksQuery.andWhere('task.isInternal = false');
+    }
+
     return tasksQuery.getMany();
   }
 
@@ -346,6 +359,7 @@ export class TasksService {
       }
 
       const savedTask = await this.tasksRepository.save(task);
+      await this.handleTaskPostCompletion(savedTask);
       await this.publishTaskUpdated(savedTask);
     }
 
@@ -1155,6 +1169,7 @@ export class TasksService {
     task.claimToken = null;
 
     const savedTask = await this.tasksRepository.save(task);
+    await this.handleTaskPostCompletion(savedTask);
     await this.publishTaskUpdated(savedTask);
 
     this.logLifecycleTransition({
@@ -1239,13 +1254,15 @@ export class TasksService {
       where: { id: taskId },
     });
 
-    await this.eventsService.record({
-      nodeId: savedTask.nodeId,
-      type: SYSTEM_EVENT_TYPES.TASK_STARTED,
-      severity: EventSeverity.INFO,
-      message: `Task ${savedTask.type} started on node ${node.hostname}`,
-      metadata: this.buildTaskEventMetadata(savedTask),
-    });
+    if (this.shouldBroadcastTask(savedTask)) {
+      await this.eventsService.record({
+        nodeId: savedTask.nodeId,
+        type: SYSTEM_EVENT_TYPES.TASK_STARTED,
+        severity: EventSeverity.INFO,
+        message: `Task ${savedTask.type} started on node ${node.hostname}`,
+        metadata: this.buildTaskEventMetadata(savedTask),
+      });
+    }
 
     await this.publishTaskUpdated(savedTask);
 
@@ -1366,6 +1383,7 @@ export class TasksService {
     }
 
     const savedTask = await this.tasksRepository.save(task);
+    await this.handleTaskPostCompletion(savedTask);
 
     if (completionOutput) {
       await this.createTaskLog(savedTask.id, {
@@ -1377,16 +1395,18 @@ export class TasksService {
       });
     }
 
-    await this.eventsService.record({
-      nodeId: savedTask.nodeId,
-      type: this.getTaskCompletionEventType(savedTask.status),
-      severity: this.getTaskCompletionSeverity(savedTask.status),
-      message: this.getTaskCompletionMessage(savedTask, node),
-      metadata: {
-        ...this.buildTaskEventMetadata(savedTask),
-        result: savedTask.result,
-      },
-    });
+    if (this.shouldBroadcastTask(savedTask)) {
+      await this.eventsService.record({
+        nodeId: savedTask.nodeId,
+        type: this.getTaskCompletionEventType(savedTask.status),
+        severity: this.getTaskCompletionSeverity(savedTask.status),
+        message: this.getTaskCompletionMessage(savedTask, node),
+        metadata: {
+          ...this.buildTaskEventMetadata(savedTask),
+          result: savedTask.result,
+        },
+      });
+    }
 
     await this.publishTaskUpdated(savedTask);
 
@@ -1411,6 +1431,10 @@ export class TasksService {
   }
 
   private async publishTaskUpdated(task: TaskEntity): Promise<void> {
+    if (!this.shouldBroadcastTask(task)) {
+      return;
+    }
+
     this.realtimeGateway.emitTaskUpdated(
       task as unknown as Record<string, unknown>,
     );
@@ -1448,6 +1472,7 @@ export class TasksService {
       targetTeamName?: string | null;
       templateId?: string | null;
       templateName?: string | null;
+      isInternal?: boolean;
     },
     nodeOverride?: NodeEntity,
     context?: import('../../common/types/request-audit-context.type').RequestAuditContext,
@@ -1467,6 +1492,7 @@ export class TasksService {
       workspaceId: node.workspaceId,
       nodeId: input.nodeId,
       type: input.type,
+      isInternal: input.isInternal === true,
       payload: input.payload,
       targetTeamId: input.targetTeamId ?? null,
       templateId: input.templateId ?? template?.id ?? null,
@@ -1486,33 +1512,37 @@ export class TasksService {
 
     const savedTask = await this.tasksRepository.save(task);
 
-    await this.eventsService.record({
-      nodeId: savedTask.nodeId,
-      type: SYSTEM_EVENT_TYPES.TASK_QUEUED,
-      severity: EventSeverity.INFO,
-      message: `Task ${savedTask.type} queued for node ${node.hostname}`,
-      metadata: {
-        taskId: savedTask.id,
-        taskType: savedTask.type,
-      },
-    });
+    if (this.shouldBroadcastTask(savedTask)) {
+      await this.eventsService.record({
+        nodeId: savedTask.nodeId,
+        type: SYSTEM_EVENT_TYPES.TASK_QUEUED,
+        severity: EventSeverity.INFO,
+        message: `Task ${savedTask.type} queued for node ${node.hostname}`,
+        metadata: {
+          taskId: savedTask.id,
+          taskType: savedTask.type,
+        },
+      });
 
-    this.realtimeGateway.emitTaskCreated(
-      savedTask as unknown as Record<string, unknown>,
-    );
+      this.realtimeGateway.emitTaskCreated(
+        savedTask as unknown as Record<string, unknown>,
+      );
+    }
 
     if (this.isRealtimeTaskDispatchEnabled()) {
       await this.agentRealtimeService.dispatchTaskToNode(savedTask);
     }
 
-    await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
-      taskId: savedTask.id,
-      nodeId: savedTask.nodeId,
-      status: savedTask.status,
-      sourceInstanceId: this.redisService.getInstanceId(),
-    });
+    if (this.shouldBroadcastTask(savedTask)) {
+      await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
+        taskId: savedTask.id,
+        nodeId: savedTask.nodeId,
+        status: savedTask.status,
+        sourceInstanceId: this.redisService.getInstanceId(),
+      });
+    }
 
-    if (context) {
+    if (context && this.shouldBroadcastTask(savedTask)) {
       await this.auditLogsService.record({
         scope: 'workspace',
         workspaceId: node.workspaceId,
@@ -1622,6 +1652,24 @@ export class TasksService {
       return;
     }
 
+    if (taskType === TASK_TYPES.LOG_SCAN) {
+      const runAsRoot = payload.runAsRoot === true;
+      if (!runAsRoot) {
+        return;
+      }
+
+      const rootScope =
+        typeof payload.rootScope === 'string' ? payload.rootScope.trim() : null;
+      if (rootScope !== ROOT_SCOPE_TASK) {
+        throw new BadRequestException(
+          'log.scan root execution requires rootScope to be "task".',
+        );
+      }
+
+      this.nodesService.assertNodeAllowsTaskRoot(node);
+      return;
+    }
+
     if (taskType !== 'shell.exec') {
       return;
     }
@@ -1698,6 +1746,26 @@ export class TasksService {
       taskType === TASK_TYPES.PACKAGE_REMOVE ||
       taskType === TASK_TYPES.PACKAGE_PURGE
     );
+  }
+
+  private shouldBroadcastTask(task: Pick<TaskEntity, 'isInternal'>): boolean {
+    return task.isInternal !== true;
+  }
+
+  private async handleTaskPostCompletion(task: TaskEntity): Promise<void> {
+    if (task.type !== TASK_TYPES.LOG_SCAN || !this.incidentsService) {
+      return;
+    }
+
+    try {
+      await this.incidentsService.processLogScanTask(task);
+    } catch (error) {
+      this.logger.warn(
+        `Task ${task.id} post-completion processing failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private assertTaskIdMatchesRoute(

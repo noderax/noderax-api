@@ -21,6 +21,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { DiagnosticsModule } from './modules/diagnostics/diagnostics.module';
 import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
 import { EventsModule } from './modules/events/events.module';
+import { IncidentsModule } from './modules/incidents/incidents.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { NodesModule } from './modules/nodes/nodes.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -69,6 +70,7 @@ normalizeDatabaseEnvAliases();
     PackagesModule,
     PlatformSettingsModule,
     EventsModule,
+    IncidentsModule,
     MetricsModule,
     TasksModule,
     TerminalSessionsModule,
