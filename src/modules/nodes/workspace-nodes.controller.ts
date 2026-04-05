@@ -29,6 +29,7 @@ import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { EnableNodeMaintenanceDto } from './dto/enable-node-maintenance.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
+import { UpdateNodeNotificationsDto } from './dto/update-node-notifications.dto';
 import { UpdateNodeRootAccessDto } from './dto/update-node-root-access.dto';
 import { UpdateNodeTeamDto } from './dto/update-node-team.dto';
 import { NodeEntity } from './entities/node.entity';
@@ -187,6 +188,31 @@ export class WorkspaceNodesController {
     );
 
     return node;
+  }
+
+  @Post(':id/notifications')
+  @UseGuards(WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  updateNotifications(
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateNodeNotificationsDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.updateNotificationSettings(
+      id,
+      workspaceId,
+      actor,
+      dto,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
   }
 
   @Delete(':id')

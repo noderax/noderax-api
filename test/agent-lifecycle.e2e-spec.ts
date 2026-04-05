@@ -620,6 +620,36 @@ describe('Agent Lifecycle (e2e)', () => {
       .expect(403);
   });
 
+  it('allows only admins to update node notification delivery switches', async () => {
+    await request(app.getHttpServer())
+      .post(apiPath(`/nodes/${nodeId}/notifications`))
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({
+        notificationEmailEnabled: false,
+      })
+      .expect(403);
+
+    const response = await request(app.getHttpServer())
+      .post(apiPath(`/nodes/${nodeId}/notifications`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        notificationEmailEnabled: false,
+        notificationTelegramEnabled: true,
+      })
+      .expect(201);
+
+    expect(response.body.notificationEmailEnabled).toBe(false);
+    expect(response.body.notificationTelegramEnabled).toBe(true);
+
+    const nodeResponse = await request(app.getHttpServer())
+      .get(apiPath(`/nodes/${nodeId}`))
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(nodeResponse.body.notificationEmailEnabled).toBe(false);
+    expect(nodeResponse.body.notificationTelegramEnabled).toBe(true);
+  });
+
   it('queues package installation for admins with the exact payload', async () => {
     await applyOperationalRootAccess(dataSource, nodeId);
 

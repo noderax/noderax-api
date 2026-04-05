@@ -62,6 +62,7 @@ src/
   - owner/admin/member/viewer roles
   - default-workspace selection
   - granular notification levels (INFO, WARNING, CRITICAL) for Email and Telegram
+  - per-node Email and Telegram delivery rules for node-scoped event suppression by channel and severity
   - automated slug generation
   - archive / restore with read-only enforcement
   - protected workspace deletion rules
@@ -76,6 +77,7 @@ src/
 - Workspace-scoped unified search for nodes, tasks, schedules, events, members, and teams
 - Linux node inventory with online/offline detection, maintenance mode, team ownership, and version telemetry
 - API-authored per-node root access profiles with desired/applied/sync metadata and realtime propagation
+- Node-scoped notification delivery overrides with workspace-level channel precedence and per-node severity filtering
 - Workspace-scoped one-click node bootstrap with short-lived install commands, live install progress tracking, installer consumption, and legacy enrollment compatibility
 - Official agent release catalog resolution through CDN-first metadata with GitHub Releases fallback
 - Platform-admin agent update rollouts with sequential dispatch, retry, skip, resume, cancel, rollback, and heartbeat-confirmed completion
@@ -112,6 +114,22 @@ Supported profiles:
 - `all`: union of all surfaces
 
 Operational, task, and terminal authorization is based on the applied profile surface, not just the desired profile. The desired profile is returned on every agent claim poll and realtime auth acknowledgement, and connected agents can also receive immediate realtime `root-access.updated` pushes. Agents report their applied profile and last sync error back through the same control channel.
+
+## Node Notification Delivery
+
+Each node also stores:
+
+- `notificationEmailEnabled`: whether node-scoped events may be delivered by email
+- `notificationEmailLevels`: which node-scoped event severities may be delivered by email
+- `notificationTelegramEnabled`: whether node-scoped events may be delivered by Telegram
+- `notificationTelegramLevels`: which node-scoped event severities may be delivered by Telegram
+
+These rules only affect events with `event.nodeId`. Workspace channel settings remain the master gate, so a node cannot force delivery when workspace Email or Telegram automation is off. Workspace severity filters are applied first, then node-level channel and severity rules are applied. For node-scoped events, disabling node email or excluding `critical` from `notificationEmailLevels` also suppresses the existing critical-recipient email path for that node.
+
+Operators update these fields through:
+
+- `POST /nodes/:id/notifications`
+- `POST /workspaces/:workspaceId/nodes/:id/notifications`
 
 ## Installation
 
@@ -436,6 +454,7 @@ Current behavior:
 - Controller disconnect has a 5-minute reattach grace window before the session is closed
 - Termination requests have a backend timeout fallback so sessions do not remain stuck in `terminating` if the remote shell disconnects without a final exit event
 - Audit events are written for create, open, terminate request, exit, failure, and transcript retention cleanup
+
 ## Security Model
 
 - `POST /auth/login` may return either a normal session token or `requiresMfa=true` with a short-lived challenge token.
@@ -466,6 +485,7 @@ The primary task execution path is HTTP polling.
 - Cancellation is observed through agent control polling
 
 Interactive terminals are the exception to this rule: they are bridged over the agent realtime socket instead of the HTTP claim loop.
+
 - Realtime agent sockets remain active for telemetry and lifecycle support
 - Realtime task push exists only as an explicit compatibility mode and is disabled by default
 

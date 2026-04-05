@@ -127,31 +127,52 @@ export class NotificationsService {
         return;
       }
 
+      const node = event.nodeId
+        ? await this.nodesRepository.findOne({ where: { id: event.nodeId } })
+        : null;
+      const isNodeScoped = Boolean(event.nodeId);
+      const nodeEmailEnabled =
+        !isNodeScoped ||
+        !node ||
+        (node.notificationEmailEnabled !== false &&
+          this.nodeAllowsSeverity(
+            node.notificationEmailLevels,
+            event.severity,
+          ));
+      const nodeTelegramEnabled =
+        !isNodeScoped ||
+        !node ||
+        (node.notificationTelegramEnabled !== false &&
+          this.nodeAllowsSeverity(
+            node.notificationTelegramLevels,
+            event.severity,
+          ));
+
       // 1. Telegram Automation
       if (
         workspace.automationTelegramEnabled &&
         workspace.automationTelegramBotToken &&
         workspace.automationTelegramChatId &&
-        workspace.automationTelegramLevels.includes(event.severity)
+        workspace.automationTelegramLevels.includes(event.severity) &&
+        nodeTelegramEnabled
       ) {
-        const node = event.nodeId
-          ? await this.nodesRepository.findOne({ where: { id: event.nodeId } })
-          : null;
         await this.sendTelegramMessage(workspace, event, node);
       }
 
       // 2. Email Automation
-      const shouldSendEmail =
-        event.severity === EventSeverity.CRITICAL ||
-        (workspace.automationEmailEnabled &&
-          workspace.automationEmailLevels.includes(event.severity));
+      const shouldSendEmail = isNodeScoped
+        ? workspace.automationEmailEnabled &&
+          workspace.automationEmailLevels.includes(event.severity) &&
+          nodeEmailEnabled
+        : event.severity === EventSeverity.CRITICAL ||
+          (workspace.automationEmailEnabled &&
+            workspace.automationEmailLevels.includes(event.severity));
 
       if (shouldSendEmail) {
         const [
           platformAdmins,
           workspaceAdminsWithPreference,
           allWorkspaceAdmins,
-          node,
         ] = await Promise.all([
           this.usersRepository.find({
             where: {
@@ -165,9 +186,6 @@ export class NotificationsService {
             'criticalEventEmailsEnabled',
           ),
           this.findWorkspaceAdmins(event.workspaceId),
-          event.nodeId
-            ? this.nodesRepository.findOne({ where: { id: event.nodeId } })
-            : null,
         ]);
 
         const recipientEmails: string[] = [];
@@ -684,5 +702,16 @@ export class NotificationsService {
 
   private escapeHtmlWithBreaks(value: string): string {
     return this.escapeHtml(value).replace(/\n/g, '<br />');
+  }
+
+  private nodeAllowsSeverity(
+    levels: EventSeverity[] | string[] | null | undefined,
+    severity: EventSeverity,
+  ) {
+    if (!levels || levels.length === 0) {
+      return false;
+    }
+
+    return levels.includes(severity);
   }
 }

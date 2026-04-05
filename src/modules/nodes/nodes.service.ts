@@ -23,6 +23,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
+import { UpdateNodeNotificationsDto } from './dto/update-node-notifications.dto';
 import { UpdateNodeRootAccessDto } from './dto/update-node-root-access.dto';
 import { NodeEntity } from './entities/node.entity';
 import {
@@ -39,6 +40,12 @@ type NodeRootAccessSyncReport = {
   lastAppliedAt?: string | null;
   lastError?: string | null;
 };
+
+const DEFAULT_NODE_NOTIFICATION_LEVELS = [
+  EventSeverity.INFO,
+  EventSeverity.WARNING,
+  EventSeverity.CRITICAL,
+];
 
 @Injectable()
 export class NodesService {
@@ -82,6 +89,10 @@ export class NodesService {
       status: NodeStatus.OFFLINE,
       teamId: team?.id ?? null,
       maintenanceMode: false,
+      notificationEmailEnabled: true,
+      notificationEmailLevels: [...DEFAULT_NODE_NOTIFICATION_LEVELS],
+      notificationTelegramEnabled: true,
+      notificationTelegramLevels: [...DEFAULT_NODE_NOTIFICATION_LEVELS],
       rootAccessProfile: NodeRootAccessProfile.OFF,
       rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
       rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
@@ -228,6 +239,10 @@ export class NodesService {
           ? new Date()
           : null,
       teamId: team?.id ?? null,
+      notificationEmailEnabled: true,
+      notificationEmailLevels: [...DEFAULT_NODE_NOTIFICATION_LEVELS],
+      notificationTelegramEnabled: true,
+      notificationTelegramLevels: [...DEFAULT_NODE_NOTIFICATION_LEVELS],
       rootAccessProfile: NodeRootAccessProfile.OFF,
       rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
       rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
@@ -293,6 +308,10 @@ export class NodesService {
         input.agentVersion || input.platformVersion || input.kernelVersion
           ? now
           : null,
+      notificationEmailEnabled: true,
+      notificationEmailLevels: [...DEFAULT_NODE_NOTIFICATION_LEVELS],
+      notificationTelegramEnabled: true,
+      notificationTelegramLevels: [...DEFAULT_NODE_NOTIFICATION_LEVELS],
       rootAccessProfile: NodeRootAccessProfile.OFF,
       rootAccessAppliedProfile: NodeRootAccessProfile.OFF,
       rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
@@ -445,6 +464,100 @@ export class NodesService {
       targetLabel: saved.hostname,
       metadata: {
         previousReason,
+      },
+      context,
+    });
+
+    return saved;
+  }
+
+  async updateNotificationSettings(
+    nodeId: string,
+    workspaceId: string | undefined,
+    actor: AuthenticatedUser,
+    dto: UpdateNodeNotificationsDto,
+    context?: RequestAuditContext,
+  ): Promise<NodeEntity> {
+    const node = await this.findOneOrFail(nodeId, workspaceId);
+    await this.workspacesService.assertWorkspaceAdmin(node.workspaceId, actor);
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+
+    if (
+      dto.notificationEmailEnabled === undefined &&
+      dto.notificationEmailLevels === undefined &&
+      dto.notificationTelegramEnabled === undefined &&
+      dto.notificationTelegramLevels === undefined
+    ) {
+      return node;
+    }
+
+    const before = {
+      notificationEmailEnabled: node.notificationEmailEnabled,
+      notificationEmailLevels: this.normalizeNotificationLevels(
+        node.notificationEmailLevels,
+      ),
+      notificationTelegramEnabled: node.notificationTelegramEnabled,
+      notificationTelegramLevels: this.normalizeNotificationLevels(
+        node.notificationTelegramLevels,
+      ),
+    };
+
+    if (dto.notificationEmailEnabled !== undefined) {
+      node.notificationEmailEnabled = dto.notificationEmailEnabled;
+    }
+
+    if (dto.notificationEmailLevels !== undefined) {
+      node.notificationEmailLevels = this.normalizeNotificationLevels(
+        dto.notificationEmailLevels,
+      );
+    }
+
+    if (dto.notificationTelegramEnabled !== undefined) {
+      node.notificationTelegramEnabled = dto.notificationTelegramEnabled;
+    }
+
+    if (dto.notificationTelegramLevels !== undefined) {
+      node.notificationTelegramLevels = this.normalizeNotificationLevels(
+        dto.notificationTelegramLevels,
+      );
+    }
+
+    const saved = await this.populateTeamMetadata(
+      await this.nodesRepository.save(node),
+    );
+
+    await this.eventsService.record({
+      nodeId: saved.id,
+      type: SYSTEM_EVENT_TYPES.NODE_NOTIFICATIONS_UPDATED,
+      severity: EventSeverity.INFO,
+      message: `Node ${saved.hostname} notification delivery updated.`,
+      metadata: {
+        previousEmailEnabled: before.notificationEmailEnabled,
+        nextEmailEnabled: saved.notificationEmailEnabled,
+        previousEmailLevels: before.notificationEmailLevels,
+        nextEmailLevels: saved.notificationEmailLevels,
+        previousTelegramEnabled: before.notificationTelegramEnabled,
+        nextTelegramEnabled: saved.notificationTelegramEnabled,
+        previousTelegramLevels: before.notificationTelegramLevels,
+        nextTelegramLevels: saved.notificationTelegramLevels,
+      },
+    });
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: saved.workspaceId,
+      action: 'node.notifications.updated',
+      targetType: 'node',
+      targetId: saved.id,
+      targetLabel: saved.hostname,
+      changes: {
+        before,
+        after: {
+          notificationEmailEnabled: saved.notificationEmailEnabled,
+          notificationEmailLevels: saved.notificationEmailLevels,
+          notificationTelegramEnabled: saved.notificationTelegramEnabled,
+          notificationTelegramLevels: saved.notificationTelegramLevels,
+        },
       },
       context,
     });
@@ -1021,6 +1134,18 @@ export class NodesService {
     void desiredProfile;
     void reportedError;
     return false;
+  }
+
+  private normalizeNotificationLevels(
+    levels: EventSeverity[] | null | undefined,
+  ): EventSeverity[] {
+    if (!levels) {
+      return [...DEFAULT_NODE_NOTIFICATION_LEVELS];
+    }
+
+    return DEFAULT_NODE_NOTIFICATION_LEVELS.filter((severity) =>
+      levels.includes(severity),
+    );
   }
 
   private async populateTeamMetadata<T extends NodeEntity | NodeEntity[]>(

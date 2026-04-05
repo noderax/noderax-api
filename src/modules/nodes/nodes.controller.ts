@@ -28,6 +28,7 @@ import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { EnableNodeMaintenanceDto } from './dto/enable-node-maintenance.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
+import { UpdateNodeNotificationsDto } from './dto/update-node-notifications.dto';
 import { UpdateNodeRootAccessDto } from './dto/update-node-root-access.dto';
 import { UpdateNodeTeamDto } from './dto/update-node-team.dto';
 import { NodeEntity } from './entities/node.entity';
@@ -185,6 +186,29 @@ export class NodesController {
     );
 
     return node;
+  }
+
+  @Roles(UserRole.PLATFORM_ADMIN)
+  @Post(':id/notifications')
+  updateNotifications(
+    @Param('id') id: string,
+    @Body() dto: UpdateNodeNotificationsDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.nodesService.updateNotificationSettings(
+      id,
+      undefined,
+      actor,
+      dto,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
   }
 
   @Roles(UserRole.PLATFORM_ADMIN)

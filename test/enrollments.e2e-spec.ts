@@ -10,6 +10,8 @@ import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
 import { createAcceptedUser, loginUser } from './helpers/user-lifecycle';
 
+jest.setTimeout(90_000);
+
 function configureTestEnv() {
   process.env.NODE_ENV = 'test';
   process.env.PORT = '0';

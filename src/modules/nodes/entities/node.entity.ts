@@ -11,11 +11,18 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { EventSeverity } from '../../events/entities/event-severity.enum';
 import type { NodeRootAccessProfile as NodeRootAccessProfileValue } from './node-root-access-profile.enum';
 import { NodeRootAccessProfile } from './node-root-access-profile.enum';
 import type { NodeRootAccessSyncStatus as NodeRootAccessSyncStatusValue } from './node-root-access-sync-status.enum';
 import { NodeRootAccessSyncStatus } from './node-root-access-sync-status.enum';
 import { NodeStatus } from './node-status.enum';
+
+const DEFAULT_NODE_NOTIFICATION_LEVELS = [
+  EventSeverity.INFO,
+  EventSeverity.WARNING,
+  EventSeverity.CRITICAL,
+];
 
 @Entity({ name: 'nodes' })
 export class NodeEntity {
@@ -101,6 +108,50 @@ export class NodeEntity {
   })
   @Column({ type: 'boolean', default: false })
   maintenanceMode?: boolean;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Whether node-scoped event notifications may be delivered by email when the workspace email channel is enabled.',
+  })
+  @Column({ type: 'boolean', default: true })
+  notificationEmailEnabled: boolean;
+
+  @ApiProperty({
+    enum: EventSeverity,
+    enumName: 'EventSeverity',
+    isArray: true,
+    example: DEFAULT_NODE_NOTIFICATION_LEVELS,
+    description:
+      'Which node-scoped event severities may be delivered by email when the workspace email channel is enabled.',
+  })
+  @Column({
+    type: 'simple-array',
+    default: DEFAULT_NODE_NOTIFICATION_LEVELS.join(','),
+  })
+  notificationEmailLevels: EventSeverity[];
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Whether node-scoped event notifications may be delivered by Telegram when the workspace Telegram channel is enabled.',
+  })
+  @Column({ type: 'boolean', default: true })
+  notificationTelegramEnabled: boolean;
+
+  @ApiProperty({
+    enum: EventSeverity,
+    enumName: 'EventSeverity',
+    isArray: true,
+    example: DEFAULT_NODE_NOTIFICATION_LEVELS,
+    description:
+      'Which node-scoped event severities may be delivered by Telegram when the workspace Telegram channel is enabled.',
+  })
+  @Column({
+    type: 'simple-array',
+    default: DEFAULT_NODE_NOTIFICATION_LEVELS.join(','),
+  })
+  notificationTelegramLevels: EventSeverity[];
 
   @ApiProperty({
     enum: NodeRootAccessProfile,

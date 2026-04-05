@@ -8,6 +8,7 @@
 - Added typed diagnostics response contract with default-safe counters and health timestamps.
 - Added e2e coverage for auth behavior, response schema/defaults, numeric counter typing, and smoke performance.
 - Added platform/kernel version acceptance in enrollment and realtime agent auth flows so node telemetry can refresh after reconnects.
+- Added per-node Email and Telegram delivery rules for node-scoped event notifications, including channel toggles, severity filtering, and workspace-master precedence.
 - Changed package deletion handling to queue `packagePurge` separately from `packageRemove`.
 - Fixed rollout monitoring so active target cancellation is requested deterministically and linked `agent.update` tasks can be reconciled into terminal states.
 
