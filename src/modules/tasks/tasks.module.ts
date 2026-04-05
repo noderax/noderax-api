@@ -37,7 +37,7 @@ import { WorkspaceTasksController } from './workspace-tasks.controller';
       UserEntity,
     ]),
     AuditLogsModule,
-    NodesModule,
+    forwardRef(() => NodesModule),
     EventsModule,
     RealtimeModule,
     WorkspacesModule,

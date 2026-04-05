@@ -1660,10 +1660,7 @@ export class TasksService {
     const rootScope =
       typeof payload.rootScope === 'string' ? payload.rootScope.trim() : null;
 
-    if (
-      rootScope !== ROOT_SCOPE_TASK &&
-      rootScope !== ROOT_SCOPE_OPERATIONAL
-    ) {
+    if (rootScope !== ROOT_SCOPE_TASK && rootScope !== ROOT_SCOPE_OPERATIONAL) {
       throw new BadRequestException(
         'rootScope must be "task" or "operational" when runAsRoot is enabled.',
       );
@@ -1676,7 +1673,9 @@ export class TasksService {
     };
   }
 
-  private assertOperationalRootShellPayloadAllowed(command: string | null): void {
+  private assertOperationalRootShellPayloadAllowed(
+    command: string | null,
+  ): void {
     const normalizedCommand = command?.replace(/\s+/g, ' ').trim() ?? '';
     const allowedCommands = new Set([
       'reboot',

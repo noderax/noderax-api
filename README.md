@@ -106,9 +106,12 @@ Supported profiles:
 - `operational`: package install/remove/purge plus `apt-get update`, `reboot`, and `restart-agent`
 - `task`: root `shell.exec` and scheduled shell tasks
 - `terminal`: root interactive terminal sessions
+- `operational_task`: operational + task surfaces
+- `operational_terminal`: operational + terminal surfaces
+- `task_terminal`: task + terminal surfaces
 - `all`: union of all surfaces
 
-The desired profile is returned on every agent claim poll and realtime auth acknowledgement. Agents report their applied profile and last sync error back through the same control channel.
+Operational, task, and terminal authorization is based on the applied profile surface, not just the desired profile. The desired profile is returned on every agent claim poll and realtime auth acknowledgement, and connected agents can also receive immediate realtime `root-access.updated` pushes. Agents report their applied profile and last sync error back through the same control channel.
 
 ## Installation
 
@@ -596,7 +599,7 @@ Recommended checks:
 
 ```bash
 pnpm build
-pnpm lint
+pnpm run lint:check
 pnpm test
 pnpm test:e2e
 pnpm audit --audit-level high

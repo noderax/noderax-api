@@ -1,8 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { io, Socket } from 'socket.io-client';
+import { DataSource } from 'typeorm';
 import { TASK_TYPES } from '../src/common/constants/task-types.constants';
 import { MailerService } from '../src/modules/notifications/mailer.service';
+import { NodeEntity } from '../src/modules/nodes/entities/node.entity';
+import { NodeRootAccessProfile } from '../src/modules/nodes/entities/node-root-access-profile.enum';
+import { NodeRootAccessSyncStatus } from '../src/modules/nodes/entities/node-root-access-sync-status.enum';
 import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';
 import { createAcceptedUser } from './helpers/user-lifecycle';
@@ -185,8 +189,27 @@ async function completeTaskAsAgent(
     .expect(200);
 }
 
+async function applyOperationalRootAccess(
+  dataSource: DataSource,
+  nodeId: string,
+) {
+  const nodeRepository = dataSource.getRepository(NodeEntity);
+  const node = await nodeRepository.findOneByOrFail({ id: nodeId });
+  const now = new Date();
+
+  node.rootAccessProfile = NodeRootAccessProfile.OPERATIONAL;
+  node.rootAccessAppliedProfile = NodeRootAccessProfile.OPERATIONAL;
+  node.rootAccessSyncStatus = NodeRootAccessSyncStatus.APPLIED;
+  node.rootAccessUpdatedAt = now;
+  node.rootAccessLastAppliedAt = now;
+  node.rootAccessLastError = null;
+
+  await nodeRepository.save(node);
+}
+
 describe('Agent Lifecycle (e2e)', () => {
   let app: INestApplication;
+  let dataSource: DataSource;
   let adminToken: string;
   let userToken: string;
   let mailerService: MailerService;
@@ -199,6 +222,7 @@ describe('Agent Lifecycle (e2e)', () => {
   beforeAll(async () => {
     configureTestEnv();
     app = await createE2eApp();
+    dataSource = app.get(DataSource);
     mailerService = app.get(MailerService);
   }, 30000);
 
@@ -597,6 +621,8 @@ describe('Agent Lifecycle (e2e)', () => {
   });
 
   it('queues package installation for admins with the exact payload', async () => {
+    await applyOperationalRootAccess(dataSource, nodeId);
+
     const response = await request(app.getHttpServer())
       .post(apiPath(`/nodes/${nodeId}/packages`))
       .set('Authorization', `Bearer ${adminToken}`)
@@ -625,6 +651,8 @@ describe('Agent Lifecycle (e2e)', () => {
   });
 
   it('maps package deletion to remove and purge task types for admins', async () => {
+    await applyOperationalRootAccess(dataSource, nodeId);
+
     const removeResponse = await request(app.getHttpServer())
       .delete(apiPath(`/nodes/${nodeId}/packages/nginx`))
       .set('Authorization', `Bearer ${adminToken}`)
@@ -661,7 +689,7 @@ describe('Agent Lifecycle (e2e)', () => {
       .expect(200);
 
     expect(purgeResponse.body.operation).toBe(TASK_TYPES.PACKAGE_PURGE);
-    expect(purgeTask.body.type).toBe(TASK_TYPES.PACKAGE_REMOVE);
+    expect(purgeTask.body.type).toBe(TASK_TYPES.PACKAGE_PURGE);
     expect(purgeTask.body.payload).toEqual({
       names: ['nginx'],
       packages: ['nginx'],

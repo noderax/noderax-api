@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+- Added composite node root-access profiles (`operational_task`, `operational_terminal`, `task_terminal`) and applied-surface validation for operational, task, and terminal privileged actions.
+- Added immediate agent realtime root-access update dispatch while keeping auth-ack and claim-response fallback delivery paths.
 - Added stable diagnostics endpoint `GET /api/v1/diagnostics/task-flow` for frontend task-flow panel observability.
 - Added typed diagnostics response contract with default-safe counters and health timestamps.
 - Added e2e coverage for auth behavior, response schema/defaults, numeric counter typing, and smoke performance.
+- Added platform/kernel version acceptance in enrollment and realtime agent auth flows so node telemetry can refresh after reconnects.
+- Changed package deletion handling to queue `packagePurge` separately from `packageRemove`.
+- Fixed rollout monitoring so active target cancellation is requested deterministically and linked `agent.update` tasks can be reconciled into terminal states.
 
 ## 1.0.0 - Stable
 

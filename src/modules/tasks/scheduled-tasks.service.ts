@@ -710,7 +710,9 @@ export class ScheduledTasksService {
         workspace.id,
         team.id,
       );
-      targetNodes.forEach((node) => this.nodesService.assertNodeAllowsTaskRoot(node));
+      targetNodes.forEach((node) =>
+        this.nodesService.assertNodeAllowsTaskRoot(node),
+      );
     }
     const template = templateId
       ? await this.resolveTemplateOrFail(templateId, workspace.id)

@@ -616,10 +616,7 @@ export class NodesService {
   }
 
   canNodeUseOperationalRoot(
-    node: Pick<
-      NodeEntity,
-      'rootAccessAppliedProfile'
-    >,
+    node: Pick<NodeEntity, 'rootAccessAppliedProfile'>,
   ): boolean {
     return this.profileAllowsSurface(
       node.rootAccessAppliedProfile,
@@ -1018,9 +1015,11 @@ export class NodesService {
   }
 
   private shouldIgnoreRootAccessSyncError(
-    _desiredProfile: NodeRootAccessProfile,
-    _reportedError: string | null,
+    desiredProfile: NodeRootAccessProfile,
+    reportedError: string | null,
   ): boolean {
+    void desiredProfile;
+    void reportedError;
     return false;
   }
 

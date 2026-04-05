@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventsModule } from '../events/events.module';
 import { NodesModule } from '../nodes/nodes.module';
@@ -12,7 +12,7 @@ import { WorkspaceMetricsController } from './workspace-metrics.controller';
 @Module({
   imports: [
     TypeOrmModule.forFeature([MetricEntity]),
-    NodesModule,
+    forwardRef(() => NodesModule),
     EventsModule,
     RealtimeModule,
     WorkspacesModule,

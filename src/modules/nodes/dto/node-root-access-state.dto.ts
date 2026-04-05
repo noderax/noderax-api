@@ -1,10 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsIn,
-  IsISO8601,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString } from 'class-validator';
 import {
   NODE_ROOT_ACCESS_PROFILES,
   NodeRootAccessProfile,

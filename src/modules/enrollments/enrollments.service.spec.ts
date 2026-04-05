@@ -71,11 +71,11 @@ describe('EnrollmentsService', () => {
     nodeInstallsRepository = {
       create: jest.fn((value) => value),
       find: jest.fn().mockResolvedValue([]),
-      save: jest.fn(async (value) => ({
+      save: jest.fn(async (value: any) => ({
         id: 'node-install-1',
         createdAt: new Date('2026-03-31T23:19:00.000Z'),
         updatedAt: new Date('2026-03-31T23:19:00.000Z'),
-        ...value,
+        ...(value || {}),
       })),
       createQueryBuilder: jest.fn(),
     };
@@ -169,6 +169,9 @@ describe('EnrollmentsService', () => {
       os: 'unknown',
       arch: 'unknown',
       agentTokenHash: 'agent-token-hash',
+      agentVersion: null,
+      platformVersion: null,
+      kernelVersion: null,
     });
     expect(result).toEqual({
       nodeId: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',

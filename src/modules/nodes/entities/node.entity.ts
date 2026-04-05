@@ -12,9 +12,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { NodeRootAccessProfile as NodeRootAccessProfileValue } from './node-root-access-profile.enum';
-import {
-  NodeRootAccessProfile,
-} from './node-root-access-profile.enum';
+import { NodeRootAccessProfile } from './node-root-access-profile.enum';
 import type { NodeRootAccessSyncStatus as NodeRootAccessSyncStatusValue } from './node-root-access-sync-status.enum';
 import { NodeRootAccessSyncStatus } from './node-root-access-sync-status.enum';
 import { NodeStatus } from './node-status.enum';
