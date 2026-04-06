@@ -576,13 +576,13 @@ export class NotificationsService {
                         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
                           <tr>
                             <td valign="middle">
-                              <span style="display:inline-block;padding:8px;border-radius:16px;background:${palette.button};vertical-align:middle;">
+                              <span style="display:inline-block;width:48px;height:48px;border-radius:16px;background:${palette.button};vertical-align:middle;overflow:hidden;">
                                 <img
                                   src="${this.escapeHtml(logoSrc)}"
                                   alt="Noderax"
-                                  width="40"
-                                  height="40"
-                                  style="display:block;width:40px;height:40px;border:0;outline:none;text-decoration:none;"
+                                  width="48"
+                                  height="48"
+                                  style="display:block;width:48px;height:48px;border:0;outline:none;text-decoration:none;"
                                 />
                               </span>
                               <span style="display:inline-block;margin-left:12px;color:#171717;font-size:18px;font-weight:800;letter-spacing:0.01em;vertical-align:middle;">Noderax</span>
