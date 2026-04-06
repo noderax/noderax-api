@@ -31,6 +31,7 @@ function buildTask(partial: Partial<TaskEntity>): TaskEntity {
     workspaceId: 'workspace-1',
     nodeId: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
     type: TASK_TYPES.PACKAGE_LIST,
+    isInternal: false,
     payload: {},
     status: TaskStatus.SUCCESS,
     result: null,
@@ -308,6 +309,84 @@ describe('TasksService operational root gating', () => {
     ).toThrow(BadRequestException);
 
     expect(nodesService.assertNodeAllowsOperationalRoot).not.toHaveBeenCalled();
+  });
+
+  it('routes log.scan root requests through operational root access', () => {
+    const tasksService = createService();
+    const nodesService = {
+      assertNodeAllowsOperationalRoot: jest.fn(),
+      assertNodeAllowsTaskRoot: jest.fn(),
+    };
+
+    (
+      tasksService as unknown as {
+        nodesService: typeof nodesService;
+      }
+    ).nodesService = nodesService;
+
+    (
+      tasksService as unknown as {
+        assertRequestedRootAccessAllowed: (
+          node: Record<string, unknown>,
+          taskType: string,
+          payload: Record<string, unknown>,
+        ) => void;
+      }
+    ).assertRequestedRootAccessAllowed(
+      { hostname: 'srv-01.example' },
+      TASK_TYPES.LOG_SCAN,
+      {
+        sourcePresetId: 'auth.log',
+        runAsRoot: true,
+        rootScope: 'operational',
+      },
+    );
+
+    expect(nodesService.assertNodeAllowsOperationalRoot).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(nodesService.assertNodeAllowsTaskRoot).not.toHaveBeenCalled();
+  });
+
+  it('rejects log.scan root requests that do not use operational scope', () => {
+    const tasksService = createService();
+    const nodesService = {
+      assertNodeAllowsOperationalRoot: jest.fn(),
+      assertNodeAllowsTaskRoot: jest.fn(),
+    };
+
+    (
+      tasksService as unknown as {
+        nodesService: typeof nodesService;
+      }
+    ).nodesService = nodesService;
+
+    expect(() =>
+      (
+        tasksService as unknown as {
+          assertRequestedRootAccessAllowed: (
+            node: Record<string, unknown>,
+            taskType: string,
+            payload: Record<string, unknown>,
+          ) => void;
+        }
+      ).assertRequestedRootAccessAllowed(
+        { hostname: 'srv-01.example' },
+        TASK_TYPES.LOG_SCAN,
+        {
+          sourcePresetId: 'auth.log',
+          runAsRoot: true,
+          rootScope: 'task',
+        },
+      ),
+    ).toThrow(
+      new BadRequestException(
+        'log.scan root execution requires rootScope to be "operational".',
+      ),
+    );
+
+    expect(nodesService.assertNodeAllowsOperationalRoot).not.toHaveBeenCalled();
+    expect(nodesService.assertNodeAllowsTaskRoot).not.toHaveBeenCalled();
   });
 });
 

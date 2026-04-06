@@ -25,7 +25,7 @@ export type LogScanTaskPayload = {
   };
   cursor?: LogScanCursorState;
   runAsRoot?: boolean;
-  rootScope?: 'task';
+  rootScope?: 'operational';
   internalContext?: {
     ruleId?: string;
   };

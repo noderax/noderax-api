@@ -814,7 +814,7 @@ export class IncidentsService {
       mode: input.mode,
       sourcePresetId: input.sourcePresetId,
       runAsRoot: input.runAsRoot,
-      rootScope: input.runAsRoot ? 'task' : undefined,
+      rootScope: input.runAsRoot ? 'operational' : undefined,
       cursor: input.cursor ?? undefined,
       limits: {
         maxLines: DEFAULT_SCAN_MAX_LINES,
@@ -925,7 +925,11 @@ export class IncidentsService {
           }
         : undefined,
       runAsRoot: task.payload.runAsRoot === true,
-      rootScope: task.payload.rootScope === 'task' ? 'task' : undefined,
+      rootScope:
+        task.payload.rootScope === 'operational' ||
+        task.payload.rootScope === 'task'
+          ? 'operational'
+          : undefined,
       internalContext: isRecord(task.payload.internalContext)
         ? {
             ruleId:

@@ -1660,13 +1660,13 @@ export class TasksService {
 
       const rootScope =
         typeof payload.rootScope === 'string' ? payload.rootScope.trim() : null;
-      if (rootScope !== ROOT_SCOPE_TASK) {
+      if (rootScope !== ROOT_SCOPE_OPERATIONAL) {
         throw new BadRequestException(
-          'log.scan root execution requires rootScope to be "task".',
+          'log.scan root execution requires rootScope to be "operational".',
         );
       }
 
-      this.nodesService.assertNodeAllowsTaskRoot(node);
+      this.nodesService.assertNodeAllowsOperationalRoot(node);
       return;
     }
 
