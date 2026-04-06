@@ -18,8 +18,6 @@ const WORKSPACE_ADMIN_ROLES = [
   WorkspaceMembershipRole.ADMIN,
 ];
 
-const NODERAX_EMAIL_LOGO_URL = 'https://cdn.noderax.net/logo.webp';
-
 type EmailTone = 'default' | 'warning' | 'critical';
 
 type EmailDetail = {
@@ -470,7 +468,6 @@ export class NotificationsService {
   }): { text: string; html: string } {
     const palette = this.getEmailPalette(input.tone ?? 'default');
     const appUrl = this.buildFrontendUrl('');
-    const logoSrc = NODERAX_EMAIL_LOGO_URL;
     const details = input.details ?? [];
     const textSections = [
       'Noderax',
@@ -588,7 +585,7 @@ export class NotificationsService {
                       </td>
                     </tr>
                     <tr>
-                      <td style="background:#ffffff;border:1px solid #eadfd7;border-radius:26px;padding:36px 34px 30px;box-shadow:0 14px 34px rgba(23,19,15,0.08);background-image:linear-gradient(rgba(255,255,255,0.93),rgba(255,255,255,0.93)),url('${this.escapeHtml(logoSrc)}');background-repeat:no-repeat,no-repeat;background-size:auto,230px 230px;background-position:0 0,right -24px top -18px;">
+                      <td style="background:#ffffff;border:1px solid #eadfd7;border-radius:26px;padding:36px 34px 30px;box-shadow:0 14px 34px rgba(23,19,15,0.08);">
                         <div style="margin:0 0 16px;">
                           <span style="display:inline-block;padding:7px 11px;border-radius:999px;background:${palette.badgeBg};color:${palette.badgeText};font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;">
                             Noderax control plane
