@@ -576,16 +576,7 @@ export class NotificationsService {
                         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
                           <tr>
                             <td valign="middle">
-                              <span style="display:inline-block;width:48px;height:48px;border-radius:16px;background:${palette.button};vertical-align:middle;overflow:hidden;">
-                                <img
-                                  src="${this.escapeHtml(logoSrc)}"
-                                  alt="Noderax"
-                                  width="48"
-                                  height="48"
-                                  style="display:block;width:48px;height:48px;border:0;outline:none;text-decoration:none;"
-                                />
-                              </span>
-                              <span style="display:inline-block;margin-left:12px;color:#171717;font-size:18px;font-weight:800;letter-spacing:0.01em;vertical-align:middle;">Noderax</span>
+                                <span style="display:inline-block;color:#171717;font-size:18px;font-weight:800;letter-spacing:0.01em;vertical-align:middle;">Noderax</span>
                             </td>
                             <td align="right" valign="middle">
                               <span style="display:inline-block;padding:8px 12px;border-radius:999px;background:${palette.badgeBg};color:${palette.badgeText};font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;">
@@ -597,7 +588,7 @@ export class NotificationsService {
                       </td>
                     </tr>
                     <tr>
-                      <td style="background:#ffffff;border:1px solid #eadfd7;border-radius:26px;padding:36px 34px 30px;box-shadow:0 14px 34px rgba(23,19,15,0.08);">
+                      <td style="background:#ffffff;border:1px solid #eadfd7;border-radius:26px;padding:36px 34px 30px;box-shadow:0 14px 34px rgba(23,19,15,0.08);background-image:linear-gradient(rgba(255,255,255,0.93),rgba(255,255,255,0.93)),url('${this.escapeHtml(logoSrc)}');background-repeat:no-repeat,no-repeat;background-size:auto,230px 230px;background-position:0 0,right -24px top -18px;">
                         <div style="margin:0 0 16px;">
                           <span style="display:inline-block;padding:7px 11px;border-radius:999px;background:${palette.badgeBg};color:${palette.badgeText};font-size:11px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;">
                             Noderax control plane
