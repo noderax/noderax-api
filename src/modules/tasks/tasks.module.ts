@@ -4,7 +4,6 @@ import { AgentAuthGuard } from '../../common/guards/agent-auth.guard';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AgentRealtimeModule } from '../agent-realtime/agent-realtime.module';
 import { EventsModule } from '../events/events.module';
-import { IncidentsModule } from '../incidents/incidents.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UserEntity } from '../users/entities/user.entity';
@@ -40,7 +39,6 @@ import { WorkspaceTasksController } from './workspace-tasks.controller';
     AuditLogsModule,
     forwardRef(() => NodesModule),
     EventsModule,
-    forwardRef(() => IncidentsModule),
     RealtimeModule,
     WorkspacesModule,
     forwardRef(() => AgentRealtimeModule),

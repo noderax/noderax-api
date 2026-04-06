@@ -57,7 +57,7 @@ export const LOG_SOURCE_PRESETS: LogSourcePreset[] = [
   },
 ];
 
-export const LOG_SOURCE_PRESETS_BY_ID = new Map(
+const LOG_SOURCE_PRESETS_BY_ID = new Map(
   LOG_SOURCE_PRESETS.map((preset) => [preset.id, preset] as const),
 );
 

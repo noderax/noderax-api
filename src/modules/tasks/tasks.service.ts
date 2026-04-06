@@ -1,12 +1,9 @@
 import {
   BadRequestException,
   ConflictException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
-  Optional,
-  forwardRef,
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -24,7 +21,6 @@ import { AuthenticatedAgent } from '../../common/types/authenticated-agent.type'
 import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
-import { IncidentsService } from '../incidents/incidents.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodesService } from '../nodes/nodes.service';
@@ -90,9 +86,6 @@ export class TasksService {
     private readonly agentRealtimeService: AgentRealtimeService,
     private readonly configService: ConfigService,
     private readonly workspacesService: WorkspacesService,
-    @Optional()
-    @Inject(forwardRef(() => IncidentsService))
-    private readonly incidentsService?: IncidentsService,
   ) {}
 
   async create(
@@ -1752,21 +1745,7 @@ export class TasksService {
     return task.isInternal !== true;
   }
 
-  private async handleTaskPostCompletion(task: TaskEntity): Promise<void> {
-    if (task.type !== TASK_TYPES.LOG_SCAN || !this.incidentsService) {
-      return;
-    }
-
-    try {
-      await this.incidentsService.processLogScanTask(task);
-    } catch (error) {
-      this.logger.warn(
-        `Task ${task.id} post-completion processing failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
+  private async handleTaskPostCompletion(_task: TaskEntity): Promise<void> {}
 
   private assertTaskIdMatchesRoute(
     routeTaskId: string,

@@ -5,6 +5,8 @@
 /.npm-cache
 # Logs
 logs
+!src/modules/logs/
+!src/modules/logs/**
 *.log
 npm-debug.log*
 pnpm-debug.log*
