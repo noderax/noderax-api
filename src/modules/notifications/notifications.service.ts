@@ -11,7 +11,11 @@ import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-member
 import { WorkspaceMembershipEntity } from '../workspaces/entities/workspace-membership.entity';
 import { WorkspaceEntity } from '../workspaces/entities/workspace.entity';
 import { NodeEntity } from '../nodes/entities/node.entity';
-import { MailerService } from './mailer.service';
+import { MailInlineAttachment, MailerService } from './mailer.service';
+import {
+  NODERAX_EMAIL_LOGO_ATTACHMENT,
+  NODERAX_EMAIL_LOGO_CID,
+} from './email-logo.constants';
 
 const WORKSPACE_ADMIN_ROLES = [
   WorkspaceMembershipRole.OWNER,
@@ -75,6 +79,7 @@ export class NotificationsService {
       subject: 'You have been invited to Noderax',
       text: email.text,
       html: email.html,
+      attachments: email.attachments,
     });
   }
 
@@ -111,6 +116,7 @@ export class NotificationsService {
       subject: 'Reset your Noderax password',
       text: email.text,
       html: email.html,
+      attachments: email.attachments,
     });
   }
 
@@ -235,6 +241,7 @@ export class NotificationsService {
             subject: `[Noderax] ${event.severity.toUpperCase()} event: ${event.type}`,
             text: email.text,
             html: email.html,
+            attachments: email.attachments,
           });
         }
       }
@@ -353,6 +360,7 @@ export class NotificationsService {
         subject: `[Noderax] Enrollment pending for ${input.hostname}`,
         text: email.text,
         html: email.html,
+        attachments: email.attachments,
       });
     } catch (error) {
       this.logger.error(
@@ -465,10 +473,10 @@ export class NotificationsService {
     details?: EmailDetail[];
     footnote?: string;
     tone?: EmailTone;
-  }): { text: string; html: string } {
+  }): { text: string; html: string; attachments: MailInlineAttachment[] } {
     const palette = this.getEmailPalette(input.tone ?? 'default');
     const appUrl = this.buildFrontendUrl('');
-    const logoUrl = this.buildFrontendUrl('/logo-white.png');
+    const logoSrc = `cid:${NODERAX_EMAIL_LOGO_CID}`;
     const details = input.details ?? [];
     const textSections = [
       'Noderax',
@@ -558,6 +566,7 @@ export class NotificationsService {
 
     return {
       text: textSections,
+      attachments: this.buildBrandAttachments(),
       html: `
         <!DOCTYPE html>
         <html lang="en">
@@ -576,7 +585,7 @@ export class NotificationsService {
                             <td valign="middle">
                               <span style="display:inline-block;padding:8px;border-radius:16px;background:${palette.button};vertical-align:middle;">
                                 <img
-                                  src="${this.escapeHtml(logoUrl)}"
+                                  src="${this.escapeHtml(logoSrc)}"
                                   alt="Noderax"
                                   width="40"
                                   height="40"
@@ -625,6 +634,10 @@ export class NotificationsService {
         </html>
       `,
     };
+  }
+
+  private buildBrandAttachments(): MailInlineAttachment[] {
+    return [{ ...NODERAX_EMAIL_LOGO_ATTACHMENT }];
   }
 
   private getEmailPalette(tone: EmailTone) {

@@ -17,6 +17,16 @@ export interface MailDeliveryRecord {
   subject: string;
   text: string;
   html?: string;
+  attachments?: MailInlineAttachment[];
+}
+
+export interface MailInlineAttachment {
+  filename: string;
+  content: string | Buffer;
+  contentType?: string;
+  encoding?: string;
+  cid: string;
+  disposition?: 'inline' | 'attachment';
 }
 
 @Injectable()
@@ -58,6 +68,7 @@ export class MailerService {
         subject: input.subject,
         text: input.text,
         html: input.html,
+        attachments: input.attachments,
       });
 
       this.deliveries.push(input);
