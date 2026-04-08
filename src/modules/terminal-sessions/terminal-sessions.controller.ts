@@ -27,6 +27,10 @@ import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-member
 import { CreateTerminalSessionDto } from './dto/create-terminal-session.dto';
 import { QueryTerminalSessionChunksDto } from './dto/query-terminal-session-chunks.dto';
 import { QueryTerminalSessionsDto } from './dto/query-terminal-sessions.dto';
+import {
+  TerminalSessionConnectResponseDto,
+  TerminalSessionConnectTokenDto,
+} from './dto/terminal-session-connect-response.dto';
 import { TerminateTerminalSessionDto } from './dto/terminate-terminal-session.dto';
 import { TerminalSessionChunkEntity } from './entities/terminal-session-chunk.entity';
 import { TerminalSessionEntity } from './entities/terminal-session.entity';
@@ -50,7 +54,7 @@ export class TerminalSessionsController {
     summary: 'Create an interactive terminal session for a node',
   })
   @ApiCreatedResponse({
-    type: TerminalSessionEntity,
+    type: TerminalSessionConnectResponseDto,
   })
   create(
     @Param('workspaceId') workspaceId: string,
@@ -109,6 +113,26 @@ export class TerminalSessionsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.terminalSessionsService.getSession(
+      workspaceId,
+      sessionId,
+      user,
+    );
+  }
+
+  @Post('terminal-sessions/:sessionId/connect-token')
+  @ApiOperation({
+    summary:
+      'Refresh a short-lived websocket token for an active terminal session',
+  })
+  @ApiOkResponse({
+    type: TerminalSessionConnectTokenDto,
+  })
+  refreshConnectToken(
+    @Param('workspaceId') workspaceId: string,
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.terminalSessionsService.issueConnectToken(
       workspaceId,
       sessionId,
       user,

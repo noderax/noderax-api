@@ -25,12 +25,22 @@ import {
   buildCorsOptions,
   assertSafeProductionConfiguration,
 } from './config';
-import { normalizeDatabaseEnvAliases } from './config/database-env.utils';
+import {
+  hasLegacyDatabaseEnvUsage,
+  normalizeDatabaseEnvAliases,
+} from './config/database-env.utils';
 import { prepareBootEnvironment } from './install/boot-mode';
 import { readInstallState } from './install/install-state';
 import { SetupAppModule } from './setup-app.module';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
+  if (hasLegacyDatabaseEnvUsage()) {
+    logger.warn(
+      'Legacy DB_* environment variables are deprecated. Prefer DATABASE_* equivalents before the next major release.',
+    );
+  }
+
   normalizeDatabaseEnvAliases();
 
   const installState = readInstallState();
@@ -59,7 +69,6 @@ async function bootstrap() {
     configService.getOrThrow<ConfigType<typeof agentsConfig>>(
       AGENTS_CONFIG_KEY,
     );
-  const logger = new Logger('Bootstrap');
   const { apiPrefix, corsOrigin, port, swaggerEnabled, swaggerPath } =
     appSettings;
 
@@ -67,10 +76,12 @@ async function bootstrap() {
     bootMode: bootMode === 'setup' ? 'setup' : 'installed',
     nodeEnv: appSettings.nodeEnv,
     corsOrigin,
+    swaggerEnabled,
     jwtSecret: authSettings.jwtSecret,
     secretsEncryptionKey: authSettings.secretsEncryptionKey,
     adminEmail: bootstrapSettings.adminEmail,
     adminPassword: bootstrapSettings.adminPassword,
+    seedDefaultAdmin: bootstrapSettings.seedDefaultAdmin,
     agentEnrollmentToken: agentSettings.enrollmentToken,
   });
 
@@ -82,7 +93,23 @@ async function bootstrap() {
           method: RequestMethod.GET,
         },
         {
+          path: 'health/ready',
+          method: RequestMethod.GET,
+        },
+        {
+          path: 'health/dependencies',
+          method: RequestMethod.GET,
+        },
+        {
           path: `${apiPrefix}/health`,
+          method: RequestMethod.GET,
+        },
+        {
+          path: `${apiPrefix}/health/ready`,
+          method: RequestMethod.GET,
+        },
+        {
+          path: `${apiPrefix}/health/dependencies`,
           method: RequestMethod.GET,
         },
       ],

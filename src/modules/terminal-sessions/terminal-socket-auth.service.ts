@@ -3,18 +3,26 @@ import { Socket } from 'socket.io';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { AuthService } from '../auth/auth.service';
 
+type AuthenticatedTerminalSocket = {
+  user: AuthenticatedUser;
+  sessionId: string;
+  workspaceId: string;
+};
+
 @Injectable()
 export class TerminalSocketAuthService {
   constructor(private readonly authService: AuthService) {}
 
-  async authenticateSocket(client: Socket): Promise<AuthenticatedUser> {
+  async authenticateSocket(
+    client: Socket,
+  ): Promise<AuthenticatedTerminalSocket> {
     const accessToken = this.extractAccessToken(client);
 
     if (!accessToken) {
       throw new Error('Missing authentication token');
     }
 
-    return this.authService.verifyAccessToken(accessToken);
+    return this.authService.verifyTerminalConnectToken(accessToken);
   }
 
   private extractAccessToken(client: Socket): string | null {

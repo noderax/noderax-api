@@ -49,6 +49,7 @@ import { OidcProviderEntity } from './entities/oidc-provider.entity';
 
 const MFA_CHALLENGE_EXPIRY = '10m';
 const OIDC_STATE_EXPIRY = '10m';
+const TERMINAL_CONNECT_TOKEN_EXPIRY = '2m';
 const TOTP_ISSUER = 'Noderax';
 const OIDC_DEFAULT_SCOPES = ['openid', 'email', 'profile'];
 type JoseModule = typeof import('jose');
@@ -68,6 +69,12 @@ type OidcStatePayload = {
   providerId: string;
   redirectUri: string;
   next?: string | null;
+};
+
+type TerminalConnectTokenPayload = JwtPayload & {
+  type: 'terminal_session';
+  sessionId: string;
+  workspaceId: string;
 };
 
 type OidcDiscoveryDocument = {
@@ -201,6 +208,60 @@ export class AuthService {
       role: user.role,
       sessionVersion: user.sessionVersion,
     };
+  }
+
+  async createTerminalConnectToken(input: {
+    user: AuthenticatedUser;
+    sessionId: string;
+    workspaceId: string;
+  }): Promise<{ token: string; expiresAt: string }> {
+    const token = await this.jwtService.signAsync(
+      {
+        sub: input.user.id,
+        email: input.user.email,
+        role: input.user.role,
+        name: input.user.name,
+        sessionVersion: input.user.sessionVersion ?? 0,
+        type: 'terminal_session',
+        sessionId: input.sessionId,
+        workspaceId: input.workspaceId,
+      } satisfies TerminalConnectTokenPayload,
+      {
+        expiresIn: TERMINAL_CONNECT_TOKEN_EXPIRY,
+      },
+    );
+
+    return {
+      token,
+      expiresAt: new Date(Date.now() + 2 * 60_000).toISOString(),
+    };
+  }
+
+  async verifyTerminalConnectToken(token: string): Promise<{
+    user: AuthenticatedUser;
+    sessionId: string;
+    workspaceId: string;
+  }> {
+    try {
+      const payload =
+        await this.jwtService.verifyAsync<TerminalConnectTokenPayload>(token);
+
+      if (
+        payload.type !== 'terminal_session' ||
+        !payload.sessionId ||
+        !payload.workspaceId
+      ) {
+        throw new UnauthorizedException('Invalid terminal connection token.');
+      }
+
+      return {
+        user: await this.validateJwtPayload(payload),
+        sessionId: payload.sessionId,
+        workspaceId: payload.workspaceId,
+      };
+    } catch (error) {
+      throw this.createTokenVerificationException(error);
+    }
   }
 
   async initiateMfaSetup(userId: string): Promise<MfaSetupResponseDto> {

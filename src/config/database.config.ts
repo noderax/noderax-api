@@ -44,4 +44,10 @@ export const databaseConfig = registerAs(DATABASE_CONFIG_KEY, () => ({
   ssl:
     getDatabaseEnvValue(process.env, 'DATABASE_SSL', 'DB_SSL', 'false') ===
     'true',
+  sslCaFile: getDatabaseEnvValue(
+    process.env,
+    'DATABASE_SSL_CA_FILE',
+    'DB_SSL_CA_FILE',
+    '',
+  ),
 }));

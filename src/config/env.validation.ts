@@ -21,6 +21,7 @@ export const validationSchema = Joi.object({
   DB_SYNCHRONIZE: Joi.boolean().default(false),
   DB_LOGGING: Joi.boolean().default(false),
   DB_SSL: Joi.boolean().default(false),
+  DB_SSL_CA_FILE: Joi.string().allow('').default(''),
   DATABASE_HOST: Joi.string().optional(),
   DATABASE_PORT: Joi.number().default(5432),
   DATABASE_USERNAME: Joi.string().optional(),
@@ -29,6 +30,7 @@ export const validationSchema = Joi.object({
   DATABASE_SYNCHRONIZE: Joi.boolean().default(false),
   DATABASE_LOGGING: Joi.boolean().default(false),
   DATABASE_SSL: Joi.boolean().default(false),
+  DATABASE_SSL_CA_FILE: Joi.string().allow('').default(''),
 
   // Redis
   REDIS_ENABLED: Joi.boolean().default(true),

@@ -3,6 +3,10 @@ import { AuthenticatedUser } from './authenticated-user.type';
 
 export interface AuthenticatedSocketData {
   user: AuthenticatedUser;
+  terminalSessionAuth?: {
+    sessionId: string;
+    workspaceId: string;
+  };
 }
 
 export type AuthenticatedSocket = Socket<

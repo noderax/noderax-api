@@ -1745,7 +1745,9 @@ export class TasksService {
     return task.isInternal !== true;
   }
 
-  private async handleTaskPostCompletion(_task: TaskEntity): Promise<void> {}
+  private async handleTaskPostCompletion(task: TaskEntity): Promise<void> {
+    void task;
+  }
 
   private assertTaskIdMatchesRoute(
     routeTaskId: string,

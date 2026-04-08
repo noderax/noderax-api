@@ -7,6 +7,7 @@ const DATABASE_ENV_ALIASES = [
   ['DATABASE_SYNCHRONIZE', 'DB_SYNCHRONIZE'],
   ['DATABASE_LOGGING', 'DB_LOGGING'],
   ['DATABASE_SSL', 'DB_SSL'],
+  ['DATABASE_SSL_CA_FILE', 'DB_SSL_CA_FILE'],
 ] as const;
 
 type DatabaseEnvAlias = (typeof DATABASE_ENV_ALIASES)[number];
@@ -29,6 +30,13 @@ export function normalizeDatabaseEnvAliases(env: EnvRecord = process.env) {
       env[canonicalKey] = legacyValue;
     }
   }
+}
+
+export function hasLegacyDatabaseEnvUsage(env: EnvRecord = process.env) {
+  return DATABASE_ENV_ALIASES.some(
+    ([canonicalKey, legacyKey]) =>
+      hasValue(env[legacyKey]) && !hasValue(env[canonicalKey]),
+  );
 }
 
 export function getDatabaseEnvValue(

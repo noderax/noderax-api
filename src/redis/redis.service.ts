@@ -6,6 +6,13 @@ import { REDIS_CONFIG_KEY, redisConfig } from '../config';
 
 type RedisMessageHandler = (payload: Record<string, unknown>) => void;
 
+export type RedisHealthSnapshot = {
+  enabled: boolean;
+  status: string;
+  subscriberStatus: string;
+  instanceId: string;
+};
+
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
@@ -202,6 +209,34 @@ export class RedisService implements OnModuleDestroy {
 
   getInstanceId() {
     return this.instanceId;
+  }
+
+  getHealthSnapshot(): RedisHealthSnapshot {
+    return {
+      enabled: Boolean(this.client),
+      status: this.client?.status ?? 'disabled',
+      subscriberStatus: this.subscriber?.status ?? 'disabled',
+      instanceId: this.instanceId,
+    };
+  }
+
+  async ping(): Promise<boolean> {
+    if (!this.client) {
+      return true;
+    }
+
+    await this.ensureConnected();
+    if (this.client.status !== 'ready') {
+      return false;
+    }
+
+    try {
+      const response = await this.client.ping();
+      return response === 'PONG';
+    } catch (error) {
+      this.logger.warn(`Redis ping failed: ${(error as Error).message}`);
+      return false;
+    }
   }
 
   private async ensureConnected() {

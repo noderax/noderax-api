@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { DataSource } from 'typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { RedisService } from './redis/redis.service';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -8,7 +10,30 @@ describe('AppController', () => {
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [AppService],
+      providers: [
+        AppService,
+        {
+          provide: DataSource,
+          useValue: {
+            isInitialized: true,
+            query: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
+            showMigrations: jest.fn().mockResolvedValue(false),
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: {
+            isEnabled: jest.fn().mockReturnValue(false),
+            ping: jest.fn().mockResolvedValue(true),
+            getHealthSnapshot: jest.fn().mockReturnValue({
+              enabled: false,
+              status: 'disabled',
+              subscriberStatus: 'disabled',
+              instanceId: 'test',
+            }),
+          },
+        },
+      ],
     }).compile();
 
     appController = app.get<AppController>(AppController);

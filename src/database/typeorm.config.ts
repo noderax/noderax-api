@@ -1,6 +1,7 @@
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { DATABASE_CONFIG_KEY, databaseConfig } from '../config';
+import { buildPostgresSslOptions } from '../config/database-ssl.utils';
 
 export function getTypeOrmConfig(
   configService: ConfigService,
@@ -20,6 +21,9 @@ export function getTypeOrmConfig(
     autoLoadEntities: true,
     synchronize: database.synchronize,
     logging: database.logging,
-    ssl: database.ssl ? { rejectUnauthorized: false } : false,
+    ssl: buildPostgresSslOptions({
+      enabled: database.ssl,
+      caFile: database.sslCaFile,
+    }),
   };
 }

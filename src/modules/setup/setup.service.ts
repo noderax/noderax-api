@@ -16,12 +16,15 @@ import {
   getInstallStateHealth,
   hasInstallState,
   INSTALLER_MANAGED_FLAG,
+  splitInstallerEnv,
   writeInstallState,
+  writeInstallSecrets,
 } from '../../install/install-state';
 import { assertValidTimeZone } from '../../common/utils/timezone.util';
 import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
 import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
 import { verifySmtpConnection } from '../../common/utils/smtp.util';
+import { buildPostgresSslOptions } from '../../config/database-ssl.utils';
 import { UserRole } from '../users/entities/user-role.enum';
 import { UserEntity } from '../users/entities/user.entity';
 import { UserInvitationStatus } from '../users/entities/user-invitation.entity';
@@ -146,12 +149,16 @@ export class SetupService {
     }
 
     if (recoverablePartialInstall) {
+      const installEnv = this.buildRuntimeEnv(dto);
+      const { managedEnv, secretEnv } = splitInstallerEnv(installEnv);
+
       writeInstallState({
-        version: 1,
+        version: 2,
         source: 'installer',
         installedAt: new Date().toISOString(),
-        runtimeEnv: this.buildRuntimeEnv(dto),
+        managedEnv,
       });
+      writeInstallSecrets(secretEnv);
 
       this.restartRequired = true;
       this.logger.log('Recovered installer state after a partial setup run');
@@ -185,7 +192,11 @@ export class SetupService {
         username: dto.postgres.username,
         password: dto.postgres.password,
         database: dto.postgres.database,
-        ssl: dto.postgres.ssl ? { rejectUnauthorized: false } : false,
+        ssl: buildPostgresSslOptions({
+          enabled: dto.postgres.ssl,
+          caFile:
+            process.env.DATABASE_SSL_CA_FILE ?? process.env.DB_SSL_CA_FILE,
+        }),
         entities: [...APP_ENTITIES],
         synchronize: true,
         logging: false,
@@ -246,12 +257,16 @@ export class SetupService {
         }),
       );
 
+      const installEnv = this.buildRuntimeEnv(dto);
+      const { managedEnv, secretEnv } = splitInstallerEnv(installEnv);
+
       writeInstallState({
-        version: 1,
+        version: 2,
         source: 'installer',
         installedAt: new Date().toISOString(),
-        runtimeEnv: this.buildRuntimeEnv(dto),
+        managedEnv,
       });
+      writeInstallSecrets(secretEnv);
 
       this.restartRequired = true;
       this.logger.log('Initial installer completed successfully');
@@ -318,7 +333,10 @@ export class SetupService {
       user: dto.username,
       password: dto.password,
       database: dto.database,
-      ssl: dto.ssl ? { rejectUnauthorized: false } : undefined,
+      ssl: buildPostgresSslOptions({
+        enabled: dto.ssl,
+        caFile: process.env.DATABASE_SSL_CA_FILE ?? process.env.DB_SSL_CA_FILE,
+      }),
     });
   }
 
@@ -354,14 +372,25 @@ export class SetupService {
   }
 
   private buildRuntimeEnv(dto: InstallSetupDto): Record<string, string> {
+    const secretsEncryptionKey =
+      process.env.SECRETS_ENCRYPTION_KEY?.trim() || this.generateSecret();
+
     return {
+      DATABASE_HOST: dto.postgres.host,
       DB_HOST: dto.postgres.host,
+      DATABASE_PORT: String(dto.postgres.port ?? 5432),
       DB_PORT: String(dto.postgres.port ?? 5432),
+      DATABASE_USERNAME: dto.postgres.username,
       DB_USERNAME: dto.postgres.username,
+      DATABASE_PASSWORD: dto.postgres.password,
       DB_PASSWORD: dto.postgres.password,
+      DATABASE_NAME: dto.postgres.database,
       DB_NAME: dto.postgres.database,
+      DATABASE_SSL: dto.postgres.ssl ? 'true' : 'false',
       DB_SSL: dto.postgres.ssl ? 'true' : 'false',
+      DATABASE_SYNCHRONIZE: 'false',
       DB_SYNCHRONIZE: 'false',
+      DATABASE_LOGGING: 'false',
       DB_LOGGING: 'false',
       REDIS_ENABLED: 'true',
       REDIS_HOST: dto.redis.host,
@@ -382,6 +411,7 @@ export class SetupService {
       JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? '1d',
       BCRYPT_SALT_ROUNDS:
         process.env.BCRYPT_SALT_ROUNDS ?? String(DEFAULT_BCRYPT_SALT_ROUNDS),
+      SECRETS_ENCRYPTION_KEY: secretsEncryptionKey,
       AGENT_ENROLLMENT_TOKEN: this.generateSecret(),
       SEED_DEFAULT_ADMIN: 'false',
       [INSTALLER_MANAGED_FLAG]: 'true',

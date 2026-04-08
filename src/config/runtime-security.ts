@@ -4,10 +4,12 @@ type ProductionSecurityInput = {
   bootMode: 'setup' | 'installed';
   nodeEnv: string;
   corsOrigin: string;
+  swaggerEnabled: boolean;
   jwtSecret: string;
   secretsEncryptionKey: string;
   adminEmail: string;
   adminPassword: string;
+  seedDefaultAdmin: boolean;
   agentEnrollmentToken?: string | null;
 };
 
@@ -27,6 +29,10 @@ export const assertSafeProductionConfiguration = (
     issues.push(
       `CORS_ORIGIN must list explicit origins in production. Use values such as "https://dash.noderax.net". Current value: "${input.corsOrigin || '*'}".`,
     );
+  }
+
+  if (input.swaggerEnabled) {
+    issues.push('SWAGGER_ENABLED must be disabled in production.');
   }
 
   if (equalsAny(input.jwtSecret, ['noderax-local-secret', 'test-secret'])) {
@@ -52,6 +58,10 @@ export const assertSafeProductionConfiguration = (
 
   if (equalsAny(input.adminEmail, ['admin@example.com'])) {
     issues.push('ADMIN_EMAIL must not use the example default in production.');
+  }
+
+  if (input.seedDefaultAdmin) {
+    issues.push('SEED_DEFAULT_ADMIN must be disabled in production.');
   }
 
   if (

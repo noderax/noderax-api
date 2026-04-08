@@ -94,6 +94,7 @@ function buildTask(partial: Partial<TaskEntity> = {}): TaskEntity {
     templateId: null,
     templateName: null,
     type: 'agent.update',
+    isInternal: false,
     payload: {},
     status: TaskStatus.FAILED,
     result: null,

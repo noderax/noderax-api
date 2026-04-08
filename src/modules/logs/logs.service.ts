@@ -246,7 +246,9 @@ export class LogsService {
       return findLogSourcePresetOrThrow(sourcePresetId);
     } catch (error) {
       throw new BadRequestException(
-        error instanceof Error ? error.message : 'Unsupported log source preset.',
+        error instanceof Error
+          ? error.message
+          : 'Unsupported log source preset.',
       );
     }
   }

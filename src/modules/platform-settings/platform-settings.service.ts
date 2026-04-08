@@ -9,9 +9,13 @@ import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import {
   INSTALLER_MANAGED_FLAG,
+  readInstallSecrets,
+  readManagedInstallEnv,
   readInstallState,
+  splitInstallerEnv,
   type InstallState,
   writeInstallState,
+  writeInstallSecrets,
 } from '../../install/install-state';
 import { verifySmtpConnection } from '../../common/utils/smtp.util';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -26,6 +30,14 @@ const PLATFORM_SETTINGS_ENV_KEYS = [
   'CORS_ORIGIN',
   'SWAGGER_ENABLED',
   'SWAGGER_PATH',
+  'DATABASE_HOST',
+  'DATABASE_PORT',
+  'DATABASE_USERNAME',
+  'DATABASE_PASSWORD',
+  'DATABASE_NAME',
+  'DATABASE_SYNCHRONIZE',
+  'DATABASE_LOGGING',
+  'DATABASE_SSL',
   'DB_HOST',
   'DB_PORT',
   'DB_USERNAME',
@@ -93,26 +105,27 @@ export class PlatformSettingsService {
     const installState =
       readInstallState() ??
       ({
-        version: 1,
+        version: 2,
         source: 'installer',
         installedAt: new Date().toISOString(),
-        runtimeEnv: {},
+        managedEnv: {},
       } satisfies InstallState);
 
     const currentEnv = this.readCurrentRuntimeEnv();
-    const nextEnv = {
+    const nextRuntimeEnv = {
       ...currentEnv,
-      ...installState.runtimeEnv,
       ...this.serializeSettings(dto),
       [INSTALLER_MANAGED_FLAG]: 'true',
     };
+    const { managedEnv, secretEnv } = splitInstallerEnv(nextRuntimeEnv);
 
     const previousSettings = this.mapEnvToSettings(currentEnv);
 
     writeInstallState({
       ...installState,
-      runtimeEnv: nextEnv,
+      managedEnv,
     });
+    writeInstallSecrets(secretEnv);
 
     if (actor) {
       void this.auditLogsService.record({
@@ -133,7 +146,10 @@ export class PlatformSettingsService {
     }
 
     return this.buildResponse({
-      env: nextEnv,
+      env: {
+        ...managedEnv,
+        ...secretEnv,
+      },
       source: 'install_state',
       editable: true,
     });
@@ -251,13 +267,15 @@ export class PlatformSettingsService {
 
   private readCurrentRuntimeEnv(): Record<string, string> {
     const installState = readInstallState();
+    const installSecrets = readInstallSecrets();
     const envFromProcess = Object.fromEntries(
       PLATFORM_SETTINGS_ENV_KEYS.map((key) => [key, process.env[key] ?? '']),
     ) as Record<PlatformSettingsEnvKey, string>;
 
     return {
       ...envFromProcess,
-      ...(installState?.runtimeEnv ?? {}),
+      ...(installState ? readManagedInstallEnv(installState) : {}),
+      ...(installSecrets?.secrets ?? {}),
     };
   }
 
@@ -277,14 +295,20 @@ export class PlatformSettingsService {
         swaggerPath: env.SWAGGER_PATH || 'docs',
       },
       database: {
-        host: env.DB_HOST || '127.0.0.1',
-        port: this.parseInteger(env.DB_PORT, 5432),
-        username: env.DB_USERNAME || 'postgres',
-        password: env.DB_PASSWORD || '',
-        database: env.DB_NAME || 'noderax',
-        synchronize: this.parseBoolean(env.DB_SYNCHRONIZE, false),
-        logging: this.parseBoolean(env.DB_LOGGING, false),
-        ssl: this.parseBoolean(env.DB_SSL, false),
+        host: env.DATABASE_HOST || env.DB_HOST || '127.0.0.1',
+        port: this.parseInteger(env.DATABASE_PORT || env.DB_PORT, 5432),
+        username: env.DATABASE_USERNAME || env.DB_USERNAME || 'postgres',
+        password: env.DATABASE_PASSWORD || env.DB_PASSWORD || '',
+        database: env.DATABASE_NAME || env.DB_NAME || 'noderax',
+        synchronize: this.parseBoolean(
+          env.DATABASE_SYNCHRONIZE || env.DB_SYNCHRONIZE,
+          false,
+        ),
+        logging: this.parseBoolean(
+          env.DATABASE_LOGGING || env.DB_LOGGING,
+          false,
+        ),
+        ssl: this.parseBoolean(env.DATABASE_SSL || env.DB_SSL, false),
       },
       redis: {
         enabled: this.parseBoolean(env.REDIS_ENABLED, true),
@@ -360,13 +384,21 @@ export class PlatformSettingsService {
       CORS_ORIGIN: settings.app.corsOrigin,
       SWAGGER_ENABLED: String(settings.app.swaggerEnabled),
       SWAGGER_PATH: settings.app.swaggerPath,
+      DATABASE_HOST: settings.database.host,
       DB_HOST: settings.database.host,
+      DATABASE_PORT: String(settings.database.port),
       DB_PORT: String(settings.database.port),
+      DATABASE_USERNAME: settings.database.username,
       DB_USERNAME: settings.database.username,
+      DATABASE_PASSWORD: settings.database.password,
       DB_PASSWORD: settings.database.password,
+      DATABASE_NAME: settings.database.database,
       DB_NAME: settings.database.database,
+      DATABASE_SYNCHRONIZE: String(settings.database.synchronize),
       DB_SYNCHRONIZE: String(settings.database.synchronize),
+      DATABASE_LOGGING: String(settings.database.logging),
       DB_LOGGING: String(settings.database.logging),
+      DATABASE_SSL: String(settings.database.ssl),
       DB_SSL: String(settings.database.ssl),
       REDIS_ENABLED: String(settings.redis.enabled),
       REDIS_URL: settings.redis.url,

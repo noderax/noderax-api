@@ -1,11 +1,14 @@
 import {
+  applyInstallSecretEnv,
   applyInstallStateEnv,
   BOOT_MODE_ENV,
   type InstallState,
+  readInstallSecrets,
 } from './install-state';
 import { Client } from 'pg';
 import { normalizeDatabaseEnvAliases } from '../config/database-env.utils';
 import { isWildcardCorsOrigin } from '../config/cors.utils';
+import { buildPostgresSslOptions } from '../config/database-ssl.utils';
 
 export type BootMode = 'setup' | 'installed' | 'legacy';
 
@@ -129,7 +132,12 @@ const detectLegacySchemaState = async (): Promise<
     user: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    ssl: isTrue(process.env.DB_SSL) ? { rejectUnauthorized: false } : false,
+    ssl: buildPostgresSslOptions({
+      enabled: isTrue(process.env.DB_SSL),
+      caFile:
+        trim(process.env.DATABASE_SSL_CA_FILE) ||
+        trim(process.env.DB_SSL_CA_FILE),
+    }),
   });
 
   try {
@@ -184,9 +192,16 @@ export const prepareBootEnvironment = async (
   installState: InstallState | null,
 ) => {
   const bootMode = await resolveBootMode(installState);
+  const installSecrets = readInstallSecrets();
 
   if (installState) {
     applyInstallStateEnv(installState, {
+      shouldPreserveExisting: shouldPreferProcessEnvOverInstallState,
+    });
+  }
+
+  if (installSecrets) {
+    applyInstallSecretEnv(installSecrets, {
       shouldPreserveExisting: shouldPreferProcessEnvOverInstallState,
     });
   }

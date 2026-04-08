@@ -7,14 +7,58 @@ let installStateValue: {
   version: number;
   source: 'installer';
   installedAt: string;
-  runtimeEnv: Record<string, string>;
+  managedEnv?: Record<string, string>;
+  runtimeEnv?: Record<string, string>;
+} | null = null;
+let installSecretsValue: {
+  version: number;
+  source: 'installer';
+  updatedAt: string;
+  secrets: Record<string, string>;
 } | null = null;
 
 jest.mock('../../install/install-state', () => ({
   INSTALLER_MANAGED_FLAG: 'NODERAX_INSTALLER_MANAGED',
   readInstallState: jest.fn(() => installStateValue),
+  readInstallSecrets: jest.fn(() => installSecretsValue),
+  readManagedInstallEnv: jest.fn(
+    (value) => value?.managedEnv ?? value?.runtimeEnv ?? {},
+  ),
+  splitInstallerEnv: jest.fn((input) => ({
+    managedEnv: Object.fromEntries(
+      Object.entries(input).filter(
+        ([key]) =>
+          ![
+            'DB_PASSWORD',
+            'DATABASE_PASSWORD',
+            'JWT_SECRET',
+            'SMTP_PASSWORD',
+            'AGENT_ENROLLMENT_TOKEN',
+          ].includes(key),
+      ),
+    ),
+    secretEnv: Object.fromEntries(
+      Object.entries(input).filter(([key]) =>
+        [
+          'DB_PASSWORD',
+          'DATABASE_PASSWORD',
+          'JWT_SECRET',
+          'SMTP_PASSWORD',
+          'AGENT_ENROLLMENT_TOKEN',
+        ].includes(key),
+      ),
+    ),
+  })),
   writeInstallState: jest.fn((value) => {
     installStateValue = value;
+  }),
+  writeInstallSecrets: jest.fn((value) => {
+    installSecretsValue = {
+      version: 1,
+      source: 'installer',
+      updatedAt: new Date().toISOString(),
+      secrets: value,
+    };
   }),
 }));
 
@@ -31,6 +75,7 @@ describe('PlatformSettingsService', () => {
 
   beforeEach(() => {
     installStateValue = null;
+    installSecretsValue = null;
     process.env = { ...envSnapshot };
     delete process.env[INSTALLER_MANAGED_FLAG];
     jest.clearAllMocks();
@@ -73,15 +118,19 @@ describe('PlatformSettingsService', () => {
 
     expect(response.mail).toEqual(buildMailDto());
     expect(response.restartRequired).toBe(true);
-    expect(installStateValue?.runtimeEnv).toMatchObject({
+    expect(
+      installStateValue?.managedEnv ?? installStateValue?.runtimeEnv,
+    ).toMatchObject({
       SMTP_HOST: 'smtp.resend.com',
       SMTP_PORT: '587',
       SMTP_SECURE: 'false',
       SMTP_USERNAME: 'resend',
-      SMTP_PASSWORD: 'secret',
       SMTP_FROM_EMAIL: 'info@noderax.net',
       SMTP_FROM_NAME: 'Noderax Support',
       WEB_APP_URL: 'https://app.noderax.net',
+    });
+    expect(installSecretsValue?.secrets).toMatchObject({
+      SMTP_PASSWORD: 'secret',
     });
   });
 
@@ -90,11 +139,11 @@ describe('PlatformSettingsService', () => {
       version: 1,
       source: 'installer',
       installedAt: new Date().toISOString(),
-      runtimeEnv: buildRuntimeEnv(),
+      managedEnv: buildRuntimeEnv(),
     };
     process.env = {
       ...process.env,
-      ...installStateValue.runtimeEnv,
+      ...(installStateValue.managedEnv ?? installStateValue.runtimeEnv),
       [INSTALLER_MANAGED_FLAG]: 'true',
     };
 

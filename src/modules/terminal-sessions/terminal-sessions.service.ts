@@ -28,12 +28,17 @@ import { RequestAuditContext } from '../../common/types/request-audit-context.ty
 import { RedisService } from '../../redis/redis.service';
 import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { AuthService } from '../auth/auth.service';
 import { NodeStatus } from '../nodes/entities/node-status.enum';
 import { NodesService } from '../nodes/nodes.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { CreateTerminalSessionDto } from './dto/create-terminal-session.dto';
 import { QueryTerminalSessionChunksDto } from './dto/query-terminal-session-chunks.dto';
 import { QueryTerminalSessionsDto } from './dto/query-terminal-sessions.dto';
+import {
+  TerminalSessionConnectResponseDto,
+  TerminalSessionConnectTokenDto,
+} from './dto/terminal-session-connect-response.dto';
 import { TerminalSessionChunkEntity } from './entities/terminal-session-chunk.entity';
 import { TerminalSessionEntity } from './entities/terminal-session.entity';
 import { TerminalSessionStatus } from './entities/terminal-session-status.enum';
@@ -88,6 +93,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     private readonly chunksRepository: Repository<TerminalSessionChunkEntity>,
     private readonly nodesService: NodesService,
     private readonly workspacesService: WorkspacesService,
+    private readonly authService: AuthService,
     private readonly agentRealtimeService: AgentRealtimeService,
     private readonly auditLogsService: AuditLogsService,
     private readonly redisService: RedisService,
@@ -152,7 +158,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     dto: CreateTerminalSessionDto,
     user: AuthenticatedUser,
     context?: RequestAuditContext,
-  ): Promise<TerminalSessionEntity> {
+  ): Promise<TerminalSessionConnectResponseDto> {
     await this.workspacesService.assertWorkspaceAdmin(workspaceId, user);
     await this.workspacesService.assertWorkspaceWritable(workspaceId);
 
@@ -240,14 +246,44 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     );
 
     if (!dispatched) {
-      return this.markFailed(
+      const failedSession = await this.markFailed(
         session.id,
         workspaceId,
         'Agent route was not available to start the terminal session.',
       );
+      return this.buildConnectResponse(failedSession, user);
     }
 
-    return session;
+    return this.buildConnectResponse(session, user);
+  }
+
+  async issueConnectToken(
+    workspaceId: string,
+    sessionId: string,
+    user: AuthenticatedUser,
+  ): Promise<TerminalSessionConnectTokenDto> {
+    const session = await this.findSessionOrFail(sessionId, workspaceId);
+    await this.workspacesService.assertWorkspaceAdmin(workspaceId, user);
+    this.assertCanControlSession(user, session);
+    await this.workspacesService.assertWorkspaceWritable(session.workspaceId);
+
+    if (this.isTerminal(session.status)) {
+      throw new ConflictException(
+        'Terminal session is no longer active for websocket attachment.',
+      );
+    }
+
+    const token = await this.authService.createTerminalConnectToken({
+      user,
+      sessionId: session.id,
+      workspaceId: session.workspaceId,
+    });
+
+    return {
+      sessionId: session.id,
+      terminalConnectToken: token.token,
+      terminalConnectExpiresAt: token.expiresAt,
+    };
   }
 
   async listNodeSessions(
@@ -731,6 +767,23 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       exitCode: null,
       closedAt: this.parseOptionalDate(timestamp) ?? new Date(),
     });
+  }
+
+  private async buildConnectResponse(
+    session: TerminalSessionEntity,
+    user: AuthenticatedUser,
+  ): Promise<TerminalSessionConnectResponseDto> {
+    const token = await this.authService.createTerminalConnectToken({
+      user,
+      sessionId: session.id,
+      workspaceId: session.workspaceId,
+    });
+
+    return {
+      ...session,
+      terminalConnectToken: token.token,
+      terminalConnectExpiresAt: token.expiresAt,
+    };
   }
 
   private async closeSession(

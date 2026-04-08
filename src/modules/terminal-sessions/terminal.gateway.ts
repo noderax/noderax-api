@@ -26,6 +26,14 @@ import { TerminalTerminateMessageDto } from './dto/terminal-terminate-message.dt
 import { TerminalSocketAuthService } from './terminal-socket-auth.service';
 import { TerminalSessionsService } from './terminal-sessions.service';
 
+const TERMINAL_SOCKET_RATE_LIMIT_WINDOW_MS = 5_000;
+const TERMINAL_SOCKET_RATE_LIMITS = {
+  attach: 20,
+  input: 240,
+  resize: 60,
+  terminate: 20,
+} as const;
+
 @Public()
 @WebSocketGateway({
   namespace: TERMINAL_NAMESPACE,
@@ -43,6 +51,10 @@ export class TerminalGateway
     transform: true,
     forbidNonWhitelisted: true,
   });
+  private readonly socketActionCounters = new Map<
+    string,
+    Map<string, { count: number; windowStartedAt: number }>
+  >();
 
   constructor(
     private readonly terminalSocketAuthService: TerminalSocketAuthService,
@@ -67,6 +79,7 @@ export class TerminalGateway
 
   async handleDisconnect(client: AuthenticatedSocket): Promise<void> {
     await this.terminalSessionsService.detachController(client.id);
+    this.socketActionCounters.delete(client.id);
     this.logger.debug(`Terminal client disconnected: ${client.id}`);
   }
 
@@ -80,6 +93,8 @@ export class TerminalGateway
         type: 'body',
         metatype: TerminalAttachMessageDto,
       });
+      this.assertSocketRateLimit(client, 'attach');
+      this.assertSocketSessionScope(client, body.sessionId);
 
       const session = await this.terminalSessionsService.attachController(
         body.sessionId,
@@ -120,6 +135,8 @@ export class TerminalGateway
         type: 'body',
         metatype: TerminalInputMessageDto,
       });
+      this.assertSocketRateLimit(client, 'input');
+      this.assertSocketSessionScope(client, body.sessionId);
 
       await this.terminalSessionsService.handleControllerInput(
         body.sessionId,
@@ -147,6 +164,8 @@ export class TerminalGateway
         type: 'body',
         metatype: TerminalResizeMessageDto,
       });
+      this.assertSocketRateLimit(client, 'resize');
+      this.assertSocketSessionScope(client, body.sessionId);
 
       const session = await this.terminalSessionsService.handleControllerResize(
         body.sessionId,
@@ -180,6 +199,8 @@ export class TerminalGateway
         type: 'body',
         metatype: TerminalTerminateMessageDto,
       });
+      this.assertSocketRateLimit(client, 'terminate');
+      this.assertSocketSessionScope(client, body.sessionId);
 
       const session = await this.terminalSessionsService.terminateSession(
         undefined,
@@ -203,9 +224,13 @@ export class TerminalGateway
     next: (error?: Error) => void,
   ): Promise<void> {
     try {
-      const user =
+      const auth =
         await this.terminalSocketAuthService.authenticateSocket(client);
-      (client as AuthenticatedSocket).data.user = user;
+      (client as AuthenticatedSocket).data.user = auth.user;
+      (client as AuthenticatedSocket).data.terminalSessionAuth = {
+        sessionId: auth.sessionId,
+        workspaceId: auth.workspaceId,
+      };
       next();
     } catch (error) {
       const message =
@@ -218,6 +243,54 @@ export class TerminalGateway
         message,
       };
       next(connectionError);
+    }
+  }
+
+  private assertSocketSessionScope(
+    client: AuthenticatedSocket,
+    sessionId: string,
+  ) {
+    const scopedSessionId = client.data.terminalSessionAuth?.sessionId;
+    if (!scopedSessionId || scopedSessionId !== sessionId) {
+      throw new Error(
+        'Terminal websocket token is not authorized for this session.',
+      );
+    }
+  }
+
+  private assertSocketRateLimit(
+    client: AuthenticatedSocket,
+    action: keyof typeof TERMINAL_SOCKET_RATE_LIMITS,
+  ) {
+    const socketState =
+      this.socketActionCounters.get(client.id) ??
+      new Map<string, { count: number; windowStartedAt: number }>();
+    const now = Date.now();
+    const current = socketState.get(action);
+
+    if (
+      !current ||
+      now - current.windowStartedAt >= TERMINAL_SOCKET_RATE_LIMIT_WINDOW_MS
+    ) {
+      socketState.set(action, {
+        count: 1,
+        windowStartedAt: now,
+      });
+      this.socketActionCounters.set(client.id, socketState);
+      return;
+    }
+
+    const nextCount = current.count + 1;
+    socketState.set(action, {
+      count: nextCount,
+      windowStartedAt: current.windowStartedAt,
+    });
+    this.socketActionCounters.set(client.id, socketState);
+
+    if (nextCount > TERMINAL_SOCKET_RATE_LIMITS[action]) {
+      throw new Error(
+        `Terminal ${action} rate limit exceeded for this socket.`,
+      );
     }
   }
 
