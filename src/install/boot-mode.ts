@@ -61,6 +61,8 @@ export const shouldPreferProcessEnvOverInstallState = (input: {
         !isWildcardCorsOrigin(currentValue) &&
         isWildcardCorsOrigin(incomingValue)
       );
+    case 'SWAGGER_ENABLED':
+      return currentValue === 'false' && incomingValue === 'true';
     case 'JWT_SECRET':
       return (
         !equalsAny(currentValue, ['noderax-local-secret', 'test-secret']) &&
@@ -87,6 +89,8 @@ export const shouldPreferProcessEnvOverInstallState = (input: {
         !equalsAny(currentValue, ['ChangeMe123!', 'change-me', 'password']) &&
         equalsAny(incomingValue, ['ChangeMe123!', 'change-me', 'password'])
       );
+    case 'SEED_DEFAULT_ADMIN':
+      return currentValue === 'false' && incomingValue === 'true';
     case 'AGENT_ENROLLMENT_TOKEN':
       return (
         !equalsAny(currentValue, ['secret-enrollment-token', 'change-me']) &&

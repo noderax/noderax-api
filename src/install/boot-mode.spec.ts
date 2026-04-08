@@ -21,6 +21,26 @@ describe('boot-mode safer env preservation', () => {
     ).toBe(true);
   });
 
+  it('preserves an explicit production swagger disable over installer state', () => {
+    expect(
+      shouldPreferProcessEnvOverInstallState({
+        key: 'SWAGGER_ENABLED',
+        currentValue: 'false',
+        incomingValue: 'true',
+      }),
+    ).toBe(true);
+  });
+
+  it('preserves an explicit production seed disable over installer state', () => {
+    expect(
+      shouldPreferProcessEnvOverInstallState({
+        key: 'SEED_DEFAULT_ADMIN',
+        currentValue: 'false',
+        incomingValue: 'true',
+      }),
+    ).toBe(true);
+  });
+
   it('does not override installer state when the incoming value is already explicit', () => {
     expect(
       shouldPreferProcessEnvOverInstallState({
