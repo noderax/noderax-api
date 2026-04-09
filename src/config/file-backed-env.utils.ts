@@ -6,6 +6,8 @@ const hasValue = (value?: string | null): value is string =>
   typeof value === 'string' && value.trim().length > 0;
 
 const normalizeFileValue = (value: string) => value.replace(/\r?\n$/, '');
+const hasExplicitEnvKey = (env: NodeJS.ProcessEnv, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(env, key);
 
 export function applyFileBackedEnv(env: NodeJS.ProcessEnv = process.env): void {
   for (const [key, filePath] of Object.entries(env)) {
@@ -14,7 +16,7 @@ export function applyFileBackedEnv(env: NodeJS.ProcessEnv = process.env): void {
     }
 
     const targetKey = key.slice(0, -FILE_ENV_SUFFIX.length);
-    if (!targetKey || hasValue(env[targetKey])) {
+    if (!targetKey || hasExplicitEnvKey(env, targetKey)) {
       continue;
     }
 
