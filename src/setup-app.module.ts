@@ -11,7 +11,7 @@ import configuration from './config/configuration';
 import { normalizeDatabaseEnvAliases } from './config/database-env.utils';
 import { LegacyHealthController } from './legacy-health.controller';
 import { SetupModule } from './modules/setup/setup.module';
-import { RuntimeModule } from './runtime/runtime.module';
+import { PrometheusMetricsService } from './runtime/prometheus-metrics.service';
 
 normalizeDatabaseEnvAliases();
 
@@ -27,12 +27,12 @@ normalizeDatabaseEnvAliases();
         limit: 100,
       },
     ]),
-    RuntimeModule,
     SetupModule,
   ],
   controllers: [AppController, LegacyHealthController],
   providers: [
     AppService,
+    PrometheusMetricsService,
     AllExceptionsFilter,
     LoggingInterceptor,
     {
