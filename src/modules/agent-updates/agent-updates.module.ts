@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AgentAuthGuard } from '../../common/guards/agent-auth.guard';
+import { legacyOnlyProviders } from '../../install/legacy-bootstrap.utils';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { EventsModule } from '../events/events.module';
 import { NodeEntity } from '../nodes/entities/node.entity';
@@ -34,8 +35,8 @@ import { TaskEntity } from '../tasks/entities/task.entity';
     AgentUpdatesService,
     AgentReleaseCatalogService,
     AgentUpdateRolloutMonitorService,
-    AgentUpdateSchemaBootstrap,
     AgentAuthGuard,
+    ...legacyOnlyProviders([AgentUpdateSchemaBootstrap]),
   ],
   exports: [AgentUpdatesService],
 })

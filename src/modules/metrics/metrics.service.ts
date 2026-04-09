@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,6 +9,7 @@ import { RedisService } from '../../redis/redis.service';
 import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { NodesService } from '../nodes/nodes.service';
+import { OutboxService } from '../outbox/outbox.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AgentMetricsDto } from './dto/agent-metrics.dto';
 import { QueryMetricsDto } from './dto/query-metrics.dto';
@@ -24,6 +25,8 @@ export class MetricsService {
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
+    @Optional()
+    private readonly outboxService?: OutboxService,
   ) {}
 
   async ingest(agentMetricsDto: AgentMetricsDto) {
@@ -82,15 +85,26 @@ export class MetricsService {
       });
     }
 
-    this.realtimeGateway.emitMetricIngested({
-      ...(savedMetric as unknown as Record<string, unknown>),
-      agentVersion: agentMetricsDto.agentVersion ?? null,
-    });
-    await this.redisService.publish(PUBSUB_CHANNELS.METRICS_INGESTED, {
+    const metricPayload = {
       ...(savedMetric as unknown as Record<string, unknown>),
       agentVersion: agentMetricsDto.agentVersion ?? null,
       sourceInstanceId: this.redisService.getInstanceId(),
-    });
+    };
+
+    if (this.outboxService) {
+      await this.outboxService.enqueue({
+        type: 'metric.ingested',
+        payload: {
+          metric: metricPayload,
+        },
+      });
+    } else {
+      this.realtimeGateway.emitMetricIngested(metricPayload);
+      await this.redisService.publish(
+        PUBSUB_CHANNELS.METRICS_INGESTED,
+        metricPayload,
+      );
+    }
 
     return savedMetric;
   }

@@ -49,7 +49,7 @@ src/
 
 ## Platform Surface
 
-- Installer-managed first-run setup with `setup`, `installed`, `legacy`, and `restart_required` modes
+- Installer-managed first-run setup with `setup`, `promoting`, `installed`, and `legacy` runtime states
 - Setup-time PostgreSQL, Redis, and optional SMTP validation
 - Global user directory with platform-admin-only CRUD
 - Invite-only operator onboarding with transactional email delivery
@@ -349,8 +349,8 @@ Important behavior:
   Fresh install. The API exposes setup endpoints under `/api/v1/setup/*` and waits for first-time provisioning.
 - `installed` mode:
   The installer has completed and the normal app surface is active.
-- `restart_required` mode:
-  Installer-managed settings were updated and a restart is needed before they fully apply.
+- `promoting` mode:
+  Setup install completed and the host-side supervisor is replacing the setup stack with the HA runtime stack.
 - `legacy` mode:
   Existing schema and env-driven installs continue to boot without installer ownership.
 

@@ -2,8 +2,11 @@ import { AuditLogEntity } from '../modules/audit-logs/entities/audit-log.entity'
 import { OidcIdentityEntity } from '../modules/auth/entities/oidc-identity.entity';
 import { OidcProviderEntity } from '../modules/auth/entities/oidc-provider.entity';
 import { AgentTaskLifecycleEventEntity } from '../modules/agent-realtime/entities/agent-task-lifecycle-event.entity';
+import { AgentUpdateRolloutTargetEntity } from '../modules/agent-updates/entities/agent-update-rollout-target.entity';
+import { AgentUpdateRolloutEntity } from '../modules/agent-updates/entities/agent-update-rollout.entity';
 import { EnrollmentEntity } from '../modules/enrollments/entities/enrollment.entity';
 import { NodeInstallEntity } from '../modules/enrollments/entities/node-install.entity';
+import { OutboxEventEntity } from '../modules/outbox/entities/outbox-event.entity';
 import { EventEntity } from '../modules/events/entities/event.entity';
 import { IncidentAnalysisEntity } from '../modules/incidents/entities/incident-analysis.entity';
 import { IncidentEntity } from '../modules/incidents/entities/incident.entity';
@@ -52,4 +55,7 @@ export const APP_ENTITIES = [
   OidcProviderEntity,
   OidcIdentityEntity,
   AgentTaskLifecycleEventEntity,
+  AgentUpdateRolloutEntity,
+  AgentUpdateRolloutTargetEntity,
+  OutboxEventEntity,
 ] as const;

@@ -7,6 +7,7 @@ import {
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { hostname } from 'os';
 import { randomUUID } from 'crypto';
+import { ClusterLockService } from '../../runtime/cluster-lock.service';
 import { SCHEDULED_TASK_RUNNER_INTERVAL_MS } from './scheduled-task.utils';
 import { ScheduledTasksService } from './scheduled-tasks.service';
 
@@ -22,6 +23,7 @@ export class ScheduledTaskRunnerService
   constructor(
     private readonly scheduledTasksService: ScheduledTasksService,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly clusterLockService: ClusterLockService,
   ) {}
 
   onModuleInit(): void {
@@ -60,24 +62,35 @@ export class ScheduledTaskRunnerService
     this.isRunning = true;
 
     try {
-      while (true) {
-        const scheduledTask =
-          await this.scheduledTasksService.claimNextDueSchedule(
-            this.instanceId,
-          );
+      const run = await this.clusterLockService.runWithLock(
+        this.intervalName,
+        async () => {
+          while (true) {
+            const scheduledTask =
+              await this.scheduledTasksService.claimNextDueSchedule(
+                this.instanceId,
+              );
 
-        if (!scheduledTask) {
-          return;
-        }
+            if (!scheduledTask) {
+              return;
+            }
 
-        const result =
-          await this.scheduledTasksService.triggerClaimedSchedule(
-            scheduledTask,
-          );
+            const result =
+              await this.scheduledTasksService.triggerClaimedSchedule(
+                scheduledTask,
+              );
 
-        if (!result.ok) {
-          return;
-        }
+            if (!result.ok) {
+              return;
+            }
+          }
+        },
+      );
+
+      if (!run.acquired) {
+        this.logger.debug(
+          'Skipping scheduled task runner because another API instance currently owns the cluster lock',
+        );
       }
     } catch (error) {
       const message =

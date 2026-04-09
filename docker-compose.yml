@@ -13,6 +13,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       SWAGGER_ENABLED: "false"
+      FAIL_ON_PENDING_MIGRATIONS: ${FAIL_ON_PENDING_MIGRATIONS:-true}
       NODERAX_STATE_DIR: /data/noderax
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
@@ -42,7 +43,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+          "fetch('http://127.0.0.1:3000/health/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
         ]
       interval: 15s
       timeout: 5s

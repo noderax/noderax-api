@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { legacyOnlyProviders } from '../../install/legacy-bootstrap.utils';
 import { AuthModule } from '../auth/auth.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NodesModule } from '../nodes/nodes.module';
@@ -32,7 +33,7 @@ import { TerminalSessionSchemaBootstrap } from './bootstrap/terminal-session-sch
     TerminalSessionsService,
     TerminalGateway,
     TerminalSocketAuthService,
-    TerminalSessionSchemaBootstrap,
+    ...legacyOnlyProviders([TerminalSessionSchemaBootstrap]),
   ],
   exports: [TerminalSessionsService],
 })

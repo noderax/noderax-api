@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkspaceMembershipGuard } from '../../common/guards/workspace-membership.guard';
 import { WorkspaceRolesGuard } from '../../common/guards/workspace-roles.guard';
+import { legacyOnlyProviders } from '../../install/legacy-bootstrap.utils';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { EventEntity } from '../events/entities/event.entity';
 import { NodeEntity } from '../nodes/entities/node.entity';
@@ -37,10 +38,9 @@ import { WorkspacesService } from './workspaces.service';
   controllers: [WorkspacesController],
   providers: [
     WorkspacesService,
-    WorkspaceSchemaBootstrap,
-    WorkspaceDataBootstrap,
     WorkspaceMembershipGuard,
     WorkspaceRolesGuard,
+    ...legacyOnlyProviders([WorkspaceSchemaBootstrap, WorkspaceDataBootstrap]),
   ],
   exports: [WorkspacesService, WorkspaceMembershipGuard, WorkspaceRolesGuard],
 })

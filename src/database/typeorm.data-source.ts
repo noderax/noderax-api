@@ -3,8 +3,10 @@ import { join } from 'path';
 import { DataSource } from 'typeorm';
 import { APP_ENTITIES } from './app-entities';
 import { normalizeDatabaseEnvAliases } from '../config/database-env.utils';
+import { applyFileBackedEnv } from '../config/file-backed-env.utils';
 import { buildPostgresSslOptions } from '../config/database-ssl.utils';
 
+applyFileBackedEnv();
 normalizeDatabaseEnvAliases();
 
 const isTrue = (value?: string | null) =>

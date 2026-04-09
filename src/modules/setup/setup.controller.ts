@@ -19,6 +19,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
 import { InstallSetupDto } from './dto/install-setup.dto';
 import { InstallSetupResponseDto } from './dto/install-setup-response.dto';
+import { RuntimePresetResponseDto } from './dto/runtime-preset-response.dto';
 import { SetupStatusResponseDto } from './dto/setup-status-response.dto';
 import { ValidatePostgresConnectionDto } from './dto/validate-postgres-connection.dto';
 import { ValidatePostgresResponseDto } from './dto/validate-postgres-response.dto';
@@ -47,6 +48,17 @@ export class SetupController {
   })
   getStatus() {
     return this.setupService.getStatus();
+  }
+
+  @Get('runtime-preset')
+  @ApiOperation({
+    summary: 'Read installer runtime preset',
+  })
+  @ApiOkResponse({
+    type: RuntimePresetResponseDto,
+  })
+  getRuntimePreset() {
+    return this.setupService.getRuntimePreset();
   }
 
   @Post('validate/postgres')

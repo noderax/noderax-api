@@ -12,13 +12,16 @@ import { DataSource } from 'typeorm';
 import { APP_ENTITIES } from '../../database/app-entities';
 import {
   BOOT_MODE_ENV,
+  clearInstallTransitionState,
   ensureInstallStateWritable,
   getInstallStateHealth,
   hasInstallState,
   INSTALLER_MANAGED_FLAG,
+  readInstallTransitionState,
   splitInstallerEnv,
   writeInstallState,
   writeInstallSecrets,
+  writeInstallTransitionState,
 } from '../../install/install-state';
 import { assertValidTimeZone } from '../../common/utils/timezone.util';
 import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
@@ -28,15 +31,12 @@ import { buildPostgresSslOptions } from '../../config/database-ssl.utils';
 import { UserRole } from '../users/entities/user-role.enum';
 import { UserEntity } from '../users/entities/user.entity';
 import { UserInvitationStatus } from '../users/entities/user-invitation.entity';
-import { EnrollmentSchemaBootstrap } from '../enrollments/bootstrap/enrollment-schema.bootstrap';
 import { WorkspaceMembershipRole } from '../workspaces/entities/workspace-membership-role.enum';
 import { WorkspaceEntity } from '../workspaces/entities/workspace.entity';
 import { WorkspaceMembershipEntity } from '../workspaces/entities/workspace-membership.entity';
-import { ScheduledTaskSchemaBootstrap } from '../tasks/bootstrap/scheduled-task-schema.bootstrap';
-import { TaskSchemaBootstrap } from '../tasks/bootstrap/task-schema.bootstrap';
-import { UserPreferencesSchemaBootstrap } from '../users/bootstrap/user-preferences-schema.bootstrap';
-import { WorkspaceSchemaBootstrap } from '../workspaces/bootstrap/workspace-schema.bootstrap';
+import { join } from 'path';
 import { InstallSetupDto } from './dto/install-setup.dto';
+import { RuntimePresetResponseDto } from './dto/runtime-preset-response.dto';
 import { SetupStatusResponseDto } from './dto/setup-status-response.dto';
 import { ValidatePostgresConnectionDto } from './dto/validate-postgres-connection.dto';
 import { ValidatePostgresResponseDto } from './dto/validate-postgres-response.dto';
@@ -48,16 +48,15 @@ const DEFAULT_BCRYPT_SALT_ROUNDS = 12;
 @Injectable()
 export class SetupService {
   private readonly logger = new Logger(SetupService.name);
-  private restartRequired = false;
 
   getStatus(): SetupStatusResponseDto {
     const stateDirectory = getInstallStateHealth();
-
-    if (this.restartRequired) {
+    const transition = readInstallTransitionState();
+    if (transition?.status === 'promoting') {
       return {
-        mode: 'restart_required',
+        mode: 'promoting',
         installed: false,
-        restartRequired: true,
+        restartRequired: false,
         stateDirectory,
       };
     }
@@ -91,6 +90,46 @@ export class SetupService {
           stateDirectory,
         };
     }
+  }
+
+  getRuntimePreset(): RuntimePresetResponseDto {
+    const publicOrigin =
+      process.env.NODERAX_PUBLIC_ORIGIN?.trim() ||
+      process.env.WEB_APP_URL?.trim() ||
+      null;
+
+    return {
+      mode:
+        process.env.NODERAX_INSTALLER_PRESET_MODE === 'manual'
+          ? 'manual'
+          : 'local_bundle',
+      publicOrigin,
+      postgresPreset: {
+        host: process.env.DATABASE_HOST ?? process.env.DB_HOST ?? 'postgres',
+        port: Number(process.env.DATABASE_PORT ?? process.env.DB_PORT ?? 5432),
+        username:
+          process.env.DATABASE_USERNAME ??
+          process.env.DB_USERNAME ??
+          'postgres',
+        password:
+          process.env.DATABASE_PASSWORD ?? process.env.DB_PASSWORD ?? '',
+        database: process.env.DATABASE_NAME ?? process.env.DB_NAME ?? 'noderax',
+        ssl:
+          process.env.DATABASE_SSL === 'true' || process.env.DB_SSL === 'true',
+      },
+      redisPreset: {
+        host: process.env.REDIS_HOST ?? 'redis',
+        port: Number(process.env.REDIS_PORT ?? 6379),
+        db: Number(process.env.REDIS_DB ?? 0),
+        password: process.env.REDIS_PASSWORD ?? '',
+      },
+      editableFields: {
+        postgres: true,
+        redis: true,
+        mail: true,
+        publicOrigin: false,
+      },
+    };
   }
 
   async validatePostgres(
@@ -148,27 +187,6 @@ export class SetupService {
       );
     }
 
-    if (recoverablePartialInstall) {
-      const installEnv = this.buildRuntimeEnv(dto);
-      const { managedEnv, secretEnv } = splitInstallerEnv(installEnv);
-
-      writeInstallState({
-        version: 2,
-        source: 'installer',
-        installedAt: new Date().toISOString(),
-        managedEnv,
-      });
-      writeInstallSecrets(secretEnv);
-
-      this.restartRequired = true;
-      this.logger.log('Recovered installer state after a partial setup run');
-
-      return {
-        success: true as const,
-        restartRequired: true as const,
-      };
-    }
-
     let dataSource: DataSource | null = null;
     const postgresClient = this.createPostgresClient(dto.postgres);
 
@@ -198,17 +216,13 @@ export class SetupService {
             process.env.DATABASE_SSL_CA_FILE ?? process.env.DB_SSL_CA_FILE,
         }),
         entities: [...APP_ENTITIES],
-        synchronize: true,
+        migrations: [join(__dirname, '../../database/migrations/*{.ts,.js}')],
+        synchronize: false,
         logging: false,
       });
 
       await dataSource.initialize();
-
-      await new EnrollmentSchemaBootstrap(dataSource).onModuleInit();
-      await new UserPreferencesSchemaBootstrap(dataSource).onModuleInit();
-      await new TaskSchemaBootstrap(dataSource).onModuleInit();
-      await new ScheduledTaskSchemaBootstrap(dataSource).onModuleInit();
-      await new WorkspaceSchemaBootstrap(dataSource).onModuleInit();
+      await dataSource.runMigrations();
 
       const usersRepository = dataSource.getRepository(UserEntity);
       const workspacesRepository = dataSource.getRepository(WorkspaceEntity);
@@ -260,6 +274,7 @@ export class SetupService {
       const installEnv = this.buildRuntimeEnv(dto);
       const { managedEnv, secretEnv } = splitInstallerEnv(installEnv);
 
+      clearInstallTransitionState();
       writeInstallState({
         version: 2,
         source: 'installer',
@@ -267,13 +282,21 @@ export class SetupService {
         managedEnv,
       });
       writeInstallSecrets(secretEnv);
+      writeInstallTransitionState({
+        status: 'promoting',
+        target: 'runtime_ha',
+        details: {
+          publicOrigin: dto.mail.webAppUrl,
+        },
+      });
 
-      this.restartRequired = true;
       this.logger.log('Initial installer completed successfully');
 
       return {
         success: true as const,
-        restartRequired: true as const,
+        restartRequired: false as const,
+        setupComplete: true as const,
+        transition: 'promoting_runtime' as const,
       };
     } finally {
       if (dataSource?.isInitialized) {
@@ -449,26 +472,30 @@ export class SetupService {
       }
 
       const result = await client.query<{
-        adminCount: string;
+        userCount: string;
         workspaceCount: string;
-        ownerMembershipCount: string;
+        membershipCount: string;
         nodeCount: string;
         taskCount: string;
         scheduledTaskCount: string;
         eventCount: string;
         metricCount: string;
         enrollmentCount: string;
+        nodeInstallCount: string;
+        outboxCount: string;
       }>(`
         SELECT
-          (SELECT COUNT(*)::text FROM "users" WHERE "role"::text = 'platform_admin') AS "adminCount",
+          (SELECT COUNT(*)::text FROM "users") AS "userCount",
           (SELECT COUNT(*)::text FROM "workspaces") AS "workspaceCount",
-          (SELECT COUNT(*)::text FROM "workspace_memberships" WHERE "role"::text = 'owner') AS "ownerMembershipCount",
+          (SELECT COUNT(*)::text FROM "workspace_memberships") AS "membershipCount",
           (SELECT COUNT(*)::text FROM "nodes") AS "nodeCount",
           (SELECT COUNT(*)::text FROM "tasks") AS "taskCount",
           (SELECT COUNT(*)::text FROM "scheduled_tasks") AS "scheduledTaskCount",
           (SELECT COUNT(*)::text FROM "events") AS "eventCount",
           (SELECT COUNT(*)::text FROM "metrics") AS "metricCount",
-          (SELECT COUNT(*)::text FROM "enrollments") AS "enrollmentCount"
+          (SELECT COUNT(*)::text FROM "enrollments") AS "enrollmentCount",
+          (SELECT COUNT(*)::text FROM "node_installs") AS "nodeInstallCount",
+          (SELECT COUNT(*)::text FROM "outbox_events") AS "outboxCount"
       `);
 
       const snapshot = result.rows[0];
@@ -478,20 +505,20 @@ export class SetupService {
       }
 
       const runtimeCounts = [
+        snapshot.userCount,
+        snapshot.workspaceCount,
+        snapshot.membershipCount,
         snapshot.nodeCount,
         snapshot.taskCount,
         snapshot.scheduledTaskCount,
         snapshot.eventCount,
         snapshot.metricCount,
         snapshot.enrollmentCount,
+        snapshot.nodeInstallCount,
+        snapshot.outboxCount,
       ].map((value) => Number(value ?? '0'));
 
-      return (
-        Number(snapshot.adminCount ?? '0') > 0 &&
-        Number(snapshot.workspaceCount ?? '0') > 0 &&
-        Number(snapshot.ownerMembershipCount ?? '0') > 0 &&
-        runtimeCounts.every((count) => count === 0)
-      );
+      return runtimeCounts.every((count) => count === 0);
     } catch {
       return false;
     } finally {

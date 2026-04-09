@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AUTH_CONFIG_KEY, authConfig } from '../../config';
+import { legacyOnlyProviders } from '../../install/legacy-bootstrap.utils';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -42,7 +43,11 @@ import { UserEntity } from '../users/entities/user.entity';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, AuthSchemaBootstrap],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    ...legacyOnlyProviders([AuthSchemaBootstrap]),
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}

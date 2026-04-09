@@ -31,10 +31,10 @@ class SetupStateDirectoryStatusDto {
 
 export class SetupStatusResponseDto {
   @ApiProperty({
-    enum: ['setup', 'restart_required', 'installed', 'legacy'],
+    enum: ['setup', 'promoting', 'installed', 'legacy'],
     example: 'setup',
   })
-  mode: 'setup' | 'restart_required' | 'installed' | 'legacy';
+  mode: 'setup' | 'promoting' | 'installed' | 'legacy';
 
   @ApiProperty({
     example: false,

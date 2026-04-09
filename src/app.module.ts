@@ -6,11 +6,14 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import configuration from './config/configuration';
 import { normalizeDatabaseEnvAliases } from './config/database-env.utils';
 import { validationSchema } from './config/env.validation';
+import { applyFileBackedEnv } from './config/file-backed-env.utils';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { getTypeOrmConfig } from './database/typeorm.config';
 import { LegacyHealthController } from './legacy-health.controller';
@@ -25,6 +28,7 @@ import { LogsModule } from './modules/logs/logs.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { NodesModule } from './modules/nodes/nodes.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { OutboxModule } from './modules/outbox/outbox.module';
 import { PackagesModule } from './modules/packages/packages.module';
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
@@ -34,7 +38,9 @@ import { SetupModule } from './modules/setup/setup.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { RedisModule } from './redis/redis.module';
+import { RuntimeModule } from './runtime/runtime.module';
 
+applyFileBackedEnv();
 normalizeDatabaseEnvAliases();
 
 @Module({
@@ -51,6 +57,8 @@ normalizeDatabaseEnvAliases();
       },
     ]),
     ScheduleModule.forRoot(),
+    RuntimeModule,
+    OutboxModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: getTypeOrmConfig,
@@ -79,6 +87,8 @@ normalizeDatabaseEnvAliases();
   controllers: [AppController, LegacyHealthController],
   providers: [
     AppService,
+    AllExceptionsFilter,
+    LoggingInterceptor,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

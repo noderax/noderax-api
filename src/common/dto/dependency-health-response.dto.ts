@@ -23,6 +23,12 @@ export class DependencyHealthChecksDto {
 
   @ApiProperty({ type: () => DependencyCheckDto })
   migrations: DependencyCheckDto;
+
+  @ApiProperty({ type: () => DependencyCheckDto })
+  clusterLocks: DependencyCheckDto;
+
+  @ApiProperty({ type: () => DependencyCheckDto })
+  outbox: DependencyCheckDto;
 }
 
 export class DependencyHealthResponseDto {

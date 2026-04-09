@@ -10,6 +10,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import * as compression from 'compression';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { AppService } from './app.service';
 import { SWAGGER_BEARER_AUTH_NAME } from './common/constants/swagger.constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -29,12 +30,14 @@ import {
   hasLegacyDatabaseEnvUsage,
   normalizeDatabaseEnvAliases,
 } from './config/database-env.utils';
+import { applyFileBackedEnv } from './config/file-backed-env.utils';
 import { prepareBootEnvironment } from './install/boot-mode';
 import { readInstallState } from './install/install-state';
 import { SetupAppModule } from './setup-app.module';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+  applyFileBackedEnv();
   if (hasLegacyDatabaseEnvUsage()) {
     logger.warn(
       'Legacy DB_* environment variables are deprecated. Prefer DATABASE_* equivalents before the next major release.',
@@ -101,6 +104,10 @@ async function bootstrap() {
           method: RequestMethod.GET,
         },
         {
+          path: 'metrics',
+          method: RequestMethod.GET,
+        },
+        {
           path: `${apiPrefix}/health`,
           method: RequestMethod.GET,
         },
@@ -128,9 +135,16 @@ async function bootstrap() {
       },
     }),
   );
-  app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  app.useGlobalFilters(app.get(AllExceptionsFilter));
+  app.useGlobalInterceptors(app.get(LoggingInterceptor));
   app.enableShutdownHooks();
+
+  if (
+    bootMode === 'installed' &&
+    process.env.FAIL_ON_PENDING_MIGRATIONS !== 'false'
+  ) {
+    await app.get(AppService).assertInstalledSchemaReady();
+  }
 
   if (swaggerEnabled) {
     const swaggerConfig = new DocumentBuilder()

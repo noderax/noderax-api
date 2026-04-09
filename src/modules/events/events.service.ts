@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
@@ -6,6 +6,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RedisService } from '../../redis/redis.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
+import { OutboxService } from '../outbox/outbox.service';
 import { QueryEventsDto } from './dto/query-events.dto';
 import { EventEntity } from './entities/event.entity';
 import { EventSeverity } from './entities/event-severity.enum';
@@ -20,6 +21,8 @@ export class EventsService {
     private readonly notificationsService: NotificationsService,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
+    @Optional()
+    private readonly outboxService?: OutboxService,
   ) {}
 
   async record(input: {
@@ -58,17 +61,29 @@ export class EventsService {
 
     const savedEvent = await this.eventsRepository.save(event);
 
-    this.realtimeGateway.emitEventCreated(
-      savedEvent as unknown as Record<string, unknown>,
-    );
-    await this.redisService.publish(PUBSUB_CHANNELS.EVENTS_CREATED, {
-      eventId: savedEvent.id,
-      nodeId: savedEvent.nodeId,
-      type: savedEvent.type,
-      severity: savedEvent.severity,
-    });
+    if (this.outboxService) {
+      await this.outboxService.enqueue({
+        type: 'event.created',
+        payload: {
+          event: {
+            ...(savedEvent as unknown as Record<string, unknown>),
+            createdAt: savedEvent.createdAt.toISOString(),
+          },
+        },
+      });
+    } else {
+      this.realtimeGateway.emitEventCreated(
+        savedEvent as unknown as Record<string, unknown>,
+      );
+      await this.redisService.publish(PUBSUB_CHANNELS.EVENTS_CREATED, {
+        eventId: savedEvent.id,
+        nodeId: savedEvent.nodeId,
+        type: savedEvent.type,
+        severity: savedEvent.severity,
+      });
 
-    await this.notificationsService.notifyEvent(savedEvent);
+      await this.notificationsService.notifyEvent(savedEvent);
+    }
 
     return savedEvent;
   }

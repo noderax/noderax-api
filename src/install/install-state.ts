@@ -26,6 +26,15 @@ export type InstallSecretState = {
   secrets: Record<string, string>;
 };
 
+export type InstallTransitionState = {
+  version: 1;
+  source: 'installer';
+  status: 'promoting';
+  target: 'runtime_ha';
+  updatedAt: string;
+  details?: Record<string, string>;
+};
+
 export type InstallStateHealth = {
   path: string;
   configuredValue: string | null;
@@ -44,6 +53,7 @@ export type InstallStateEnvMergeOptions = {
 
 export const INSTALL_STATE_FILENAME = 'install-state.json';
 export const INSTALL_SECRETS_FILENAME = 'install-secrets.json';
+export const INSTALL_TRANSITION_FILENAME = 'install-transition.json';
 export const INSTALLER_MANAGED_FLAG = 'NODERAX_INSTALLER_MANAGED';
 export const BOOT_MODE_ENV = 'NODERAX_BOOT_MODE';
 
@@ -109,6 +119,9 @@ export const getInstallStatePath = () =>
 
 export const getInstallSecretsPath = () =>
   join(getInstallStateDir(), INSTALL_SECRETS_FILENAME);
+
+export const getInstallTransitionPath = () =>
+  join(getInstallStateDir(), INSTALL_TRANSITION_FILENAME);
 
 const probeInstallStateWritable = () => {
   const installStatePath = getInstallStatePath();
@@ -254,6 +267,27 @@ export const readInstallSecrets = (): InstallSecretState | null => {
   return parsed;
 };
 
+export const readInstallTransitionState = (): InstallTransitionState | null => {
+  const transitionPath = getInstallTransitionPath();
+  if (!existsSync(transitionPath)) {
+    return null;
+  }
+
+  const raw = readFileSync(transitionPath, 'utf8');
+  const parsed = JSON.parse(raw) as InstallTransitionState;
+
+  if (
+    parsed?.version !== 1 ||
+    parsed?.source !== 'installer' ||
+    parsed?.status !== 'promoting' ||
+    parsed?.target !== 'runtime_ha'
+  ) {
+    throw new Error('Install transition file is invalid.');
+  }
+
+  return parsed;
+};
+
 export const applyInstallSecretEnv = (
   state: InstallSecretState,
   options?: InstallStateEnvMergeOptions,
@@ -319,4 +353,36 @@ export const writeInstallSecrets = (secrets: Record<string, string>) => {
   trySetPermissions(tempPath, 0o600);
   renameSync(tempPath, installSecretsPath);
   trySetPermissions(installSecretsPath, 0o600);
+};
+
+export const writeInstallTransitionState = (
+  transition: Omit<InstallTransitionState, 'version' | 'source' | 'updatedAt'>,
+) => {
+  const transitionPath = getInstallTransitionPath();
+  ensureInstallStateWritable();
+
+  const payload: InstallTransitionState = {
+    version: 1,
+    source: 'installer',
+    updatedAt: new Date().toISOString(),
+    ...transition,
+  };
+
+  const tempPath = `${transitionPath}.tmp`;
+  writeFileSync(tempPath, JSON.stringify(payload, null, 2), {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+  trySetPermissions(tempPath, 0o600);
+  renameSync(tempPath, transitionPath);
+  trySetPermissions(transitionPath, 0o600);
+};
+
+export const clearInstallTransitionState = () => {
+  const transitionPath = getInstallTransitionPath();
+  if (!existsSync(transitionPath)) {
+    return;
+  }
+
+  unlinkSync(transitionPath);
 };

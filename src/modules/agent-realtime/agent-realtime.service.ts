@@ -225,6 +225,10 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  getActiveConnectionCount(): number {
+    return this.nodeToSocketId.size;
+  }
+
   getSessionForSocket(socketId: string): AgentSocketSession | null {
     return this.socketToSession.get(socketId) ?? null;
   }

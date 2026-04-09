@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Header } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   DependencyHealthResponseDto,
@@ -56,5 +56,17 @@ export class AppController {
   })
   getDependencyHealth() {
     return this.appService.getDependencyHealth();
+  }
+
+  @Public()
+  @Get('metrics')
+  @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+  @ApiOperation({
+    summary: 'Export Prometheus metrics',
+    description:
+      'Returns internal runtime and control-plane metrics for private scraping targets.',
+  })
+  getPrometheusMetrics() {
+    return this.appService.getPrometheusMetrics();
   }
 }

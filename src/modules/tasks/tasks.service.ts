@@ -1,9 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,6 +29,7 @@ import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodesService } from '../nodes/nodes.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { OutboxService } from '../outbox/outbox.service';
 import { AgentTaskAcceptedHttpDto } from './dto/agent-task-accepted-http.dto';
 import {
   AgentTaskCompletedHttpDto,
@@ -83,9 +87,12 @@ export class TasksService {
     private readonly auditLogsService: AuditLogsService,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
+    @Inject(forwardRef(() => AgentRealtimeService))
     private readonly agentRealtimeService: AgentRealtimeService,
     private readonly configService: ConfigService,
     private readonly workspacesService: WorkspacesService,
+    @Optional()
+    private readonly outboxService?: OutboxService,
   ) {}
 
   async create(
@@ -1428,17 +1435,33 @@ export class TasksService {
       return;
     }
 
-    this.realtimeGateway.emitTaskUpdated(
-      task as unknown as Record<string, unknown>,
-    );
-    await this.redisService.publish(PUBSUB_CHANNELS.TASKS_UPDATED, {
+    const redisPayload = {
       taskId: task.id,
       nodeId: task.nodeId,
       status: task.status,
       finishedAt: task.finishedAt?.toISOString() ?? null,
       updatedAt: task.updatedAt.toISOString(),
       sourceInstanceId: this.redisService.getInstanceId(),
-    });
+    };
+
+    if (this.outboxService) {
+      await this.outboxService.enqueue({
+        type: 'task.updated',
+        payload: {
+          task: task as unknown as Record<string, unknown>,
+          redis: redisPayload,
+        },
+      });
+      return;
+    }
+
+    this.realtimeGateway.emitTaskUpdated(
+      task as unknown as Record<string, unknown>,
+    );
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.TASKS_UPDATED,
+      redisPayload,
+    );
   }
 
   private async createTaskLog(
@@ -1517,16 +1540,31 @@ export class TasksService {
         },
       });
 
-      this.realtimeGateway.emitTaskCreated(
-        savedTask as unknown as Record<string, unknown>,
-      );
+      if (this.outboxService) {
+        await this.outboxService.enqueue({
+          type: 'task.created',
+          payload: {
+            task: savedTask as unknown as Record<string, unknown>,
+            redis: {
+              taskId: savedTask.id,
+              nodeId: savedTask.nodeId,
+              status: savedTask.status,
+              sourceInstanceId: this.redisService.getInstanceId(),
+            },
+          },
+        });
+      } else {
+        this.realtimeGateway.emitTaskCreated(
+          savedTask as unknown as Record<string, unknown>,
+        );
+      }
     }
 
     if (this.isRealtimeTaskDispatchEnabled()) {
       await this.agentRealtimeService.dispatchTaskToNode(savedTask);
     }
 
-    if (this.shouldBroadcastTask(savedTask)) {
+    if (this.shouldBroadcastTask(savedTask) && !this.outboxService) {
       await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
         taskId: savedTask.id,
         nodeId: savedTask.nodeId,

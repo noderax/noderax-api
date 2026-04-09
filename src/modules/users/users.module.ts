@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { legacyOnlyProviders } from '../../install/legacy-bootstrap.utils';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ScheduledTaskEntity } from '../tasks/entities/scheduled-task.entity';
@@ -29,8 +30,10 @@ import { UsersService } from './users.service';
   controllers: [UsersController],
   providers: [
     UsersService,
-    DefaultAdminBootstrap,
-    UserPreferencesSchemaBootstrap,
+    ...legacyOnlyProviders([
+      DefaultAdminBootstrap,
+      UserPreferencesSchemaBootstrap,
+    ]),
   ],
   exports: [UsersService],
 })

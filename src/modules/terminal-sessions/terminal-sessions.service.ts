@@ -26,6 +26,7 @@ import {
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { RequestAuditContext } from '../../common/types/request-audit-context.type';
 import { RedisService } from '../../redis/redis.service';
+import { ClusterLockService } from '../../runtime/cluster-lock.service';
 import { AgentRealtimeService } from '../agent-realtime/agent-realtime.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthService } from '../auth/auth.service';
@@ -83,6 +84,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
   private readonly socketToAttachment = new Map<string, SocketAttachment>();
   private readonly localControllerCounts = new Map<string, number>();
   private readonly unsubscribers: Array<() => Promise<void>> = [];
+  private cleanupInProgress = false;
 
   private roomEmitter: RoomEmitter | null = null;
 
@@ -97,6 +99,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     private readonly agentRealtimeService: AgentRealtimeService,
     private readonly auditLogsService: AuditLogsService,
     private readonly redisService: RedisService,
+    private readonly clusterLockService: ClusterLockService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -714,32 +717,63 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
 
   @Cron('0 */10 * * * *')
   async cleanupExpiredTranscripts(): Promise<void> {
-    const expiredSessions = await this.sessionsRepository
-      .createQueryBuilder('session')
-      .select(['session.id'])
-      .where('session.retentionExpiresAt <= :now', { now: new Date() })
-      .getMany();
-
-    if (expiredSessions.length === 0) {
+    if (this.cleanupInProgress) {
       return;
     }
 
-    const sessionIds = expiredSessions.map((session) => session.id);
-    const deleteResult = await this.chunksRepository
-      .createQueryBuilder()
-      .delete()
-      .where('"sessionId" IN (:...sessionIds)', { sessionIds })
-      .execute();
+    this.cleanupInProgress = true;
 
-    await this.auditLogsService.record({
-      scope: 'platform',
-      action: 'terminal.transcript.retention.cleaned',
-      targetType: 'terminal_session_chunk',
-      metadata: {
-        sessionCount: sessionIds.length,
-        deletedChunkCount: deleteResult.affected ?? 0,
-      },
-    });
+    try {
+      const run = await this.clusterLockService.runWithLock(
+        'terminal-transcript-retention-cleanup',
+        async () => {
+          const expiredSessions = await this.sessionsRepository
+            .createQueryBuilder('session')
+            .select(['session.id'])
+            .where('session.retentionExpiresAt <= :now', { now: new Date() })
+            .getMany();
+
+          if (expiredSessions.length === 0) {
+            return;
+          }
+
+          const sessionIds = expiredSessions.map((session) => session.id);
+          const deleteResult = await this.chunksRepository
+            .createQueryBuilder()
+            .delete()
+            .where('"sessionId" IN (:...sessionIds)', { sessionIds })
+            .execute();
+
+          await this.auditLogsService.record({
+            scope: 'platform',
+            action: 'terminal.transcript.retention.cleaned',
+            targetType: 'terminal_session_chunk',
+            metadata: {
+              sessionCount: sessionIds.length,
+              deletedChunkCount: deleteResult.affected ?? 0,
+            },
+          });
+        },
+      );
+
+      if (!run.acquired) {
+        this.logger.debug(
+          'Skipping terminal transcript cleanup because another API instance currently owns the cluster lock',
+        );
+      }
+    } finally {
+      this.cleanupInProgress = false;
+    }
+  }
+
+  getRuntimeSnapshot(): {
+    attachedControllerCount: number;
+    activeSessionCount: number;
+  } {
+    return {
+      attachedControllerCount: this.socketToAttachment.size,
+      activeSessionCount: this.localControllerCounts.size,
+    };
   }
 
   private async markFailed(

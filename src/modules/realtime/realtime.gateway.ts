@@ -160,6 +160,10 @@ export class RealtimeGateway
     }
   }
 
+  getActiveConnectionCount(): number {
+    return this.server?.sockets.sockets.size ?? 0;
+  }
+
   private async authenticateConnection(
     client: Socket,
     next: (error?: Error) => void,

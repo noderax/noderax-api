@@ -26,8 +26,10 @@ import configuration from '../../src/config/configuration';
 import { normalizeDatabaseEnvAliases } from '../../src/config/database-env.utils';
 import { validationSchema } from '../../src/config/env.validation';
 import { APP_CONFIG_KEY, appConfig } from '../../src/config';
+import { BOOT_MODE_ENV } from '../../src/install/install-state';
 import { LegacyHealthController } from '../../src/legacy-health.controller';
 import { AgentUpdatesModule } from '../../src/modules/agent-updates/agent-updates.module';
+import { AgentRealtimeModule } from '../../src/modules/agent-realtime/agent-realtime.module';
 import { AgentUpdateRolloutTargetEntity } from '../../src/modules/agent-updates/entities/agent-update-rollout-target.entity';
 import { AgentUpdateRolloutEntity } from '../../src/modules/agent-updates/entities/agent-update-rollout.entity';
 import { AgentsModule } from '../../src/modules/agents/agents.module';
@@ -63,6 +65,7 @@ import { WorkspaceMembershipEntity } from '../../src/modules/workspaces/entities
 import { WorkspaceEntity } from '../../src/modules/workspaces/entities/workspace.entity';
 import { WorkspacesModule } from '../../src/modules/workspaces/workspaces.module';
 import { RedisModule } from '../../src/redis/redis.module';
+import { RuntimeModule } from '../../src/runtime/runtime.module';
 
 const TEST_ENTITIES = [
   UserEntity,
@@ -135,6 +138,7 @@ function createPgMemDataSource(
 
 export async function createE2eApp(): Promise<INestApplication> {
   normalizeDatabaseEnvAliases();
+  process.env[BOOT_MODE_ENV] = 'legacy';
 
   @Module({
     imports: [
@@ -151,6 +155,7 @@ export async function createE2eApp(): Promise<INestApplication> {
         },
       ]),
       ScheduleModule.forRoot(),
+      RuntimeModule,
       TypeOrmModule.forRootAsync({
         useFactory: (): DataSourceOptions => ({
           type: 'postgres',
@@ -163,6 +168,7 @@ export async function createE2eApp(): Promise<INestApplication> {
       }),
       RedisModule,
       RealtimeModule,
+      AgentRealtimeModule,
       AgentUpdatesModule,
       NotificationsModule,
       UsersModule,
@@ -181,6 +187,8 @@ export async function createE2eApp(): Promise<INestApplication> {
     controllers: [AppController, LegacyHealthController],
     providers: [
       AppService,
+      AllExceptionsFilter,
+      LoggingInterceptor,
       {
         provide: APP_GUARD,
         useClass: JwtAuthGuard,
@@ -234,8 +242,8 @@ export async function createE2eApp(): Promise<INestApplication> {
       },
     }),
   );
-  app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  app.useGlobalFilters(app.get(AllExceptionsFilter));
+  app.useGlobalInterceptors(app.get(LoggingInterceptor));
   app.enableShutdownHooks();
 
   await app.listen(0, '127.0.0.1');

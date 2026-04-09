@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { legacyOnlyProviders } from '../../install/legacy-bootstrap.utils';
 import { RedisModule } from '../../redis/redis.module';
 import { NodesModule } from '../nodes/nodes.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -35,7 +36,7 @@ import { WorkspaceNodeInstallsController } from './workspace-node-installs.contr
   providers: [
     EnrollmentsService,
     EnrollmentTokensService,
-    EnrollmentSchemaBootstrap,
+    ...legacyOnlyProviders([EnrollmentSchemaBootstrap]),
   ],
   exports: [EnrollmentsService, EnrollmentTokensService],
 })

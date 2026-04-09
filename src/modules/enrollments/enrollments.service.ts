@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,6 +16,7 @@ import { RedisService } from '../../redis/redis.service';
 import { NodesService } from '../nodes/nodes.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { OutboxService } from '../outbox/outbox.service';
 import { UsersService } from '../users/users.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { ConsumeNodeInstallDto } from './dto/consume-node-install.dto';
@@ -63,6 +65,8 @@ export class EnrollmentsService {
     private readonly configService: ConfigService,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly redisService: RedisService,
+    @Optional()
+    private readonly outboxService?: OutboxService,
   ) {}
 
   async initiate(
@@ -486,11 +490,27 @@ export class EnrollmentsService {
       nodeInstall,
     ) as unknown as Record<string, unknown>;
 
-    this.realtimeGateway.emitNodeInstallUpdated(payload);
-    await this.redisService.publish(PUBSUB_CHANNELS.NODE_INSTALLS_UPDATED, {
+    const redisPayload = {
       ...payload,
       sourceInstanceId: this.redisService.getInstanceId(),
-    });
+    };
+
+    if (this.outboxService) {
+      await this.outboxService.enqueue({
+        type: 'node-install.updated',
+        payload: {
+          nodeInstall: payload,
+          redis: redisPayload,
+        },
+      });
+      return;
+    }
+
+    this.realtimeGateway.emitNodeInstallUpdated(payload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.NODE_INSTALLS_UPDATED,
+      redisPayload,
+    );
   }
 
   private async expireNodeInstallIfNeeded(

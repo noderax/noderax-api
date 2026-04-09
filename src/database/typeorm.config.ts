@@ -1,5 +1,6 @@
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { join } from 'path';
 import { DATABASE_CONFIG_KEY, databaseConfig } from '../config';
 import { buildPostgresSslOptions } from '../config/database-ssl.utils';
 
@@ -19,6 +20,7 @@ export function getTypeOrmConfig(
     password: database.password,
     database: database.name,
     autoLoadEntities: true,
+    migrations: [join(__dirname, 'migrations/*{.ts,.js}')],
     synchronize: database.synchronize,
     logging: database.logging,
     ssl: buildPostgresSslOptions({

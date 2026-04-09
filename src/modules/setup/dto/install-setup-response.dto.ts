@@ -7,7 +7,18 @@ export class InstallSetupResponseDto {
   success: true;
 
   @ApiProperty({
+    example: false,
+  })
+  restartRequired: boolean;
+
+  @ApiProperty({
     example: true,
   })
-  restartRequired: true;
+  setupComplete: boolean;
+
+  @ApiProperty({
+    enum: ['promoting_runtime'],
+    example: 'promoting_runtime',
+  })
+  transition: 'promoting_runtime';
 }

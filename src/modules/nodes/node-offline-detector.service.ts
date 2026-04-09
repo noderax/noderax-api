@@ -8,6 +8,7 @@ import { ConfigService, ConfigType } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
+import { ClusterLockService } from '../../runtime/cluster-lock.service';
 import { NodesService } from './nodes.service';
 
 @Injectable()
@@ -24,6 +25,7 @@ export class NodeOfflineDetectorService
     private readonly configService: ConfigService,
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly dataSource: DataSource,
+    private readonly clusterLockService: ClusterLockService,
   ) {}
 
   onModuleInit(): void {
@@ -76,7 +78,16 @@ export class NodeOfflineDetectorService
 
       this.hasLoggedMissingNodesTable = false;
 
-      await this.nodesService.markStaleNodesOffline();
+      const run = await this.clusterLockService.runWithLock(
+        this.intervalName,
+        () => this.nodesService.markStaleNodesOffline(),
+      );
+
+      if (!run.acquired) {
+        this.logger.debug(
+          'Skipping stale node detection because another API instance currently owns the cluster lock',
+        );
+      }
     } catch (error) {
       const message =
         error instanceof Error ? (error.stack ?? error.message) : String(error);

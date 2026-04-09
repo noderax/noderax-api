@@ -84,6 +84,29 @@ export class AgentUpdatesService {
     };
   }
 
+  async getOperationalSnapshot(): Promise<{
+    activeTargetCount: number;
+    failedTargetCount: number;
+  }> {
+    const [activeTargetCount, failedTargetCount] = await Promise.all([
+      this.targetsRepository.count({
+        where: AGENT_UPDATE_TARGET_ACTIVE_STATUSES.map((status) => ({
+          status,
+        })),
+      }),
+      this.targetsRepository.count({
+        where: {
+          status: 'failed',
+        },
+      }),
+    ]);
+
+    return {
+      activeTargetCount,
+      failedTargetCount,
+    };
+  }
+
   async listReleases(): Promise<AgentReleaseDto[]> {
     const catalog = await this.releaseCatalogService.getCatalog();
     return catalog.releases;

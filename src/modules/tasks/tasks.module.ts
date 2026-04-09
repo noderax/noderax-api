@@ -1,6 +1,7 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AgentAuthGuard } from '../../common/guards/agent-auth.guard';
+import { legacyOnlyProviders } from '../../install/legacy-bootstrap.utils';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { AgentRealtimeModule } from '../agent-realtime/agent-realtime.module';
 import { EventsModule } from '../events/events.module';
@@ -56,12 +57,19 @@ import { WorkspaceTasksController } from './workspace-tasks.controller';
     ScheduledTasksService,
     TaskTemplatesService,
     ScheduledTaskRunnerService,
-    TaskSchemaBootstrap,
-    ScheduledTaskSchemaBootstrap,
-    TaskTemplateSchemaBootstrap,
     TaskStaleDetectorService,
     AgentAuthGuard,
+    ...legacyOnlyProviders([
+      TaskSchemaBootstrap,
+      ScheduledTaskSchemaBootstrap,
+      TaskTemplateSchemaBootstrap,
+    ]),
   ],
-  exports: [TasksService, ScheduledTasksService, TaskTemplatesService],
+  exports: [
+    TasksService,
+    ScheduledTasksService,
+    TaskTemplatesService,
+    TaskStaleDetectorService,
+  ],
 })
 export class TasksModule {}

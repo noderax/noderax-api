@@ -7,10 +7,16 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { PrometheusMetricsService } from '../../runtime/prometheus-metrics.service';
+import { buildHttpLogContext } from '../utils/http-log-context.util';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
+
+  constructor(
+    private readonly prometheusMetricsService: PrometheusMetricsService,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const context = host.switchToHttp();
@@ -30,11 +36,27 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const normalizedResponse =
       this.normalizeExceptionResponse(exceptionResponse);
 
+    this.prometheusMetricsService.incrementCounter(
+      'noderax_http_request_errors_total',
+      1,
+      {
+        method: request.method,
+        route: request.route?.path ?? request.originalUrl,
+        status_code: status,
+      },
+      'HTTP error responses handled by the global exception filter.',
+    );
+
     if (!(exception instanceof HttpException) || status >= 500) {
       const error = exception as Error;
       this.logger.error(
-        `${request.method} ${request.url} failed with status ${status}`,
-        error?.stack,
+        JSON.stringify({
+          msg: 'http.request.failed',
+          ...buildHttpLogContext(request),
+          statusCode: status,
+          errorMessage: error?.message ?? 'Unknown error',
+          stack: error?.stack ?? null,
+        }),
       );
     }
 

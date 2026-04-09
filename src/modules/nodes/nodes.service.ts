@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
@@ -21,6 +22,7 @@ import { EventSeverity } from '../events/entities/event-severity.enum';
 import { EventsService } from '../events/events.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { OutboxService } from '../outbox/outbox.service';
 import { CreateNodeDto } from './dto/create-node.dto';
 import { QueryNodesDto } from './dto/query-nodes.dto';
 import { UpdateNodeNotificationsDto } from './dto/update-node-notifications.dto';
@@ -60,6 +62,8 @@ export class NodesService {
     private readonly redisService: RedisService,
     private readonly workspacesService: WorkspacesService,
     private readonly auditLogsService: AuditLogsService,
+    @Optional()
+    private readonly outboxService?: OutboxService,
   ) {}
 
   async create(
@@ -929,11 +933,24 @@ export class NodesService {
       lastVersionReportedAt: node.lastVersionReportedAt ?? null,
     };
 
-    this.realtimeGateway.emitNodeStatusUpdate(statusPayload);
-    await this.redisService.publish(PUBSUB_CHANNELS.NODES_STATUS_UPDATED, {
+    const payload = {
       ...statusPayload,
       sourceInstanceId: this.redisService.getInstanceId(),
-    });
+    };
+
+    if (this.outboxService) {
+      await this.outboxService.enqueue({
+        type: 'node.status-updated',
+        payload,
+      });
+      return;
+    }
+
+    this.realtimeGateway.emitNodeStatusUpdate(payload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
+      payload,
+    );
   }
 
   async broadcastRootAccessUpdate(
@@ -962,11 +979,24 @@ export class NodesService {
       rootAccessLastError: node.rootAccessLastError ?? null,
     };
 
-    this.realtimeGateway.emitNodeRootAccessUpdate(payload);
-    await this.redisService.publish(PUBSUB_CHANNELS.NODES_ROOT_ACCESS_UPDATED, {
+    const redisPayload = {
       ...payload,
       sourceInstanceId: this.redisService.getInstanceId(),
-    });
+    };
+
+    if (this.outboxService) {
+      await this.outboxService.enqueue({
+        type: 'node.root-access-updated',
+        payload: redisPayload,
+      });
+      return;
+    }
+
+    this.realtimeGateway.emitNodeRootAccessUpdate(redisPayload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.NODES_ROOT_ACCESS_UPDATED,
+      redisPayload,
+    );
   }
 
   async markStaleNodesOffline(): Promise<number> {

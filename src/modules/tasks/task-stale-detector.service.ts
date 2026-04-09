@@ -8,6 +8,7 @@ import { ConfigService, ConfigType } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
+import { ClusterLockService } from '../../runtime/cluster-lock.service';
 import { TasksService } from './tasks.service';
 
 @Injectable()
@@ -16,12 +17,15 @@ export class TaskStaleDetectorService implements OnModuleInit, OnModuleDestroy {
   private readonly intervalName = 'task-stale-detector';
   private isRunning = false;
   private hasLoggedMissingTasksTable = false;
+  private lastFailedCount = 0;
+  private totalFailedCount = 0;
 
   constructor(
     private readonly tasksService: TasksService,
     private readonly configService: ConfigService,
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly dataSource: DataSource,
+    private readonly clusterLockService: ClusterLockService,
   ) {}
 
   onModuleInit(): void {
@@ -48,6 +52,13 @@ export class TaskStaleDetectorService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.schedulerRegistry.deleteInterval(this.intervalName);
+  }
+
+  getOperationalSnapshot() {
+    return {
+      lastFailedCount: this.lastFailedCount,
+      totalFailedCount: this.totalFailedCount,
+    };
   }
 
   private async runStaleTaskDetection(): Promise<void> {
@@ -79,10 +90,25 @@ export class TaskStaleDetectorService implements OnModuleInit, OnModuleDestroy {
 
       this.hasLoggedMissingTasksTable = false;
 
-      const failedCount = await this.tasksService.failStaleTasks({
-        queuedTimeoutSeconds: agents.staleQueuedTaskTimeoutSeconds,
-        runningTimeoutSeconds: agents.staleRunningTaskTimeoutSeconds,
-      });
+      const run = await this.clusterLockService.runWithLock(
+        this.intervalName,
+        () =>
+          this.tasksService.failStaleTasks({
+            queuedTimeoutSeconds: agents.staleQueuedTaskTimeoutSeconds,
+            runningTimeoutSeconds: agents.staleRunningTaskTimeoutSeconds,
+          }),
+      );
+
+      if (!run.acquired) {
+        this.logger.debug(
+          'Skipping stale task detection because another API instance currently owns the cluster lock',
+        );
+        return;
+      }
+
+      const failedCount = run.result ?? 0;
+      this.lastFailedCount = failedCount;
+      this.totalFailedCount += failedCount;
 
       if (failedCount > 0) {
         this.logger.warn(
