@@ -4,12 +4,12 @@ import { Public } from './common/decorators/public.decorator';
 import { AppService } from './app.service';
 
 @ApiExcludeController()
-@Controller('api/v1')
+@Controller()
 export class LegacyHealthController {
   constructor(private readonly appService: AppService) {}
 
   @Public()
-  @Get('health')
+  @Get('api/v1/health')
   getHealth() {
     return this.appService.getHealth();
   }
