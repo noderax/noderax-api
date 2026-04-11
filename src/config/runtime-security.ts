@@ -50,18 +50,18 @@ export const assertSafeProductionConfiguration = (
     );
   }
 
-  if (
-    equalsAny(input.adminPassword, ['ChangeMe123!', 'change-me', 'password'])
-  ) {
-    issues.push('ADMIN_PASSWORD must be changed before production startup.');
-  }
-
-  if (equalsAny(input.adminEmail, ['admin@example.com'])) {
-    issues.push('ADMIN_EMAIL must not use the example default in production.');
-  }
-
   if (input.seedDefaultAdmin) {
     issues.push('SEED_DEFAULT_ADMIN must be disabled in production.');
+
+    if (
+      equalsAny(input.adminPassword, ['ChangeMe123!', 'change-me', 'password'])
+    ) {
+      issues.push('ADMIN_PASSWORD must be changed before production startup.');
+    }
+
+    if (equalsAny(input.adminEmail, ['admin@example.com'])) {
+      issues.push('ADMIN_EMAIL must not use the example default in production.');
+    }
   }
 
   if (
