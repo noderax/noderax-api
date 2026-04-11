@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { readFileSync } from 'fs';
 import Redis from 'ioredis';
 import { Client } from 'pg';
 import { DataSource } from 'typeorm';
@@ -97,6 +98,16 @@ export class SetupService {
       process.env.NODERAX_PUBLIC_ORIGIN?.trim() ||
       process.env.WEB_APP_URL?.trim() ||
       null;
+    const databasePassword = this.readEnvOrFile(
+      'DATABASE_PASSWORD',
+      'DATABASE_PASSWORD_FILE',
+      this.readEnvOrFile('DB_PASSWORD', 'DB_PASSWORD_FILE', ''),
+    );
+    const redisPassword = this.readEnvOrFile(
+      'REDIS_PASSWORD',
+      'REDIS_PASSWORD_FILE',
+      '',
+    );
 
     return {
       mode:
@@ -111,8 +122,7 @@ export class SetupService {
           process.env.DATABASE_USERNAME ??
           process.env.DB_USERNAME ??
           'postgres',
-        password:
-          process.env.DATABASE_PASSWORD ?? process.env.DB_PASSWORD ?? '',
+        password: databasePassword,
         database: process.env.DATABASE_NAME ?? process.env.DB_NAME ?? 'noderax',
         ssl:
           process.env.DATABASE_SSL === 'true' || process.env.DB_SSL === 'true',
@@ -121,7 +131,7 @@ export class SetupService {
         host: process.env.REDIS_HOST ?? 'redis',
         port: Number(process.env.REDIS_PORT ?? 6379),
         db: Number(process.env.REDIS_DB ?? 0),
-        password: process.env.REDIS_PASSWORD ?? '',
+        password: redisPassword,
       },
       editableFields: {
         postgres: true,
@@ -130,6 +140,28 @@ export class SetupService {
         publicOrigin: false,
       },
     };
+  }
+
+  private readEnvOrFile(
+    envKey: string,
+    fileEnvKey: string,
+    fallback: string,
+  ): string {
+    const directValue = process.env[envKey];
+    if (typeof directValue === 'string' && directValue.length > 0) {
+      return directValue;
+    }
+
+    const filePath = process.env[fileEnvKey];
+    if (typeof filePath === 'string' && filePath.trim().length > 0) {
+      try {
+        return readFileSync(filePath, 'utf8').replace(/\r?\n$/, '');
+      } catch {
+        return fallback;
+      }
+    }
+
+    return fallback;
   }
 
   async validatePostgres(
