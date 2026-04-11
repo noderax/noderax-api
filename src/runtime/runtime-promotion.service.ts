@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
-  clearInstallTransitionState,
   hasInstallState,
   readInstallTransitionState,
 } from '../install/install-state';
@@ -23,7 +22,8 @@ export class RuntimePromotionService implements OnModuleInit {
       return;
     }
 
-    clearInstallTransitionState();
-    this.logger.log('Cleared install transition state after HA runtime boot.');
+    this.logger.log(
+      'HA runtime booted while promotion is in progress. Waiting for the host supervisor to finalize the runtime cutover.',
+    );
   }
 }
