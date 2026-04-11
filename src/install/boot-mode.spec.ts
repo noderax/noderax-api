@@ -1,6 +1,19 @@
-import { shouldPreferProcessEnvOverInstallState } from './boot-mode';
+import {
+  resolveBootMode,
+  shouldPreferProcessEnvOverInstallState,
+} from './boot-mode';
 
 describe('boot-mode safer env preservation', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
   it('preserves an explicit process CORS origin over an unsafe install-state wildcard', () => {
     expect(
       shouldPreferProcessEnvOverInstallState({
@@ -49,5 +62,18 @@ describe('boot-mode safer env preservation', () => {
         incomingValue: 'https://dash-old.noderax.net',
       }),
     ).toBe(false);
+  });
+
+  it('forces setup boot mode when the runtime role is setup', async () => {
+    process.env.NODERAX_RUNTIME_ROLE = 'setup';
+    process.env.DB_HOST = 'postgres';
+    process.env.DB_USERNAME = 'postgres';
+    process.env.DB_PASSWORD = 'secret';
+    process.env.DB_NAME = 'noderax';
+    process.env.REDIS_HOST = 'redis';
+    process.env.JWT_SECRET = 'jwt-secret';
+    process.env.AGENT_ENROLLMENT_TOKEN = 'agent-enrollment-token';
+
+    await expect(resolveBootMode(null)).resolves.toBe('setup');
   });
 });
