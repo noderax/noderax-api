@@ -322,4 +322,37 @@ describe('EnrollmentsService', () => {
 
     delete process.env.AGENT_PUBLIC_API_URL;
   });
+
+  it('prefers the proxied public API header over an internal nginx agent API configuration', async () => {
+    process.env.AGENT_PUBLIC_API_URL = 'http://nginx/api/v1';
+    configService.getOrThrow.mockReturnValue({
+      publicApiUrl: 'http://nginx/api/v1',
+      installScriptUrl: 'https://cdn.example.com/install.sh',
+    });
+    enrollmentTokensService.issueEnrollmentToken.mockResolvedValue({
+      token: 'raw-install-token',
+      tokenHash: 'token-hash',
+      tokenLookupHash: 'lookup-hash',
+    });
+
+    const request = {
+      headers: {
+        'x-noderax-public-api-url': 'https://dash.noderax.net/api/v1',
+      },
+      protocol: 'https',
+    } as Partial<Request> as Request;
+
+    const result = await service.createNodeInstall(
+      'workspace-1',
+      {
+        nodeName: 'Production Node',
+      },
+      request,
+    );
+
+    expect(result.apiUrl).toBe('https://dash.noderax.net');
+    expect(result.installCommand).toContain(
+      "--api-url 'https://dash.noderax.net'",
+    );
+  });
 });

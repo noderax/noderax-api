@@ -47,6 +47,16 @@ const TERMINAL_NODE_INSTALL_STATUSES = new Set<NodeInstallStatus>([
   NodeInstallStatus.FAILED,
   NodeInstallStatus.EXPIRED,
 ]);
+const INTERNAL_PUBLIC_API_HOSTS = new Set([
+  'nginx',
+  'localhost',
+  '127.0.0.1',
+  '0.0.0.0',
+  'api',
+  'api-setup',
+  'api-a',
+  'api-b',
+]);
 
 @Injectable()
 export class EnrollmentsService {
@@ -604,7 +614,7 @@ export class EnrollmentsService {
     const requestUrl = this.resolveRequestPublicApiUrl(request);
     const discoveredPublicUrl = proxiedUrl ?? requestUrl;
 
-    if (configuredUrl && !this.isLoopbackPublicApiUrl(configuredUrl)) {
+    if (configuredUrl && !this.isNonPublicApiUrl(configuredUrl)) {
       return configuredUrl;
     }
 
@@ -669,12 +679,16 @@ export class EnrollmentsService {
     }
   }
 
-  private isLoopbackPublicApiUrl(value: string): boolean {
+  private isNonPublicApiUrl(value: string): boolean {
     try {
       const url = new URL(value);
-      return ['localhost', '127.0.0.1', '::1'].includes(
-        url.hostname.toLowerCase(),
-      );
+      const hostname = url.hostname.toLowerCase();
+
+      if (hostname === '::1') {
+        return true;
+      }
+
+      return INTERNAL_PUBLIC_API_HOSTS.has(hostname);
     } catch {
       return false;
     }
