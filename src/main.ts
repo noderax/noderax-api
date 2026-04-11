@@ -74,9 +74,15 @@ async function bootstrap() {
     );
   const { apiPrefix, corsOrigin, port, swaggerEnabled, swaggerPath } =
     appSettings;
+  const securityBootMode =
+    bootMode === 'setup' ||
+    process.env.NODERAX_RUNTIME_ROLE === 'setup' ||
+    Boolean(process.env.NODERAX_INSTALLER_PRESET_MODE)
+      ? 'setup'
+      : 'installed';
 
   assertSafeProductionConfiguration({
-    bootMode: bootMode === 'setup' ? 'setup' : 'installed',
+    bootMode: securityBootMode,
     nodeEnv: appSettings.nodeEnv,
     corsOrigin,
     swaggerEnabled,

@@ -41,6 +41,10 @@ const trim = (value?: string | null) =>
   typeof value === 'string' ? value.trim() : '';
 
 const isSetupRuntimeRole = () => trim(process.env.NODERAX_RUNTIME_ROLE) === 'setup';
+const hasInstallerPresetMode = () =>
+  hasRequiredValue(process.env.NODERAX_INSTALLER_PRESET_MODE);
+const isInstallerSetupContext = () =>
+  isSetupRuntimeRole() || hasInstallerPresetMode();
 
 const equalsAny = (value: string, candidates: string[]) =>
   candidates.some((candidate) => trim(value) === candidate);
@@ -181,7 +185,7 @@ const detectLegacySchemaState = async (): Promise<
 export const resolveBootMode = (
   installState: InstallState | null,
 ): Promise<BootMode> => {
-  if (isSetupRuntimeRole()) {
+  if (isInstallerSetupContext()) {
     return Promise.resolve('setup');
   }
 

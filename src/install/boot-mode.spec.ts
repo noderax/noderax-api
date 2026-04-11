@@ -76,4 +76,17 @@ describe('boot-mode safer env preservation', () => {
 
     await expect(resolveBootMode(null)).resolves.toBe('setup');
   });
+
+  it('forces setup boot mode when installer preset mode is present', async () => {
+    process.env.NODERAX_INSTALLER_PRESET_MODE = 'local_bundle';
+    process.env.DB_HOST = 'postgres';
+    process.env.DB_USERNAME = 'postgres';
+    process.env.DB_PASSWORD = 'secret';
+    process.env.DB_NAME = 'noderax';
+    process.env.REDIS_HOST = 'redis';
+    process.env.JWT_SECRET = 'jwt-secret';
+    process.env.AGENT_ENROLLMENT_TOKEN = 'agent-enrollment-token';
+
+    await expect(resolveBootMode(null)).resolves.toBe('setup');
+  });
 });
