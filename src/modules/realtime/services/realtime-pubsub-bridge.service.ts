@@ -31,6 +31,12 @@ export class RealtimePubsubBridgeService
 
     this.unsubscribers.push(
       await this.redisService.subscribe(
+        PUBSUB_CHANNELS.EVENTS_CREATED,
+        (payload) => {
+          this.forwardEventCreated(payload as PubsubPayload);
+        },
+      ),
+      await this.redisService.subscribe(
         PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
         (payload) => {
           this.forwardNodeStatus(payload as PubsubPayload);
@@ -84,6 +90,14 @@ export class RealtimePubsubBridgeService
     }
 
     this.realtimeGateway.emitNodeStatusUpdate(payload);
+  }
+
+  private forwardEventCreated(payload: PubsubPayload): void {
+    if (this.isSameInstance(payload)) {
+      return;
+    }
+
+    this.realtimeGateway.emitEventCreated(payload);
   }
 
   private forwardNodeRootAccess(payload: PubsubPayload): void {

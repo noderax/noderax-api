@@ -43,6 +43,29 @@ export class RealtimeGateway
 
   constructor(private readonly realtimeAuthService: RealtimeAuthService) {}
 
+  private emitToWorkspaceRoom(
+    eventName: string,
+    payload: Record<string, unknown>,
+  ) {
+    if (!payload.workspaceId) {
+      return;
+    }
+
+    this.server
+      .to(`${REALTIME_WORKSPACE_ROOM_PREFIX}${payload.workspaceId}`)
+      .emit(eventName, payload);
+  }
+
+  private emitToNodeRoom(eventName: string, payload: Record<string, unknown>) {
+    if (!payload.nodeId) {
+      return;
+    }
+
+    this.server
+      .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
+      .emit(eventName, payload);
+  }
+
   afterInit(server: Server) {
     server.use((client, next) => {
       void this.authenticateConnection(client, next);
@@ -105,59 +128,32 @@ export class RealtimeGateway
   }
 
   emitNodeStatusUpdate(payload: Record<string, unknown>) {
-    if (payload.nodeId) {
-      this.server
-        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
-        .emit(REALTIME_EVENTS.NODE_STATUS_UPDATED, payload);
-    }
+    this.emitToNodeRoom(REALTIME_EVENTS.NODE_STATUS_UPDATED, payload);
   }
 
   emitNodeRootAccessUpdate(payload: Record<string, unknown>) {
-    if (payload.nodeId) {
-      this.server
-        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
-        .emit(REALTIME_EVENTS.NODE_ROOT_ACCESS_UPDATED, payload);
-    }
+    this.emitToNodeRoom(REALTIME_EVENTS.NODE_ROOT_ACCESS_UPDATED, payload);
   }
 
   emitMetricIngested(payload: Record<string, unknown>) {
-    if (payload.nodeId) {
-      this.server
-        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
-        .emit(REALTIME_EVENTS.METRICS_INGESTED, payload);
-    }
+    this.emitToNodeRoom(REALTIME_EVENTS.METRICS_INGESTED, payload);
   }
 
   emitTaskCreated(payload: Record<string, unknown>) {
-    if (payload.nodeId) {
-      this.server
-        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
-        .emit(REALTIME_EVENTS.TASK_CREATED, payload);
-    }
+    this.emitToNodeRoom(REALTIME_EVENTS.TASK_CREATED, payload);
   }
 
   emitTaskUpdated(payload: Record<string, unknown>) {
-    if (payload.nodeId) {
-      this.server
-        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
-        .emit(REALTIME_EVENTS.TASK_UPDATED, payload);
-    }
+    this.emitToNodeRoom(REALTIME_EVENTS.TASK_UPDATED, payload);
   }
 
   emitEventCreated(payload: Record<string, unknown>) {
-    if (payload.nodeId) {
-      this.server
-        .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
-        .emit(REALTIME_EVENTS.EVENT_CREATED, payload);
-    }
+    this.emitToNodeRoom(REALTIME_EVENTS.EVENT_CREATED, payload);
+    this.emitToWorkspaceRoom(REALTIME_EVENTS.EVENT_CREATED, payload);
   }
 
   emitNodeInstallUpdated(payload: Record<string, unknown>) {
-    if (payload.workspaceId) {
-      this.server
-        .to(`${REALTIME_WORKSPACE_ROOM_PREFIX}${payload.workspaceId}`)
-        .emit(REALTIME_EVENTS.NODE_INSTALL_UPDATED, payload);
-    }
+    this.emitToWorkspaceRoom(REALTIME_EVENTS.NODE_INSTALL_UPDATED, payload);
   }
 
   getActiveConnectionCount(): number {
