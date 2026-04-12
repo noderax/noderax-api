@@ -13,6 +13,7 @@ import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constant
 import { TASK_TYPES } from '../../common/constants/task-types.constants';
 import { RequestAuditContext } from '../../common/types/request-audit-context.type';
 import { AuthenticatedAgent } from '../../common/types/authenticated-agent.type';
+import { readPlatformUpdateState } from '../../install/install-state';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { EventsService } from '../events/events.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
@@ -155,6 +156,7 @@ export class AgentUpdatesService {
     dto: CreateAgentUpdateRolloutDto,
     context: RequestAuditContext,
   ): Promise<AgentUpdateRolloutDto> {
+    this.assertControlPlaneApplyIsIdle();
     await this.assertNoActiveRolloutExists();
 
     const release = dto.version
@@ -671,6 +673,27 @@ export class AgentUpdatesService {
       order: { sequence: 'ASC' },
     });
     return this.toRolloutDto(rollout, targets);
+  }
+
+  private assertControlPlaneApplyIsIdle() {
+    let updateState = null;
+    try {
+      updateState = readPlatformUpdateState();
+    } catch {
+      updateState = null;
+    }
+    if (!updateState) {
+      return;
+    }
+
+    if (
+      updateState.operation === 'apply' &&
+      ['queued', 'applying', 'recreating_services'].includes(updateState.status)
+    ) {
+      throw new ConflictException(
+        'A control-plane apply is already in progress. Wait for the platform update to finish before starting an agent rollout.',
+      );
+    }
   }
 
   private async dispatchNextTarget(rolloutId: string): Promise<void> {

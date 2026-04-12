@@ -35,6 +35,62 @@ export type InstallTransitionState = {
   details?: Record<string, string>;
 };
 
+export type PlatformReleaseState = {
+  version: string;
+  releaseId: string;
+  releasedAt: string | null;
+  builtAt?: string | null;
+  bundleSha256?: string | null;
+  bundleUrl?: string | null;
+  manifestUrl?: string | null;
+};
+
+export type PlatformUpdateOperation = 'download' | 'apply';
+
+export type PlatformUpdateStatus =
+  | 'queued'
+  | 'downloading'
+  | 'verifying'
+  | 'extracting'
+  | 'loading_images'
+  | 'prepared'
+  | 'applying'
+  | 'recreating_services'
+  | 'completed'
+  | 'failed';
+
+export type PlatformUpdateRequestState = {
+  version: 1;
+  source: 'installer';
+  requestId: string;
+  operation: PlatformUpdateOperation;
+  requestedAt: string;
+  requestedByUserId: string | null;
+  requestedByEmailSnapshot: string | null;
+  targetReleaseId: string | null;
+};
+
+export type PlatformUpdateState = {
+  version: 1;
+  source: 'installer';
+  operation: PlatformUpdateOperation;
+  status: PlatformUpdateStatus;
+  requestedAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  requestedByUserId: string | null;
+  requestedByEmailSnapshot: string | null;
+  currentRelease: PlatformReleaseState | null;
+  targetRelease: PlatformReleaseState | null;
+  preparedRelease: PlatformReleaseState | null;
+  previousRelease: PlatformReleaseState | null;
+  message: string | null;
+  error: string | null;
+  rollbackStatus: 'not_needed' | 'succeeded' | 'failed' | null;
+  auditLoggedAt?: string | null;
+};
+
 export type InstallStateHealth = {
   path: string;
   configuredValue: string | null;
@@ -54,6 +110,8 @@ export type InstallStateEnvMergeOptions = {
 export const INSTALL_STATE_FILENAME = 'install-state.json';
 export const INSTALL_SECRETS_FILENAME = 'install-secrets.json';
 export const INSTALL_TRANSITION_FILENAME = 'install-transition.json';
+export const PLATFORM_UPDATE_REQUEST_FILENAME = 'platform-update-request.json';
+export const PLATFORM_UPDATE_STATE_FILENAME = 'platform-update-state.json';
 export const INSTALLER_MANAGED_FLAG = 'NODERAX_INSTALLER_MANAGED';
 export const BOOT_MODE_ENV = 'NODERAX_BOOT_MODE';
 
@@ -122,6 +180,12 @@ export const getInstallSecretsPath = () =>
 
 export const getInstallTransitionPath = () =>
   join(getInstallStateDir(), INSTALL_TRANSITION_FILENAME);
+
+export const getPlatformUpdateRequestPath = () =>
+  join(getInstallStateDir(), PLATFORM_UPDATE_REQUEST_FILENAME);
+
+export const getPlatformUpdateStatePath = () =>
+  join(getInstallStateDir(), PLATFORM_UPDATE_STATE_FILENAME);
 
 const probeInstallStateWritable = () => {
   const installStatePath = getInstallStatePath();
@@ -288,6 +352,61 @@ export const readInstallTransitionState = (): InstallTransitionState | null => {
   return parsed;
 };
 
+export const readPlatformUpdateRequestState =
+  (): PlatformUpdateRequestState | null => {
+    const requestPath = getPlatformUpdateRequestPath();
+    if (!existsSync(requestPath)) {
+      return null;
+    }
+
+    const raw = readFileSync(requestPath, 'utf8');
+    const parsed = JSON.parse(raw) as PlatformUpdateRequestState;
+
+    if (
+      parsed?.version !== 1 ||
+      parsed?.source !== 'installer' ||
+      (parsed?.operation !== 'download' && parsed?.operation !== 'apply') ||
+      typeof parsed?.requestId !== 'string' ||
+      typeof parsed?.requestedAt !== 'string'
+    ) {
+      throw new Error('Platform update request file is invalid.');
+    }
+
+    return parsed;
+  };
+
+export const readPlatformUpdateState = (): PlatformUpdateState | null => {
+  const statePath = getPlatformUpdateStatePath();
+  if (!existsSync(statePath)) {
+    return null;
+  }
+
+  const raw = readFileSync(statePath, 'utf8');
+  const parsed = JSON.parse(raw) as PlatformUpdateState;
+
+  if (
+    parsed?.version !== 1 ||
+    parsed?.source !== 'installer' ||
+    (parsed?.operation !== 'download' && parsed?.operation !== 'apply') ||
+    ![
+      'queued',
+      'downloading',
+      'verifying',
+      'extracting',
+      'loading_images',
+      'prepared',
+      'applying',
+      'recreating_services',
+      'completed',
+      'failed',
+    ].includes(parsed?.status)
+  ) {
+    throw new Error('Platform update state file is invalid.');
+  }
+
+  return parsed;
+};
+
 export const applyInstallSecretEnv = (
   state: InstallSecretState,
   options?: InstallStateEnvMergeOptions,
@@ -385,4 +504,51 @@ export const clearInstallTransitionState = () => {
   }
 
   unlinkSync(transitionPath);
+};
+
+const writeInstallerStateFile = (path: string, payload: object) => {
+  ensureInstallStateWritable();
+  const tempPath = `${path}.tmp`;
+  writeFileSync(tempPath, JSON.stringify(payload, null, 2), {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+  trySetPermissions(tempPath, 0o600);
+  renameSync(tempPath, path);
+  trySetPermissions(path, 0o600);
+};
+
+export const writePlatformUpdateRequestState = (
+  request: Omit<PlatformUpdateRequestState, 'version' | 'source'>,
+) => {
+  writeInstallerStateFile(getPlatformUpdateRequestPath(), {
+    version: 1,
+    source: 'installer',
+    ...request,
+  } satisfies PlatformUpdateRequestState);
+};
+
+export const writePlatformUpdateState = (
+  state: Omit<PlatformUpdateState, 'version' | 'source' | 'updatedAt'>,
+) => {
+  writeInstallerStateFile(getPlatformUpdateStatePath(), {
+    version: 1,
+    source: 'installer',
+    updatedAt: new Date().toISOString(),
+    ...state,
+  } satisfies PlatformUpdateState);
+};
+
+export const clearPlatformUpdateRequestState = () => {
+  const requestPath = getPlatformUpdateRequestPath();
+  if (existsSync(requestPath)) {
+    unlinkSync(requestPath);
+  }
+};
+
+export const clearPlatformUpdateState = () => {
+  const statePath = getPlatformUpdateStatePath();
+  if (existsSync(statePath)) {
+    unlinkSync(statePath);
+  }
 };

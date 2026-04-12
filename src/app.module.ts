@@ -21,6 +21,7 @@ import { AgentRealtimeModule } from './modules/agent-realtime/agent-realtime.mod
 import { AgentUpdatesModule } from './modules/agent-updates/agent-updates.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { ControlPlaneUpdatesModule } from './modules/control-plane-updates/control-plane-updates.module';
 import { DiagnosticsModule } from './modules/diagnostics/diagnostics.module';
 import { EnrollmentsModule } from './modules/enrollments/enrollments.module';
 import { EventsModule } from './modules/events/events.module';
@@ -67,6 +68,7 @@ normalizeDatabaseEnvAliases();
     RealtimeModule,
     AgentRealtimeModule,
     AgentUpdatesModule,
+    ControlPlaneUpdatesModule,
     NotificationsModule,
     SetupModule,
     UsersModule,
