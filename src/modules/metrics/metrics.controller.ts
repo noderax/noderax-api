@@ -47,10 +47,10 @@ export class MetricsController {
     return this.metricsService.ingest(agentMetricsDto);
   }
 
-  @Get('metrics')
+  @Get('platform-metrics')
   @ApiBearerAuth(SWAGGER_BEARER_AUTH_NAME)
   @ApiOperation({
-    summary: 'List ingested metrics',
+    summary: 'List ingested platform metrics',
   })
   @ApiOkResponse({
     description: 'List of metric samples.',
