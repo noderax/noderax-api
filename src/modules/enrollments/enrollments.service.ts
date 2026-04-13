@@ -505,17 +505,6 @@ export class EnrollmentsService {
       sourceInstanceId: this.redisService.getInstanceId(),
     };
 
-    if (this.outboxService) {
-      await this.outboxService.enqueue({
-        type: 'node-install.updated',
-        payload: {
-          nodeInstall: payload,
-          redis: redisPayload,
-        },
-      });
-      return;
-    }
-
     this.realtimeGateway.emitNodeInstallUpdated(payload);
     await this.redisService.publish(
       PUBSUB_CHANNELS.NODE_INSTALLS_UPDATED,

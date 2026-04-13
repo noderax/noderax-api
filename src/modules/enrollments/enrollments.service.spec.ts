@@ -206,6 +206,85 @@ describe('EnrollmentsService', () => {
     );
   });
 
+  it('publishes node install progress immediately even when outbox is available', async () => {
+    const nodeInstall = {
+      id: 'node-install-1',
+      workspaceId: 'workspace-1',
+      teamId: null,
+      nodeName: 'Bootstrap Node',
+      description: null,
+      tokenHash: 'token-hash',
+      tokenLookupHash: 'lookup-hash',
+      hostname: null,
+      additionalInfo: null,
+      nodeId: null,
+      status: NodeInstallStatus.PENDING,
+      stage: 'command_generated',
+      progressPercent: 5,
+      statusMessage: 'Waiting for installer startup.',
+      startedAt: null,
+      consumedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date('2026-04-13T13:00:00.000Z'),
+      updatedAt: new Date('2026-04-13T13:00:00.000Z'),
+    } as NodeInstallEntity;
+    nodeInstallsRepository.createQueryBuilder.mockReturnValue({
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(nodeInstall),
+    });
+
+    const outboxService = {
+      enqueue: jest.fn(),
+    };
+    const serviceWithOutbox = new EnrollmentsService(
+      enrollmentsRepository as unknown as Repository<EnrollmentEntity>,
+      nodeInstallsRepository as unknown as Repository<NodeInstallEntity>,
+      enrollmentTokensService,
+      usersService,
+      nodesService,
+      notificationsService,
+      {
+        getDefaultWorkspaceOrFail: jest.fn().mockResolvedValue({
+          id: 'workspace-1',
+        }),
+        assertWorkspaceWritable: jest.fn().mockResolvedValue({
+          id: 'workspace-1',
+        }),
+      } as never,
+      configService as never,
+      realtimeGateway,
+      redisService,
+      outboxService as never,
+    );
+
+    await serviceWithOutbox.reportNodeInstallProgress({
+      token: 'raw-token',
+      stage: 'installer_started',
+      progressPercent: 10,
+      status: NodeInstallStatus.INSTALLING,
+      statusMessage: 'Installer started on the target server.',
+    });
+
+    expect(realtimeGateway.emitNodeInstallUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        installId: 'node-install-1',
+        workspaceId: 'workspace-1',
+        stage: 'installer_started',
+        progressPercent: 10,
+      }),
+    );
+    expect(redisService.publish).toHaveBeenCalledWith(
+      'node-installs.updated',
+      expect.objectContaining({
+        installId: 'node-install-1',
+        workspaceId: 'workspace-1',
+        sourceInstanceId: 'instance-1',
+      }),
+    );
+    expect(outboxService.enqueue).not.toHaveBeenCalled();
+  });
+
   it('waits for enrollment notification delivery before resolving', async () => {
     enrollmentTokensService.issueEnrollmentToken.mockResolvedValue({
       token: 'raw-token',

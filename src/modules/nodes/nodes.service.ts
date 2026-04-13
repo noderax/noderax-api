@@ -940,14 +940,6 @@ export class NodesService {
       sourceInstanceId: this.redisService.getInstanceId(),
     };
 
-    if (this.outboxService) {
-      await this.outboxService.enqueue({
-        type: 'node.status-updated',
-        payload,
-      });
-      return;
-    }
-
     this.realtimeGateway.emitNodeStatusUpdate(payload);
     await this.redisService.publish(
       PUBSUB_CHANNELS.NODES_STATUS_UPDATED,
@@ -987,14 +979,6 @@ export class NodesService {
       ...payload,
       sourceInstanceId: this.redisService.getInstanceId(),
     };
-
-    if (this.outboxService) {
-      await this.outboxService.enqueue({
-        type: 'node.root-access-updated',
-        payload: redisPayload,
-      });
-      return;
-    }
 
     this.realtimeGateway.emitNodeRootAccessUpdate(redisPayload);
     await this.redisService.publish(

@@ -91,20 +91,11 @@ export class MetricsService {
       sourceInstanceId: this.redisService.getInstanceId(),
     };
 
-    if (this.outboxService) {
-      await this.outboxService.enqueue({
-        type: 'metric.ingested',
-        payload: {
-          metric: metricPayload,
-        },
-      });
-    } else {
-      this.realtimeGateway.emitMetricIngested(metricPayload);
-      await this.redisService.publish(
-        PUBSUB_CHANNELS.METRICS_INGESTED,
-        metricPayload,
-      );
-    }
+    this.realtimeGateway.emitMetricIngested(metricPayload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.METRICS_INGESTED,
+      metricPayload,
+    );
 
     return savedMetric;
   }
