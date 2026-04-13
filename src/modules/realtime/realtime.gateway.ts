@@ -27,6 +27,7 @@ import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
 import { WsNodeSubscriptionGuard } from './guards/ws-node-subscription.guard';
 import { WsWorkspaceSubscriptionGuard } from './guards/ws-workspace-subscription.guard';
 import { RealtimeAuthService } from './services/realtime-auth.service';
+import { WorkspacesService } from '../workspaces/workspaces.service';
 
 @Public()
 @WebSocketGateway({
@@ -41,7 +42,10 @@ export class RealtimeGateway
 
   private readonly logger = new Logger(RealtimeGateway.name);
 
-  constructor(private readonly realtimeAuthService: RealtimeAuthService) {}
+  constructor(
+    private readonly realtimeAuthService: RealtimeAuthService,
+    private readonly workspacesService: WorkspacesService,
+  ) {}
 
   private emitToWorkspaceRoom(
     eventName: string,
@@ -72,7 +76,8 @@ export class RealtimeGateway
     });
   }
 
-  handleConnection(client: AuthenticatedSocket) {
+  async handleConnection(client: AuthenticatedSocket) {
+    await this.joinAccessibleWorkspaceRooms(client);
     this.logger.debug(
       `Authenticated client connected: ${client.id} (${client.data.user.email})`,
     );
@@ -190,6 +195,20 @@ export class RealtimeGateway
       };
 
       next(connectionError);
+    }
+  }
+
+  private async joinAccessibleWorkspaceRooms(client: AuthenticatedSocket) {
+    const user = client.data.user;
+    if (!user) {
+      return;
+    }
+
+    const workspaces = await this.workspacesService.findAccessibleWorkspaces(user);
+    for (const workspace of workspaces) {
+      await Promise.resolve(
+        client.join(`${REALTIME_WORKSPACE_ROOM_PREFIX}${workspace.id}`),
+      );
     }
   }
 }

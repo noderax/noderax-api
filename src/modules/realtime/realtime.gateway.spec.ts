@@ -2,12 +2,14 @@
 
 import { Server } from 'socket.io';
 import { REALTIME_EVENTS } from '../../common/constants/realtime.constants';
+import { WorkspacesService } from '../workspaces/workspaces.service';
 import { RealtimeGateway } from './realtime.gateway';
 import { RealtimeAuthService } from './services/realtime-auth.service';
 
 describe('RealtimeGateway', () => {
   let gateway: RealtimeGateway;
   let realtimeAuthService: jest.Mocked<RealtimeAuthService>;
+  let workspacesService: jest.Mocked<WorkspacesService>;
   let roomEmitter: { emit: jest.Mock };
   let server: { to: jest.Mock };
 
@@ -15,6 +17,10 @@ describe('RealtimeGateway', () => {
     realtimeAuthService = {
       authenticateSocket: jest.fn(),
     } as unknown as jest.Mocked<RealtimeAuthService>;
+
+    workspacesService = {
+      findAccessibleWorkspaces: jest.fn().mockResolvedValue([]),
+    } as unknown as jest.Mocked<WorkspacesService>;
 
     roomEmitter = {
       emit: jest.fn(),
@@ -24,7 +30,7 @@ describe('RealtimeGateway', () => {
       to: jest.fn().mockReturnValue(roomEmitter),
     };
 
-    gateway = new RealtimeGateway(realtimeAuthService);
+    gateway = new RealtimeGateway(realtimeAuthService, workspacesService);
     gateway.server = server as unknown as Server;
   });
 
@@ -86,5 +92,28 @@ describe('RealtimeGateway', () => {
         nodeId: 'node-1',
       }),
     );
+  });
+
+  it('joins accessible workspace rooms on client connect', async () => {
+    const join = jest.fn();
+    workspacesService.findAccessibleWorkspaces.mockResolvedValue([
+      { id: 'workspace-1' },
+      { id: 'workspace-2' },
+    ] as never);
+
+    await gateway.handleConnection({
+      id: 'socket-1',
+      join,
+      data: {
+        user: {
+          id: 'user-1',
+          email: 'admin@example.com',
+          role: 'platform_admin',
+        },
+      },
+    } as never);
+
+    expect(join).toHaveBeenNthCalledWith(1, 'workspace:workspace-1');
+    expect(join).toHaveBeenNthCalledWith(2, 'workspace:workspace-2');
   });
 });
