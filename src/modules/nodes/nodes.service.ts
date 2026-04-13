@@ -917,6 +917,7 @@ export class NodesService {
     node: Pick<
       NodeEntity,
       | 'id'
+      | 'workspaceId'
       | 'hostname'
       | 'status'
       | 'lastSeenAt'
@@ -926,6 +927,7 @@ export class NodesService {
   ): Promise<void> {
     const statusPayload = {
       nodeId: node.id,
+      workspaceId: node.workspaceId,
       hostname: node.hostname,
       status: node.status,
       lastSeenAt: node.lastSeenAt,
@@ -957,6 +959,7 @@ export class NodesService {
     node: Pick<
       NodeEntity,
       | 'id'
+      | 'workspaceId'
       | 'rootAccessProfile'
       | 'rootAccessAppliedProfile'
       | 'rootAccessSyncStatus'
@@ -968,6 +971,7 @@ export class NodesService {
   ): Promise<void> {
     const payload = {
       nodeId: node.id,
+      workspaceId: node.workspaceId,
       rootAccessProfile: node.rootAccessProfile,
       rootAccessAppliedProfile: node.rootAccessAppliedProfile,
       rootAccessSyncStatus: node.rootAccessSyncStatus,
@@ -1016,11 +1020,14 @@ export class NodesService {
       })
       .where('status = :status', { status: NodeStatus.ONLINE })
       .andWhere('lastSeenAt < :cutoff', { cutoff })
-      .returning(['id', 'name', 'hostname', 'status', 'lastSeenAt'])
+      .returning(['id', 'workspaceId', 'name', 'hostname', 'status', 'lastSeenAt'])
       .execute();
 
     const offlineNodes = updateResult.raw as Array<
-      Pick<NodeEntity, 'id' | 'name' | 'hostname' | 'status' | 'lastSeenAt'>
+      Pick<
+        NodeEntity,
+        'id' | 'workspaceId' | 'name' | 'hostname' | 'status' | 'lastSeenAt'
+      >
     >;
 
     if (!offlineNodes.length) {

@@ -58,4 +58,33 @@ describe('RealtimeGateway', () => {
     expect(server.to).toHaveBeenNthCalledWith(2, 'workspace:workspace-1');
     expect(roomEmitter.emit).toHaveBeenCalledTimes(2);
   });
+
+  it('emits ingested metrics to both node and workspace rooms when both contexts exist', () => {
+    gateway.emitMetricIngested({
+      id: 'metric-1',
+      workspaceId: 'workspace-1',
+      nodeId: 'node-1',
+    });
+
+    expect(server.to).toHaveBeenNthCalledWith(1, 'node:node-1');
+    expect(server.to).toHaveBeenNthCalledWith(2, 'workspace:workspace-1');
+    expect(roomEmitter.emit).toHaveBeenNthCalledWith(
+      1,
+      REALTIME_EVENTS.METRICS_INGESTED,
+      expect.objectContaining({
+        id: 'metric-1',
+        workspaceId: 'workspace-1',
+        nodeId: 'node-1',
+      }),
+    );
+    expect(roomEmitter.emit).toHaveBeenNthCalledWith(
+      2,
+      REALTIME_EVENTS.METRICS_INGESTED,
+      expect.objectContaining({
+        id: 'metric-1',
+        workspaceId: 'workspace-1',
+        nodeId: 'node-1',
+      }),
+    );
+  });
 });

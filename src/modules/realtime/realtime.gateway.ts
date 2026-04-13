@@ -129,22 +129,27 @@ export class RealtimeGateway
 
   emitNodeStatusUpdate(payload: Record<string, unknown>) {
     this.emitToNodeRoom(REALTIME_EVENTS.NODE_STATUS_UPDATED, payload);
+    this.emitToWorkspaceRoom(REALTIME_EVENTS.NODE_STATUS_UPDATED, payload);
   }
 
   emitNodeRootAccessUpdate(payload: Record<string, unknown>) {
     this.emitToNodeRoom(REALTIME_EVENTS.NODE_ROOT_ACCESS_UPDATED, payload);
+    this.emitToWorkspaceRoom(REALTIME_EVENTS.NODE_ROOT_ACCESS_UPDATED, payload);
   }
 
   emitMetricIngested(payload: Record<string, unknown>) {
     this.emitToNodeRoom(REALTIME_EVENTS.METRICS_INGESTED, payload);
+    this.emitToWorkspaceRoom(REALTIME_EVENTS.METRICS_INGESTED, payload);
   }
 
   emitTaskCreated(payload: Record<string, unknown>) {
     this.emitToNodeRoom(REALTIME_EVENTS.TASK_CREATED, payload);
+    this.emitToWorkspaceRoom(REALTIME_EVENTS.TASK_CREATED, payload);
   }
 
   emitTaskUpdated(payload: Record<string, unknown>) {
     this.emitToNodeRoom(REALTIME_EVENTS.TASK_UPDATED, payload);
+    this.emitToWorkspaceRoom(REALTIME_EVENTS.TASK_UPDATED, payload);
   }
 
   emitEventCreated(payload: Record<string, unknown>) {
