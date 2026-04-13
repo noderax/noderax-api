@@ -26,12 +26,17 @@ src/
     agent-realtime/
     agents/
     auth/
+    control-plane-updates/
     diagnostics/
     enrollments/
     events/
+    fleet/
+    incidents/
+    logs/
     metrics/
     nodes/
     notifications/
+    outbox/
     packages/
     platform-settings/
     realtime/
@@ -81,6 +86,7 @@ src/
 - Workspace-scoped one-click node bootstrap with short-lived install commands, live install progress tracking, installer consumption, and legacy enrollment compatibility
 - Official agent release catalog resolution through CDN-first metadata with GitHub Releases fallback
 - Platform-admin agent update rollouts with sequential dispatch, retry, skip, resume, cancel, rollback, and heartbeat-confirmed completion
+- Platform-admin control-plane update summary/download/apply flow for installer-managed runtimes
 - Metrics ingestion and node telemetry persistence
 - Task creation, team-targeted dispatch, batch dispatch, long-poll task claiming, lifecycle updates, and logs
 - Workspace-scoped task templates
@@ -89,9 +95,11 @@ src/
 - Package operations through the shared task pipeline
 - Platform settings persistence through installer state, including SMTP settings validation
 - Realtime updates for node state, root access state, metrics, tasks, events, and node install progress
+- Immediate websocket + Redis bridge fanout for metrics, node status, root-access, and node-install progress instead of waiting for slower async delivery paths
 - Interactive terminal sessions over a dedicated JWT-authenticated Socket.IO namespace
 - Terminal transcript persistence with ordered base64 I/O chunks, 7-day retention, retention cleanup, and optional root-session launch
 - Agent realtime terminal bridge for start, input, resize, stop, opened, output, exited, and error events
+- Outbox-backed async delivery foundation for non-blocking background event delivery and audit-adjacent fanout paths
 
 ## Root Access Model
 
@@ -314,6 +322,23 @@ The API now owns the official agent update control plane.
 - On the first target failure or timeout the rollout is paused and requires explicit operator action before the fleet continues.
 - Only tagged official releases are catalogued. The API reads the official CDN manifest catalog first and falls back to official GitHub Release assets when the CDN is unavailable.
 
+## Control-Plane Updates
+
+Installer-managed deployments now expose a separate control-plane update surface:
+
+- `GET /control-plane-updates/summary`
+- `POST /control-plane-updates/download`
+- `POST /control-plane-updates/apply`
+
+Important behavior:
+
+- Only `platform_admin` users can access these routes.
+- Update comparison is based on immutable `releaseId`, not only `platformVersion`.
+- The API only queues and observes control-plane work; it does not mutate Docker runtime itself.
+- Host-side supervisor logic consumes `platform-update-request.json` and writes `platform-update-state.json`.
+- Apply is blocked while setup promotion is active or while an agent rollout is still running.
+- Completed and failed control-plane update transitions are written into audit logs.
+
 ### First-time setup flow
 
 On a fresh install, the API starts in `setup` mode. Complete the initial installation through the setup flow exposed under the API base path:
@@ -353,6 +378,11 @@ Important behavior:
   Setup install completed and the host-side supervisor is replacing the setup stack with the HA runtime stack.
 - `legacy` mode:
   Existing schema and env-driven installs continue to boot without installer ownership.
+
+Installer-managed control-plane updates add two more host-side state files in the same state root:
+
+- `platform-update-request.json`
+- `platform-update-state.json`
 
 If the state directory is not writable, setup and platform-settings flows will warn or fail. In containers, use a writable mounted directory instead of writing under a read-only application path.
 
