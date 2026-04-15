@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { RequestAuditContext } from '../../common/types/request-audit-context.type';
 import {
   clearPlatformUpdateRequestState,
+  clearPlatformUpdateState,
   type PlatformReleaseState,
   readInstallTransitionState,
   readPlatformUpdateRequestState,
@@ -34,14 +35,24 @@ export class ControlPlaneUpdatesService {
     const deploymentMode = this.getDeploymentMode();
     const supported = deploymentMode === 'installer_managed';
     const currentRelease = this.readCurrentRelease();
-    const request = this.safeReadPlatformUpdateRequest();
-    const state = this.safeReadPlatformUpdateState();
+    const reconciledUpdateState = this.reconcileStaleNoopApplyState(
+      currentRelease,
+      this.safeReadPlatformUpdateState(),
+      this.safeReadPlatformUpdateRequest(),
+    );
+    const request = reconciledUpdateState.request;
+    const state = reconciledUpdateState.state;
     const { release: latestRelease, checkedAt } =
       await this.releaseCatalogService.getLatestRelease(forceRefresh);
 
-    const preparedRelease = state?.preparedRelease
+    const rawPreparedRelease = state?.preparedRelease
       ? this.toReleaseDto(state.preparedRelease)
       : null;
+    const preparedRelease =
+      rawPreparedRelease?.releaseId &&
+      rawPreparedRelease.releaseId === currentRelease?.releaseId
+        ? null
+        : rawPreparedRelease;
     const operation = this.toOperationDto(state, request);
     const latestReleaseId = latestRelease?.releaseId ?? null;
     const currentReleaseId = currentRelease?.releaseId ?? null;
@@ -376,6 +387,52 @@ export class ControlPlaneUpdatesService {
       bundleSha256: release.bundleSha256 ?? null,
       bundleUrl: release.bundleUrl ?? null,
       manifestUrl: release.manifestUrl ?? null,
+    };
+  }
+
+  private reconcileStaleNoopApplyState(
+    currentRelease: ControlPlaneReleaseDto | null,
+    state:
+      | ReturnType<typeof readPlatformUpdateState>
+      | null,
+    request:
+      | ReturnType<typeof readPlatformUpdateRequestState>
+      | null,
+  ) {
+    const currentReleaseId = currentRelease?.releaseId ?? null;
+    if (!currentReleaseId) {
+      return { state, request };
+    }
+
+    const requestTargetsInstalledRelease =
+      request?.operation === 'apply' &&
+      request.targetReleaseId === currentReleaseId;
+    const stateIsStaleNoopApply =
+      state?.operation === 'apply' &&
+      state.status !== 'completed' &&
+      state.status !== 'failed' &&
+      state.targetRelease?.releaseId === currentReleaseId &&
+      state.preparedRelease?.releaseId === currentReleaseId;
+
+    if (!requestTargetsInstalledRelease && !stateIsStaleNoopApply) {
+      return { state, request };
+    }
+
+    this.logger.warn(
+      `Clearing stale control-plane apply state for already-installed release ${currentReleaseId}.`,
+    );
+
+    if (requestTargetsInstalledRelease) {
+      clearPlatformUpdateRequestState();
+    }
+
+    if (stateIsStaleNoopApply) {
+      clearPlatformUpdateState();
+    }
+
+    return {
+      state: stateIsStaleNoopApply ? null : state,
+      request: requestTargetsInstalledRelease ? null : request,
     };
   }
 

@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { ConflictException } from '@nestjs/common';
-import { writePlatformUpdateState } from '../../install/install-state';
+import {
+  readPlatformUpdateRequestState,
+  readPlatformUpdateState,
+  writePlatformUpdateRequestState,
+  writePlatformUpdateState,
+} from '../../install/install-state';
 import { ControlPlaneReleaseCatalogService } from './control-plane-release-catalog.service';
 import { ControlPlaneUpdatesService } from './control-plane-updates.service';
 
@@ -186,5 +191,89 @@ describe('ControlPlaneUpdatesService', () => {
     ).rejects.toThrow(
       'Agent rollout 1.2.3 is still active. Finish or cancel the rollout before applying a control-plane update.',
     );
+  });
+
+  it('clears stale no-op apply state when the installed release already matches the target', async () => {
+    writePlatformUpdateState({
+      operation: 'apply',
+      status: 'recreating_services',
+      requestedAt: '2026-04-15T19:51:55.838Z',
+      startedAt: '2026-04-15T19:51:56Z',
+      completedAt: null,
+      requestedByUserId: 'user-1',
+      requestedByEmailSnapshot: 'admin@noderax.test',
+      currentRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      targetRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      preparedRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      previousRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      message: 'Rolling the runtime services onto the prepared control-plane release.',
+      error: null,
+      rollbackStatus: null,
+      auditLoggedAt: null,
+    });
+
+    writePlatformUpdateRequestState({
+      requestId: 'request-1',
+      operation: 'apply',
+      requestedAt: '2026-04-15T19:51:55.838Z',
+      requestedByUserId: 'user-1',
+      requestedByEmailSnapshot: 'admin@noderax.test',
+      targetReleaseId: 'release-current',
+    });
+
+    releaseCatalogService.getLatestRelease.mockResolvedValue({
+      checkedAt: new Date('2026-04-15T20:00:00Z'),
+      release: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-15T20:00:00Z',
+        builtAt: '2026-04-15T20:00:00Z',
+        bundleSha256: 'sha-current',
+        bundleUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-current/platform-bundle.tar.zst',
+        manifestUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-current/release-manifest.json',
+      },
+    });
+
+    const summary = await service.getSummary();
+
+    expect(summary.preparedRelease).toBeNull();
+    expect(summary.operation).toBeNull();
+    expect(summary.updateAvailable).toBe(false);
+    expect(readPlatformUpdateState()).toBeNull();
+    expect(readPlatformUpdateRequestState()).toBeNull();
   });
 });
