@@ -276,4 +276,92 @@ describe('ControlPlaneUpdatesService', () => {
     expect(readPlatformUpdateState()).toBeNull();
     expect(readPlatformUpdateRequestState()).toBeNull();
   });
+
+  it('marks a stale active apply as failed when the target release never became active', async () => {
+    writePlatformUpdateState({
+      operation: 'apply',
+      status: 'recreating_services',
+      requestedAt: '2026-04-15T19:00:00.000Z',
+      startedAt: '2026-04-15T19:00:05.000Z',
+      completedAt: null,
+      requestedByUserId: 'user-1',
+      requestedByEmailSnapshot: 'admin@noderax.test',
+      currentRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      targetRelease: {
+        version: '1.0.0',
+        releaseId: 'release-next',
+        releasedAt: '2026-04-12T12:00:00Z',
+        bundleSha256: 'sha-next',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      preparedRelease: {
+        version: '1.0.0',
+        releaseId: 'release-next',
+        releasedAt: '2026-04-12T12:00:00Z',
+        bundleSha256: 'sha-next',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      previousRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      message: 'Rolling the runtime services onto the prepared control-plane release.',
+      error: null,
+      rollbackStatus: null,
+      auditLoggedAt: null,
+    });
+
+    writePlatformUpdateRequestState({
+      requestId: 'request-2',
+      operation: 'apply',
+      requestedAt: '2026-04-15T19:00:00.000Z',
+      requestedByUserId: 'user-1',
+      requestedByEmailSnapshot: 'admin@noderax.test',
+      targetReleaseId: 'release-next',
+    });
+
+    releaseCatalogService.getLatestRelease.mockResolvedValue({
+      checkedAt: new Date('2026-04-15T20:30:00Z'),
+      release: {
+        version: '1.0.0',
+        releaseId: 'release-next',
+        releasedAt: '2026-04-15T20:30:00Z',
+        builtAt: '2026-04-15T20:30:00Z',
+        bundleSha256: 'sha-next',
+        bundleUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-next/platform-bundle.tar.zst',
+        manifestUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-next/release-manifest.json',
+      },
+    });
+
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-15T20:30:00Z'));
+
+    const summary = await service.getSummary();
+
+    expect(summary.operation?.status).toBe('failed');
+    expect(summary.operation?.message).toContain('timed out');
+    expect(summary.preparedRelease?.releaseId).toBe('release-next');
+    expect(readPlatformUpdateRequestState()).toBeNull();
+    expect(readPlatformUpdateState()?.status).toBe('failed');
+
+    jest.useRealTimers();
+  });
 });

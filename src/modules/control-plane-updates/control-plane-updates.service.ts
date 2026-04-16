@@ -24,6 +24,7 @@ import { ControlPlaneReleaseCatalogService } from './control-plane-release-catal
 @Injectable()
 export class ControlPlaneUpdatesService {
   private readonly logger = new Logger(ControlPlaneUpdatesService.name);
+  private readonly staleApplyTimeoutMs = 15 * 60 * 1000;
 
   constructor(
     private readonly releaseCatalogService: ControlPlaneReleaseCatalogService,
@@ -35,13 +36,18 @@ export class ControlPlaneUpdatesService {
     const deploymentMode = this.getDeploymentMode();
     const supported = deploymentMode === 'installer_managed';
     const currentRelease = this.readCurrentRelease();
-    const reconciledUpdateState = this.reconcileStaleNoopApplyState(
+    const noOpReconciledState = this.reconcileStaleNoopApplyState(
       currentRelease,
       this.safeReadPlatformUpdateState(),
       this.safeReadPlatformUpdateRequest(),
     );
-    const request = reconciledUpdateState.request;
-    const state = reconciledUpdateState.state;
+    const staleApplyReconciledState = this.reconcileStaleActiveApplyState(
+      currentRelease,
+      noOpReconciledState.state,
+      noOpReconciledState.request,
+    );
+    const request = staleApplyReconciledState.request;
+    const state = staleApplyReconciledState.state;
     const { release: latestRelease, checkedAt } =
       await this.releaseCatalogService.getLatestRelease(forceRefresh);
 
@@ -434,6 +440,114 @@ export class ControlPlaneUpdatesService {
       state: stateIsStaleNoopApply ? null : state,
       request: requestTargetsInstalledRelease ? null : request,
     };
+  }
+
+  private reconcileStaleActiveApplyState(
+    currentRelease: ControlPlaneReleaseDto | null,
+    state:
+      | ReturnType<typeof readPlatformUpdateState>
+      | null,
+    request:
+      | ReturnType<typeof readPlatformUpdateRequestState>
+      | null,
+  ) {
+    if (
+      !state ||
+      state.operation !== 'apply' ||
+      state.status === 'completed' ||
+      state.status === 'failed'
+    ) {
+      return { state, request };
+    }
+
+    const startedAtMs = Date.parse(state.startedAt ?? state.requestedAt ?? '');
+    if (!Number.isFinite(startedAtMs)) {
+      return { state, request };
+    }
+
+    if (Date.now() - startedAtMs < this.staleApplyTimeoutMs) {
+      return { state, request };
+    }
+
+    const completedAt = new Date().toISOString();
+    const currentReleaseId = currentRelease?.releaseId ?? null;
+    const targetReleaseId =
+      state.targetRelease?.releaseId ?? request?.targetReleaseId ?? null;
+
+    if (currentReleaseId && targetReleaseId && currentReleaseId === targetReleaseId) {
+      this.logger.warn(
+        `Completing stale control-plane apply state for already-active release ${currentReleaseId}.`,
+      );
+
+      writePlatformUpdateState({
+        operation: state.operation,
+        status: 'completed',
+        requestedAt: state.requestedAt,
+        startedAt: state.startedAt,
+        completedAt,
+        requestedByUserId: state.requestedByUserId,
+        requestedByEmailSnapshot: state.requestedByEmailSnapshot,
+        currentRelease: state.targetRelease ?? state.currentRelease,
+        targetRelease: state.targetRelease,
+        preparedRelease: null,
+        previousRelease: state.previousRelease,
+        message:
+          'Control-plane update recovered after the target release was already activated.',
+        error: null,
+        rollbackStatus: 'not_needed',
+        auditLoggedAt: state.auditLoggedAt ?? null,
+      });
+      clearPlatformUpdateRequestState();
+
+      return {
+        state: readPlatformUpdateState(),
+        request: null,
+      };
+    }
+
+    const operatorGuidance = this.buildStaleApplyGuidance(currentReleaseId);
+    this.logger.error(
+      `Marking stale control-plane apply state as failed after timeout. current=${currentReleaseId ?? 'unknown'} target=${targetReleaseId ?? 'unknown'}`,
+    );
+
+    writePlatformUpdateState({
+      operation: state.operation,
+      status: 'failed',
+      requestedAt: state.requestedAt,
+      startedAt: state.startedAt,
+      completedAt,
+      requestedByUserId: state.requestedByUserId,
+      requestedByEmailSnapshot: state.requestedByEmailSnapshot,
+      currentRelease: currentRelease
+        ? this.toReleaseState(currentRelease)
+        : state.currentRelease,
+      targetRelease: state.targetRelease,
+      preparedRelease: state.preparedRelease,
+      previousRelease: state.previousRelease,
+      message:
+        'Control-plane apply timed out before the target release became active.',
+      error: operatorGuidance,
+      rollbackStatus: state.rollbackStatus ?? null,
+      auditLoggedAt: state.auditLoggedAt ?? null,
+    });
+    clearPlatformUpdateRequestState();
+
+    return {
+      state: readPlatformUpdateState(),
+      request: null,
+    };
+  }
+
+  private buildStaleApplyGuidance(currentReleaseId: string | null) {
+    const releaseIdLooksTimestamp =
+      typeof currentReleaseId === 'string' &&
+      /^[0-9]{8}T[0-9]{6}Z$/.test(currentReleaseId);
+
+    if (releaseIdLooksTimestamp && currentReleaseId < '20260416T210639Z') {
+      return 'The host-side updater on this control-plane build predates the self-update recovery fix. Refresh control-plane-update.sh and supervisor.sh on the host from the latest bundle, restart the supervisor, then retry the apply.';
+    }
+
+    return 'Review the host-side control-plane update state and supervisor logs, then retry the apply once the runtime is stable.';
   }
 
   private assertSupported(supported: boolean) {
