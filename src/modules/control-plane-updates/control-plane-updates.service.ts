@@ -59,7 +59,6 @@ export class ControlPlaneUpdatesService {
       rawPreparedRelease.releaseId === currentRelease?.releaseId
         ? null
         : rawPreparedRelease;
-    const operation = this.toOperationDto(state, request);
     const latestReleaseId = latestRelease?.releaseId ?? null;
     const currentReleaseId = currentRelease?.releaseId ?? null;
     const preparedReleaseId = preparedRelease?.releaseId ?? null;
@@ -69,6 +68,12 @@ export class ControlPlaneUpdatesService {
         latestReleaseId &&
         latestReleaseId !== currentReleaseId &&
         latestReleaseId !== preparedReleaseId,
+    );
+    const operation = this.toOperationDto(
+      state,
+      request,
+      currentReleaseId,
+      preparedReleaseId,
     );
 
     return {
@@ -332,8 +337,22 @@ export class ControlPlaneUpdatesService {
     request:
       | ReturnType<typeof readPlatformUpdateRequestState>
       | null,
+    currentReleaseId?: string | null,
+    preparedReleaseId?: string | null,
   ): ControlPlaneUpdateOperationDto | null {
     if (state) {
+      if (
+        state.status === 'completed' &&
+        this.shouldSuppressCompletedOperation({
+          operation: state.operation,
+          targetReleaseId: state.targetRelease?.releaseId ?? null,
+          currentReleaseId: currentReleaseId ?? null,
+          preparedReleaseId: preparedReleaseId ?? null,
+        })
+      ) {
+        return null;
+      }
+
       return {
         operation: state.operation,
         status: state.status,
@@ -609,5 +628,32 @@ export class ControlPlaneUpdatesService {
 
   private readProcessString(value: string | undefined) {
     return typeof value === 'string' && value.trim().length ? value.trim() : null;
+  }
+
+  private shouldSuppressCompletedOperation(input: {
+    operation: 'download' | 'apply';
+    targetReleaseId: string | null;
+    currentReleaseId: string | null;
+    preparedReleaseId: string | null;
+  }) {
+    if (!input.targetReleaseId) {
+      return true;
+    }
+
+    if (
+      input.operation === 'apply' &&
+      input.currentReleaseId === input.targetReleaseId
+    ) {
+      return true;
+    }
+
+    if (
+      input.operation === 'download' &&
+      input.preparedReleaseId === input.targetReleaseId
+    ) {
+      return true;
+    }
+
+    return false;
   }
 }

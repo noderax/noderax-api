@@ -364,4 +364,69 @@ describe('ControlPlaneUpdatesService', () => {
 
     jest.useRealTimers();
   });
+
+  it('suppresses completed apply operations after the target release is already active', async () => {
+    writePlatformUpdateState({
+      operation: 'apply',
+      status: 'completed',
+      requestedAt: '2026-04-16T21:40:00.000Z',
+      startedAt: '2026-04-16T21:40:01.000Z',
+      completedAt: '2026-04-16T21:40:40.000Z',
+      requestedByUserId: 'user-1',
+      requestedByEmailSnapshot: 'admin@noderax.test',
+      currentRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      targetRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      preparedRelease: null,
+      previousRelease: {
+        version: '1.0.0',
+        releaseId: 'release-previous',
+        releasedAt: '2026-04-10T11:00:00Z',
+        bundleSha256: 'sha-previous',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      message: 'Control-plane update applied successfully.',
+      error: null,
+      rollbackStatus: 'not_needed',
+      auditLoggedAt: '2026-04-16T21:40:45.000Z',
+    });
+
+    releaseCatalogService.getLatestRelease.mockResolvedValue({
+      checkedAt: new Date('2026-04-16T21:41:00Z'),
+      release: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-16T21:39:24Z',
+        builtAt: '2026-04-16T21:39:24Z',
+        bundleSha256: 'sha-current',
+        bundleUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-current/platform-bundle.tar.zst',
+        manifestUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-current/release-manifest.json',
+      },
+    });
+
+    const summary = await service.getSummary();
+
+    expect(summary.currentRelease?.releaseId).toBe('release-current');
+    expect(summary.operation).toBeNull();
+    expect(summary.updateAvailable).toBe(false);
+  });
 });
