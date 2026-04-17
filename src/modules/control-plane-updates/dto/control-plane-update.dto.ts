@@ -107,6 +107,18 @@ export class ControlPlaneUpdateOperationDto {
     nullable: true,
   })
   rollbackStatus: 'not_needed' | 'succeeded' | 'failed' | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '20260416T222058Z',
+  })
+  targetReleaseId: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '1.0.0',
+  })
+  targetVersion: string | null;
 }
 
 export class ControlPlaneUpdateSummaryDto {

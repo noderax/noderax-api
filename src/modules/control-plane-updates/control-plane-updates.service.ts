@@ -363,6 +363,8 @@ export class ControlPlaneUpdatesService {
         completedAt: state.completedAt,
         requestedByEmailSnapshot: state.requestedByEmailSnapshot,
         rollbackStatus: state.rollbackStatus,
+        targetReleaseId: state.targetRelease?.releaseId ?? request?.targetReleaseId ?? null,
+        targetVersion: state.targetRelease?.version ?? null,
       };
     }
 
@@ -380,6 +382,8 @@ export class ControlPlaneUpdatesService {
       completedAt: null,
       requestedByEmailSnapshot: request.requestedByEmailSnapshot,
       rollbackStatus: null,
+      targetReleaseId: request.targetReleaseId ?? null,
+      targetVersion: null,
     };
   }
 
