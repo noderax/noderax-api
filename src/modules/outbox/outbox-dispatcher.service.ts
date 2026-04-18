@@ -81,15 +81,12 @@ export class OutboxDispatcherService implements OnModuleInit {
 
   private async dispatchCreatedEvent(payload: Record<string, unknown>) {
     const event = this.hydrateEvent(payload.event as Record<string, unknown>);
-    this.realtimeGateway.emitEventCreated(
-      payload.event as Record<string, unknown>,
+    const realtimePayload = this.asPayload(payload.event);
+    this.realtimeGateway.emitEventCreated(realtimePayload);
+    await this.redisService.publish(
+      PUBSUB_CHANNELS.EVENTS_CREATED,
+      realtimePayload,
     );
-    await this.redisService.publish(PUBSUB_CHANNELS.EVENTS_CREATED, {
-      eventId: event.id,
-      nodeId: event.nodeId,
-      type: event.type,
-      severity: event.severity,
-    });
     await this.notificationsService.notifyEvent(event, {
       propagateErrors: true,
     });
@@ -124,22 +121,20 @@ export class OutboxDispatcherService implements OnModuleInit {
   }
 
   private async dispatchTaskCreated(payload: Record<string, unknown>) {
-    this.realtimeGateway.emitTaskCreated(
-      payload.task as Record<string, unknown>,
-    );
+    const realtimePayload = this.asPayload(payload.task);
+    this.realtimeGateway.emitTaskCreated(realtimePayload);
     await this.redisService.publish(
       PUBSUB_CHANNELS.TASKS_CREATED,
-      this.asPayload(payload.redis),
+      realtimePayload,
     );
   }
 
   private async dispatchTaskUpdated(payload: Record<string, unknown>) {
-    this.realtimeGateway.emitTaskUpdated(
-      payload.task as Record<string, unknown>,
-    );
+    const realtimePayload = this.asPayload(payload.task);
+    this.realtimeGateway.emitTaskUpdated(realtimePayload);
     await this.redisService.publish(
       PUBSUB_CHANNELS.TASKS_UPDATED,
-      this.asPayload(payload.redis),
+      realtimePayload,
     );
   }
 

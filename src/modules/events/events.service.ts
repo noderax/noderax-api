@@ -68,19 +68,22 @@ export class EventsService {
           event: {
             ...(savedEvent as unknown as Record<string, unknown>),
             createdAt: savedEvent.createdAt.toISOString(),
+            sourceInstanceId: this.redisService.getInstanceId(),
           },
         },
       });
     } else {
-      this.realtimeGateway.emitEventCreated(
-        savedEvent as unknown as Record<string, unknown>,
+      const realtimePayload = {
+        ...(savedEvent as unknown as Record<string, unknown>),
+        createdAt: savedEvent.createdAt.toISOString(),
+        sourceInstanceId: this.redisService.getInstanceId(),
+      };
+
+      this.realtimeGateway.emitEventCreated(realtimePayload);
+      await this.redisService.publish(
+        PUBSUB_CHANNELS.EVENTS_CREATED,
+        realtimePayload,
       );
-      await this.redisService.publish(PUBSUB_CHANNELS.EVENTS_CREATED, {
-        eventId: savedEvent.id,
-        nodeId: savedEvent.nodeId,
-        type: savedEvent.type,
-        severity: savedEvent.severity,
-      });
 
       await this.notificationsService.notifyEvent(savedEvent);
     }

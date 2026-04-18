@@ -33,6 +33,7 @@ export interface MailInlineAttachment {
 export class MailerService {
   private readonly logger = new Logger(MailerService.name);
   private transporter: Transporter | null = null;
+  private transporterKey: string | null = null;
   private readonly deliveries: MailDeliveryRecord[] = [];
 
   constructor(private readonly configService: ConfigService) {}
@@ -98,9 +99,23 @@ export class MailerService {
   }
 
   private getTransporter(settings: ConfigType<typeof mailConfig>): Transporter {
-    if (this.transporter) {
+    const nextTransporterKey = JSON.stringify({
+      jsonTransport: settings.jsonTransport,
+      smtpHost: settings.smtpHost,
+      smtpPort: settings.smtpPort,
+      smtpSecure: settings.smtpSecure,
+      smtpUsername: settings.smtpUsername,
+      smtpPassword: settings.smtpPassword,
+    });
+
+    if (this.transporter && this.transporterKey === nextTransporterKey) {
       return this.transporter;
     }
+
+    const activeTransporter = this.transporter as
+      | (Transporter & { close?: () => void })
+      | null;
+    activeTransporter?.close?.();
 
     this.transporter = settings.jsonTransport
       ? createTransport({
@@ -113,6 +128,7 @@ export class MailerService {
           smtpUsername: settings.smtpUsername,
           smtpPassword: settings.smtpPassword,
         });
+    this.transporterKey = nextTransporterKey;
 
     return this.transporter;
   }

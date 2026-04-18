@@ -1435,12 +1435,14 @@ export class TasksService {
       return;
     }
 
-    const redisPayload = {
-      taskId: task.id,
-      nodeId: task.nodeId,
-      status: task.status,
+    const realtimePayload = {
+      ...(task as unknown as Record<string, unknown>),
+      startedAt: task.startedAt?.toISOString() ?? null,
       finishedAt: task.finishedAt?.toISOString() ?? null,
+      createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
+      cancelRequestedAt: task.cancelRequestedAt?.toISOString() ?? null,
+      leaseUntil: task.leaseUntil?.toISOString() ?? null,
       sourceInstanceId: this.redisService.getInstanceId(),
     };
 
@@ -1448,19 +1450,16 @@ export class TasksService {
       await this.outboxService.enqueue({
         type: 'task.updated',
         payload: {
-          task: task as unknown as Record<string, unknown>,
-          redis: redisPayload,
+          task: realtimePayload,
         },
       });
       return;
     }
 
-    this.realtimeGateway.emitTaskUpdated(
-      task as unknown as Record<string, unknown>,
-    );
+    this.realtimeGateway.emitTaskUpdated(realtimePayload);
     await this.redisService.publish(
       PUBSUB_CHANNELS.TASKS_UPDATED,
-      redisPayload,
+      realtimePayload,
     );
   }
 
@@ -1541,36 +1540,45 @@ export class TasksService {
       });
 
       if (this.outboxService) {
+        const realtimePayload = {
+          ...(savedTask as unknown as Record<string, unknown>),
+          startedAt: savedTask.startedAt?.toISOString() ?? null,
+          finishedAt: savedTask.finishedAt?.toISOString() ?? null,
+          createdAt: savedTask.createdAt.toISOString(),
+          updatedAt: savedTask.updatedAt.toISOString(),
+          cancelRequestedAt: savedTask.cancelRequestedAt?.toISOString() ?? null,
+          leaseUntil: savedTask.leaseUntil?.toISOString() ?? null,
+          sourceInstanceId: this.redisService.getInstanceId(),
+        };
+
         await this.outboxService.enqueue({
           type: 'task.created',
           payload: {
-            task: savedTask as unknown as Record<string, unknown>,
-            redis: {
-              taskId: savedTask.id,
-              nodeId: savedTask.nodeId,
-              status: savedTask.status,
-              sourceInstanceId: this.redisService.getInstanceId(),
-            },
+            task: realtimePayload,
           },
         });
       } else {
-        this.realtimeGateway.emitTaskCreated(
-          savedTask as unknown as Record<string, unknown>,
+        const realtimePayload = {
+          ...(savedTask as unknown as Record<string, unknown>),
+          startedAt: savedTask.startedAt?.toISOString() ?? null,
+          finishedAt: savedTask.finishedAt?.toISOString() ?? null,
+          createdAt: savedTask.createdAt.toISOString(),
+          updatedAt: savedTask.updatedAt.toISOString(),
+          cancelRequestedAt: savedTask.cancelRequestedAt?.toISOString() ?? null,
+          leaseUntil: savedTask.leaseUntil?.toISOString() ?? null,
+          sourceInstanceId: this.redisService.getInstanceId(),
+        };
+
+        this.realtimeGateway.emitTaskCreated(realtimePayload);
+        await this.redisService.publish(
+          PUBSUB_CHANNELS.TASKS_CREATED,
+          realtimePayload,
         );
       }
     }
 
     if (this.isRealtimeTaskDispatchEnabled()) {
       await this.agentRealtimeService.dispatchTaskToNode(savedTask);
-    }
-
-    if (this.shouldBroadcastTask(savedTask) && !this.outboxService) {
-      await this.redisService.publish(PUBSUB_CHANNELS.TASKS_CREATED, {
-        taskId: savedTask.id,
-        nodeId: savedTask.nodeId,
-        status: savedTask.status,
-        sourceInstanceId: this.redisService.getInstanceId(),
-      });
     }
 
     if (context && this.shouldBroadcastTask(savedTask)) {
