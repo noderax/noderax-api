@@ -56,7 +56,7 @@ export class OutboxService {
     await queryRunner.startTransaction();
 
     try {
-      const rows = (await queryRunner.query(
+      const rawResult = await queryRunner.query(
         `
           WITH due AS (
             SELECT "id"
@@ -89,9 +89,11 @@ export class OutboxService {
             "outbox"."maxAttempts" AS "maxAttempts"
         `,
         [limit, this.workerId],
-      )) as Array<Record<string, unknown>>;
+      );
 
       await queryRunner.commitTransaction();
+
+      const rows = this.normalizeClaimRows(rawResult);
 
       const claimedIds = rows
         .map((row) => {
@@ -145,6 +147,30 @@ export class OutboxService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  private normalizeClaimRows(
+    rawResult: unknown,
+  ): Array<Record<string, unknown>> {
+    if (
+      Array.isArray(rawResult) &&
+      rawResult.length === 2 &&
+      Array.isArray(rawResult[0])
+    ) {
+      return rawResult[0].filter(
+        (row): row is Record<string, unknown> =>
+          typeof row === 'object' && row !== null && !Array.isArray(row),
+      );
+    }
+
+    if (Array.isArray(rawResult)) {
+      return rawResult.filter(
+        (row): row is Record<string, unknown> =>
+          typeof row === 'object' && row !== null && !Array.isArray(row),
+      );
+    }
+
+    return [];
   }
 
   async markDelivered(id: string): Promise<void> {

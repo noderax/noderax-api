@@ -69,6 +69,29 @@ describe('OutboxService', () => {
     ]);
   });
 
+  it('supports tuple-shaped raw query results returned by the driver', async () => {
+    queryRunner.query.mockResolvedValue([
+      [{ id: 'outbox-1' }, { id: 'outbox-2' }],
+      2,
+    ]);
+    outboxRepository.find.mockResolvedValue([
+      {
+        id: 'outbox-1',
+        type: 'event.created',
+        payload: { event: { id: 'event-1' } },
+      },
+      {
+        id: 'outbox-2',
+        type: 'task.updated',
+        payload: { task: { id: 'task-2' } },
+      },
+    ] as never);
+
+    const claimed = await service.claimDueBatch(25);
+
+    expect(claimed.map((event) => event.id)).toEqual(['outbox-1', 'outbox-2']);
+  });
+
   it('rejects markFailed when the outbox event id is missing', async () => {
     await expect(
       service.markFailed(
