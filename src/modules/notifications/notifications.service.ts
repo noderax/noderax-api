@@ -114,61 +114,95 @@ export class NotificationsService {
     });
   }
 
-  async notifyEvent(event: EventEntity) {
-    try {
-      const workspace = await this.workspacesRepository.findOne({
-        where: { id: event.workspaceId },
-      });
+  async notifyEvent(
+    event: EventEntity,
+    options?: { propagateErrors?: boolean },
+  ) {
+    const workspace = await this.workspacesRepository.findOne({
+      where: { id: event.workspaceId },
+    });
 
-      if (!workspace) {
-        this.logger.warn(
-          `Could not find workspace ${event.workspaceId} for event notification`,
-        );
-        return;
-      }
+    if (!workspace) {
+      this.logger.warn(
+        `Could not find workspace ${event.workspaceId} for event notification`,
+      );
+      return;
+    }
 
-      const node = event.nodeId
-        ? await this.nodesRepository.findOne({ where: { id: event.nodeId } })
-        : null;
-      const isNodeScoped = Boolean(event.nodeId);
-      const nodeEmailEnabled =
-        !isNodeScoped ||
-        !node ||
-        (node.notificationEmailEnabled !== false &&
-          this.nodeAllowsSeverity(
-            node.notificationEmailLevels,
-            event.severity,
-          ));
-      const nodeTelegramEnabled =
-        !isNodeScoped ||
-        !node ||
-        (node.notificationTelegramEnabled !== false &&
-          this.nodeAllowsSeverity(
-            node.notificationTelegramLevels,
-            event.severity,
-          ));
+    const node = event.nodeId
+      ? await this.nodesRepository.findOne({ where: { id: event.nodeId } })
+      : null;
+    const isNodeScoped = Boolean(event.nodeId);
+    const nodeEmailEnabled =
+      !isNodeScoped ||
+      !node ||
+      (node.notificationEmailEnabled !== false &&
+        this.nodeAllowsSeverity(node.notificationEmailLevels, event.severity));
+    const nodeTelegramEnabled =
+      !isNodeScoped ||
+      !node ||
+      (node.notificationTelegramEnabled !== false &&
+        this.nodeAllowsSeverity(
+          node.notificationTelegramLevels,
+          event.severity,
+        ));
 
-      // 1. Telegram Automation
-      if (
-        workspace.automationTelegramEnabled &&
-        workspace.automationTelegramBotToken &&
-        workspace.automationTelegramChatId &&
-        workspace.automationTelegramLevels.includes(event.severity) &&
-        nodeTelegramEnabled
-      ) {
+    this.logger.log(
+      JSON.stringify({
+        msg: 'notification.event.evaluated',
+        eventId: event.id,
+        workspaceId: event.workspaceId,
+        nodeId: event.nodeId,
+        severity: event.severity,
+        workspaceEmailEnabled: workspace.automationEmailEnabled,
+        workspaceTelegramEnabled: workspace.automationTelegramEnabled,
+        nodeEmailEnabled,
+        nodeTelegramEnabled,
+      }),
+    );
+
+    const errors: Error[] = [];
+
+    if (
+      workspace.automationTelegramEnabled &&
+      workspace.automationTelegramBotToken &&
+      workspace.automationTelegramChatId &&
+      workspace.automationTelegramLevels.includes(event.severity) &&
+      nodeTelegramEnabled
+    ) {
+      try {
         await this.sendTelegramMessage(workspace, event, node);
+      } catch (error) {
+        const telegramError =
+          error instanceof Error ? error : new Error(String(error));
+        errors.push(telegramError);
+        this.logger.error(
+          `Failed to send Telegram event notification for workspace ${workspace.id}`,
+          telegramError.stack ?? telegramError.message,
+        );
       }
+    } else {
+      this.logger.log(
+        JSON.stringify({
+          msg: 'notification.telegram.skipped',
+          eventId: event.id,
+          workspaceId: workspace.id,
+          nodeId: event.nodeId,
+          severity: event.severity,
+        }),
+      );
+    }
 
-      // 2. Email Automation
-      const shouldSendEmail = isNodeScoped
-        ? workspace.automationEmailEnabled &&
-          workspace.automationEmailLevels.includes(event.severity) &&
-          nodeEmailEnabled
-        : event.severity === EventSeverity.CRITICAL ||
-          (workspace.automationEmailEnabled &&
-            workspace.automationEmailLevels.includes(event.severity));
+    const shouldSendEmail = isNodeScoped
+      ? workspace.automationEmailEnabled &&
+        workspace.automationEmailLevels.includes(event.severity) &&
+        nodeEmailEnabled
+      : event.severity === EventSeverity.CRITICAL ||
+        (workspace.automationEmailEnabled &&
+          workspace.automationEmailLevels.includes(event.severity));
 
-      if (shouldSendEmail) {
+    if (shouldSendEmail) {
+      try {
         const [
           platformAdmins,
           workspaceAdminsWithPreference,
@@ -205,7 +239,11 @@ export class NotificationsService {
 
         const uniqueRecipientsList = Array.from(new Set(recipientEmails));
 
-        if (uniqueRecipientsList.length > 0) {
+        if (uniqueRecipientsList.length === 0) {
+          this.logger.warn(
+            `No email recipients matched event ${event.id} in workspace ${workspace.id}`,
+          );
+        } else {
           const nodeDisplay = node
             ? `${node.name} (${node.id})`
             : (event.nodeId ?? 'n/a');
@@ -237,12 +275,36 @@ export class NotificationsService {
             html: email.html,
           });
         }
+      } catch (error) {
+        const emailError =
+          error instanceof Error ? error : new Error(String(error));
+        errors.push(emailError);
+        this.logger.error(
+          `Failed to send email event notification for workspace ${workspace.id}`,
+          emailError.stack ?? emailError.message,
+        );
       }
-    } catch (error) {
-      this.logger.error(
-        'Failed to deliver event notification',
-        error instanceof Error ? (error.stack ?? error.message) : String(error),
+    } else {
+      this.logger.log(
+        JSON.stringify({
+          msg: 'notification.email.skipped',
+          eventId: event.id,
+          workspaceId: workspace.id,
+          nodeId: event.nodeId,
+          severity: event.severity,
+        }),
       );
+    }
+
+    if (errors.length > 0) {
+      const error = new Error(
+        `Event notification delivery failed for event ${event.id}: ${errors
+          .map((error) => error.message)
+          .join(' | ')}`,
+      );
+      if (options?.propagateErrors) {
+        throw error;
+      }
     }
   }
 
@@ -251,50 +313,43 @@ export class NotificationsService {
     event: EventEntity,
     node?: NodeEntity | null,
   ) {
-    try {
-      const severityEmoji =
-        event.severity === EventSeverity.CRITICAL
-          ? '🔴'
-          : event.severity === EventSeverity.WARNING
-            ? '🟠'
-            : '🔵';
+    const severityEmoji =
+      event.severity === EventSeverity.CRITICAL
+        ? '🔴'
+        : event.severity === EventSeverity.WARNING
+          ? '🟠'
+          : '🔵';
 
-      const dashboardUrl = this.buildFrontendUrl('');
-      const nodeDisplay = node
-        ? `${node.name} (${node.id})`
-        : (event.nodeId ?? 'n/a');
-      const text =
-        `<b>${severityEmoji} Noderax Event</b>\n\n` +
-        `<b>Type:</b> ${this.escapeTelegramHtml(event.type)}\n` +
-        `<b>Workspace:</b> ${this.escapeTelegramHtml(workspace.name)}\n` +
-        `<b>Severity:</b> ${this.escapeTelegramHtml(event.severity.toUpperCase())}\n` +
-        `<b>Node:</b> ${this.escapeTelegramHtml(nodeDisplay)}\n\n` +
-        `<code>${this.escapeTelegramHtml(event.message)}</code>\n\n` +
-        `<a href="${this.escapeTelegramHtml(dashboardUrl)}">Open Dashboard</a>`;
+    const dashboardUrl = this.buildFrontendUrl('');
+    const nodeDisplay = node
+      ? `${node.name} (${node.id})`
+      : (event.nodeId ?? 'n/a');
+    const text =
+      `<b>${severityEmoji} Noderax Event</b>\n\n` +
+      `<b>Type:</b> ${this.escapeTelegramHtml(event.type)}\n` +
+      `<b>Workspace:</b> ${this.escapeTelegramHtml(workspace.name)}\n` +
+      `<b>Severity:</b> ${this.escapeTelegramHtml(event.severity.toUpperCase())}\n` +
+      `<b>Node:</b> ${this.escapeTelegramHtml(nodeDisplay)}\n\n` +
+      `<code>${this.escapeTelegramHtml(event.message)}</code>\n\n` +
+      `<a href="${this.escapeTelegramHtml(dashboardUrl)}">Open Dashboard</a>`;
 
-      const response = await fetch(
-        `https://api.telegram.org/bot${workspace.automationTelegramBotToken}/sendMessage`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: workspace.automationTelegramChatId,
-            text,
-            parse_mode: 'HTML',
-          }),
-        },
-      );
+    const response = await fetch(
+      `https://api.telegram.org/bot${workspace.automationTelegramBotToken}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: workspace.automationTelegramChatId,
+          text,
+          parse_mode: 'HTML',
+        }),
+      },
+    );
 
-      if (!response.ok) {
-        const body = await response.text();
-        this.logger.error(
-          `Telegram API error for workspace ${workspace.id}: ${response.status} ${body}`,
-        );
-      }
-    } catch (error) {
-      this.logger.error(
-        `Failed to send Telegram message for workspace ${workspace.id}`,
-        error instanceof Error ? error.message : String(error),
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(
+        `Telegram API error for workspace ${workspace.id}: ${response.status} ${body}`,
       );
     }
   }

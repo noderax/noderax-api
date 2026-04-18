@@ -90,7 +90,9 @@ export class OutboxDispatcherService implements OnModuleInit {
       type: event.type,
       severity: event.severity,
     });
-    await this.notificationsService.notifyEvent(event);
+    await this.notificationsService.notifyEvent(event, {
+      propagateErrors: true,
+    });
   }
 
   private async dispatchMetricIngested(payload: Record<string, unknown>) {
