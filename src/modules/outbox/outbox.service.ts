@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { hostname } from 'os';
 import { randomUUID } from 'crypto';
 import { OutboxEventEntity } from './entities/outbox-event.entity';
@@ -16,6 +16,7 @@ export type ClaimedOutboxEvent = OutboxEventEntity;
 
 @Injectable()
 export class OutboxService {
+  private readonly logger = new Logger(OutboxService.name);
   private readonly workerId = `${hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
 
   constructor(
@@ -62,6 +63,11 @@ export class OutboxService {
             FROM "outbox_events"
             WHERE "status" IN ('pending', 'failed')
               AND "availableAt" <= now()
+              OR (
+                "status" = 'processing'
+                AND "lockedAt" IS NOT NULL
+                AND "lockedAt" <= now() - interval '2 minutes'
+              )
             ORDER BY "availableAt" ASC, "createdAt" ASC
             LIMIT $1
             FOR UPDATE SKIP LOCKED
@@ -75,13 +81,41 @@ export class OutboxService {
             "updatedAt" = now()
           FROM due
           WHERE "outbox"."id" = due."id"
-          RETURNING "outbox".*
+          RETURNING "outbox"."id"
         `,
         [limit, this.workerId],
-      )) as ClaimedOutboxEvent[];
+      )) as Array<Record<string, unknown>>;
 
       await queryRunner.commitTransaction();
-      return rows;
+
+      const claimedIds = rows
+        .map((row) => row.id)
+        .filter((value): value is string => typeof value === 'string');
+
+      if (claimedIds.length === 0) {
+        return [];
+      }
+
+      const claimedEvents = await this.outboxRepository.find({
+        where: { id: In(claimedIds) },
+      });
+      const claimedEventsById = new Map(
+        claimedEvents.map((event) => [event.id, event]),
+      );
+
+      return claimedIds
+        .map((id) => {
+          const event = claimedEventsById.get(id);
+          if (!event) {
+            this.logger.warn(
+              `Claimed outbox event ${id} could not be reloaded after lock acquisition`,
+            );
+            return null;
+          }
+
+          return event;
+        })
+        .filter((event): event is ClaimedOutboxEvent => event !== null);
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
@@ -104,6 +138,10 @@ export class OutboxService {
     event: Pick<OutboxEventEntity, 'id' | 'attempts' | 'maxAttempts'>,
     errorMessage: string,
   ): Promise<void> {
+    if (!event.id) {
+      throw new Error('Cannot mark outbox event as failed without an id');
+    }
+
     const deadLetter = event.attempts >= event.maxAttempts;
     const retryDelayMs = Math.min(
       60_000,

@@ -37,15 +37,29 @@ export class OutboxDispatcherService implements OnModuleInit {
 
       for (const event of batch) {
         try {
+          this.assertClaimedEvent(event);
           await this.dispatchEvent(event);
           await this.outboxService.markDelivered(event.id);
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
+          const eventType =
+            typeof event?.type === 'string' ? event.type : '<unknown>';
+          const eventId =
+            typeof event?.id === 'string' ? event.id : '<unknown>';
+
           this.logger.error(
-            `Outbox dispatch failed for ${event.type} (${event.id}): ${message}`,
+            `Outbox dispatch failed for ${eventType} (${eventId}): ${message}`,
           );
-          await this.outboxService.markFailed(event, message);
+
+          if (this.canMarkFailed(event)) {
+            await this.outboxService.markFailed(event, message);
+            continue;
+          }
+
+          this.logger.error(
+            `Skipping markFailed for malformed outbox event payload ${eventId}`,
+          );
         }
       }
     }
@@ -75,7 +89,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         await this.dispatchNodeInstallUpdated(event.payload);
         return;
       default:
-        this.logger.warn(`Ignoring unknown outbox event type ${event.type}`);
+        throw new Error(`Unknown outbox event type ${String(event.type)}`);
     }
   }
 
@@ -164,5 +178,33 @@ export class OutboxDispatcherService implements OnModuleInit {
     }
 
     return {};
+  }
+
+  private assertClaimedEvent(
+    event: OutboxEventEntity | null | undefined,
+  ): asserts event is OutboxEventEntity {
+    if (
+      !event ||
+      typeof event.id !== 'string' ||
+      event.id.length === 0 ||
+      typeof event.type !== 'string' ||
+      event.type.length === 0 ||
+      !event.payload ||
+      typeof event.payload !== 'object' ||
+      Array.isArray(event.payload)
+    ) {
+      throw new Error('Malformed outbox event claimed for dispatch');
+    }
+  }
+
+  private canMarkFailed(
+    event: Partial<Pick<OutboxEventEntity, 'id' | 'attempts' | 'maxAttempts'>>,
+  ): event is Pick<OutboxEventEntity, 'id' | 'attempts' | 'maxAttempts'> {
+    return (
+      typeof event?.id === 'string' &&
+      event.id.length > 0 &&
+      typeof event.attempts === 'number' &&
+      typeof event.maxAttempts === 'number'
+    );
   }
 }

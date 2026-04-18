@@ -121,4 +121,44 @@ describe('OutboxDispatcherService realtime payload forwarding', () => {
       taskPayload,
     );
   });
+
+  it('marks unknown outbox event types as failed instead of delivering them', async () => {
+    outboxService.claimDueBatch.mockResolvedValueOnce([
+      {
+        id: 'outbox-3',
+        type: 'totally.unknown',
+        attempts: 1,
+        maxAttempts: 8,
+        payload: {},
+      },
+    ]);
+    outboxService.claimDueBatch.mockResolvedValueOnce([]);
+
+    await service.dispatchDueEvents();
+
+    expect(outboxService.markDelivered).not.toHaveBeenCalled();
+    expect(outboxService.markFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'outbox-3',
+        type: 'totally.unknown',
+      }),
+      expect.stringContaining('Unknown outbox event type'),
+    );
+  });
+
+  it('does not attempt markFailed when a malformed outbox event has no id', async () => {
+    outboxService.claimDueBatch.mockResolvedValueOnce([
+      {
+        id: '',
+        type: '',
+        payload: null,
+      },
+    ]);
+    outboxService.claimDueBatch.mockResolvedValueOnce([]);
+
+    await service.dispatchDueEvents();
+
+    expect(outboxService.markDelivered).not.toHaveBeenCalled();
+    expect(outboxService.markFailed).not.toHaveBeenCalled();
+  });
 });
