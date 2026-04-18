@@ -18,8 +18,11 @@ import {
 } from '../../common/constants/agent-realtime.constants';
 import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
+import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RedisService } from '../../redis/redis.service';
 import { AgentUpdatesService } from '../agent-updates/agent-updates.service';
+import { EventSeverity } from '../events/entities/event-severity.enum';
+import { EventsService } from '../events/events.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { NodeEntity } from '../nodes/entities/node.entity';
 import { NodeRootAccessProfile } from '../nodes/entities/node-root-access-profile.enum';
@@ -85,6 +88,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     private readonly metricsService: MetricsService,
     @Inject(forwardRef(() => AgentUpdatesService))
     private readonly agentUpdatesService: AgentUpdatesService,
+    private readonly eventsService: EventsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -423,9 +427,19 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     this.nodeToSocketId.delete(session.nodeId);
     await this.clearNodeRouteIfOwned(session.nodeId, socketId);
 
-    const { node: offlineNode } = await this.nodesService.markOffline(
-      session.nodeId,
-    );
+    const { node: offlineNode, transitionedToOffline } =
+      await this.nodesService.markOffline(session.nodeId);
+    if (transitionedToOffline) {
+      await this.eventsService.record({
+        nodeId: offlineNode.id,
+        type: SYSTEM_EVENT_TYPES.NODE_OFFLINE,
+        severity: EventSeverity.WARNING,
+        message: `Node ${offlineNode.hostname} went offline after its realtime route disconnected`,
+        metadata: {
+          disconnectSource: 'agent_realtime',
+        },
+      });
+    }
     if (offlineNode.status === NodeStatus.OFFLINE) {
       await this.nodesService.broadcastStatusUpdate(offlineNode);
     }

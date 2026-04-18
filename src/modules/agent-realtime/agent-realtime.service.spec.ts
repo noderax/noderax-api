@@ -3,8 +3,10 @@
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { AGENT_REALTIME_SERVER_EVENTS } from '../../common/constants/agent-realtime.constants';
+import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RedisService } from '../../redis/redis.service';
 import { AgentUpdatesService } from '../agent-updates/agent-updates.service';
+import { EventsService } from '../events/events.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { NodeStatus } from '../nodes/entities/node-status.enum';
 import { NodesService } from '../nodes/nodes.service';
@@ -22,6 +24,7 @@ describe('AgentRealtimeService', () => {
   let redisService: jest.Mocked<RedisService>;
   let metricsService: jest.Mocked<MetricsService>;
   let agentUpdatesService: jest.Mocked<AgentUpdatesService>;
+  let eventsService: jest.Mocked<EventsService>;
 
   beforeEach(async () => {
     lifecycleRepository = {
@@ -72,6 +75,10 @@ describe('AgentRealtimeService', () => {
       observeNodeVersion: jest.fn(),
     } as unknown as jest.Mocked<AgentUpdatesService>;
 
+    eventsService = {
+      record: jest.fn(),
+    } as unknown as jest.Mocked<EventsService>;
+
     const configService = {
       getOrThrow: jest.fn().mockReturnValue({
         enableRealtimeTaskDispatch: true,
@@ -92,6 +99,7 @@ describe('AgentRealtimeService', () => {
       tasksService,
       metricsService,
       agentUpdatesService,
+      eventsService,
     );
 
     await service.onModuleInit();
@@ -262,6 +270,39 @@ describe('AgentRealtimeService', () => {
           updatedAt: '2026-04-04T17:25:00.000Z',
         },
       },
+    );
+  });
+
+  it('records a node offline event when the active realtime socket disconnects', async () => {
+    await service.authenticateSocket({
+      socketId: 'socket-1',
+      nodeId: 'node-1',
+      agentToken: 'token-1',
+    });
+
+    nodesService.markOffline.mockResolvedValueOnce({
+      node: {
+        id: 'node-1',
+        hostname: 'node-1.local',
+        status: NodeStatus.OFFLINE,
+        lastSeenAt: new Date('2026-03-20T10:00:00.000Z'),
+      } as never,
+      transitionedToOffline: true,
+    });
+
+    await service.handleSocketDisconnect('socket-1');
+
+    expect(eventsService.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: 'node-1',
+        type: SYSTEM_EVENT_TYPES.NODE_OFFLINE,
+      }),
+    );
+    expect(nodesService.broadcastStatusUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'node-1',
+        status: NodeStatus.OFFLINE,
+      }),
     );
   });
 });
