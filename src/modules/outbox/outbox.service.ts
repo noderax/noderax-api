@@ -61,9 +61,10 @@ export class OutboxService {
           WITH due AS (
             SELECT "id"
             FROM "outbox_events"
-            WHERE "status" IN ('pending', 'failed')
+            WHERE (
+              "status" IN ('pending', 'failed')
               AND "availableAt" <= now()
-              OR (
+            ) OR (
                 "status" = 'processing'
                 AND "lockedAt" IS NOT NULL
                 AND "lockedAt" <= now() - interval '2 minutes'
@@ -81,7 +82,11 @@ export class OutboxService {
             "updatedAt" = now()
           FROM due
           WHERE "outbox"."id" = due."id"
-          RETURNING "outbox"."id"
+          RETURNING
+            "outbox"."id" AS "id",
+            "outbox"."type" AS "type",
+            "outbox"."attempts" AS "attempts",
+            "outbox"."maxAttempts" AS "maxAttempts"
         `,
         [limit, this.workerId],
       )) as Array<Record<string, unknown>>;
@@ -89,10 +94,28 @@ export class OutboxService {
       await queryRunner.commitTransaction();
 
       const claimedIds = rows
-        .map((row) => row.id)
+        .map((row) => {
+          if (typeof row.id === 'string' && row.id.length > 0) {
+            return row.id;
+          }
+
+          if (typeof row.outbox_id === 'string' && row.outbox_id.length > 0) {
+            return row.outbox_id;
+          }
+
+          this.logger.warn(
+            `Claimed outbox row missing id after lock acquisition: ${JSON.stringify(row)}`,
+          );
+          return null;
+        })
         .filter((value): value is string => typeof value === 'string');
 
       if (claimedIds.length === 0) {
+        if (rows.length > 0) {
+          this.logger.warn(
+            `Discarded ${rows.length} claimed outbox rows because no valid ids were returned`,
+          );
+        }
         return [];
       }
 
