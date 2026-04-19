@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class DependencyCheckActionDto {
   @ApiProperty({ example: 'requeue' })
@@ -65,10 +65,9 @@ export class DependencyCheckDto {
   @ApiProperty({ example: null, nullable: true })
   detail: string | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: 'object',
     nullable: true,
-    required: false,
     additionalProperties: true,
   })
   meta?: Record<string, unknown> | null;
