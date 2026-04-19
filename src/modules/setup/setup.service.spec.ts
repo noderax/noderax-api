@@ -132,6 +132,7 @@ describe('SetupService', () => {
       smtpSecure: false,
       smtpUsername: 'resend',
       smtpPassword: 'secret',
+      fromEmail: 'info@noderax.net',
     });
   });
 

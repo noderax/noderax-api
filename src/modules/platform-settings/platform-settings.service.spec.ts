@@ -175,6 +175,7 @@ describe('PlatformSettingsService', () => {
       smtpSecure: false,
       smtpUsername: 'resend',
       smtpPassword: 'secret',
+      fromEmail: 'info@noderax.net',
     });
   });
 

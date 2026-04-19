@@ -566,6 +566,7 @@ export class SetupService {
         smtpSecure: dto.smtpSecure,
         smtpUsername: dto.smtpUsername,
         smtpPassword: dto.smtpPassword,
+        fromEmail: dto.fromEmail,
       });
     } catch (error) {
       throw new BadRequestException(

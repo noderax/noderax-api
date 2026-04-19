@@ -6,6 +6,7 @@ export interface SmtpConnectionSettings {
   smtpSecure: boolean;
   smtpUsername: string;
   smtpPassword: string;
+  fromEmail?: string;
 }
 
 const SMTP_CONNECTION_TIMEOUT_MS = 5_000;
@@ -41,6 +42,16 @@ export const verifySmtpConnection = async (
 
   try {
     await transporter.verify();
+
+    const fromEmail = settings.fromEmail?.trim();
+    if (fromEmail) {
+      await transporter.sendMail({
+        from: fromEmail,
+        to: fromEmail,
+        subject: 'Noderax SMTP validation',
+        text: 'This is a validation email sent by Noderax to confirm SMTP delivery settings.',
+      });
+    }
   } finally {
     if (typeof transporter.close === 'function') {
       transporter.close();

@@ -83,7 +83,17 @@ export class MailerService {
         code?: string;
         responseCode?: number;
         command?: string;
+        response?: string;
       };
+      const smtpResponse =
+        typeof smtpError.response === 'string' && smtpError.response.trim()
+          ? smtpError.response.trim()
+          : smtpError.message;
+      const senderHint =
+        /from|sender|mail from/i.test(smtpResponse) ||
+        [550, 553, 554].includes(smtpError.responseCode ?? 0)
+          ? ' Verify SMTP_FROM_EMAIL and the sender identity/domain with your email provider.'
+          : '';
 
       this.logger.error(
         `Email delivery failed via ${settings.smtpHost}:${settings.smtpPort} (${smtpError.code ?? 'unknown'})${
@@ -93,7 +103,7 @@ export class MailerService {
       );
 
       throw new ServiceUnavailableException(
-        'Email delivery failed. Check SMTP credentials or SMTP connectivity.',
+        `Email delivery failed: ${smtpResponse}.${senderHint}`.trim(),
       );
     }
   }

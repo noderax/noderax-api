@@ -131,4 +131,39 @@ describe('MailerService', () => {
     expect(transporter.close).not.toHaveBeenCalled();
     expect(transporter.sendMail).toHaveBeenCalledTimes(2);
   });
+
+  it('surfaces detailed SMTP sender errors', async () => {
+    const transporter = {
+      sendMail: jest.fn().mockRejectedValue({
+        code: 'EENVELOPE',
+        responseCode: 550,
+        response: '550 The from address is not verified',
+        message: 'sender rejected',
+      }),
+      close: jest.fn(),
+    };
+
+    configService.getOrThrow.mockReturnValue({
+      jsonTransport: false,
+      smtpHost: 'smtp.resend.com',
+      smtpPort: 465,
+      smtpSecure: true,
+      smtpUsername: 'resend',
+      smtpPassword: 'secret',
+      fromEmail: 'alerts@example.com',
+      fromName: 'Noderax',
+    });
+
+    (createSmtpTransporter as jest.Mock).mockReturnValue(transporter);
+
+    await expect(
+      service.sendMail({
+        to: ['admin@example.com'],
+        subject: 'Probe',
+        text: 'hello',
+      }),
+    ).rejects.toThrow(
+      /Email delivery failed: 550 The from address is not verified\. Verify SMTP_FROM_EMAIL and the sender identity\/domain with your email provider\./,
+    );
+  });
 });
