@@ -60,11 +60,16 @@ jest.mock('../../install/install-state', () => ({
       secrets: value,
     };
   }),
+  writePlatformApiRestartRequestState: jest.fn(),
 }));
 
 jest.mock('../../common/utils/smtp.util', () => ({
   verifySmtpConnection: jest.fn(),
 }));
+
+const installStateModule = jest.requireMock('../../install/install-state') as {
+  writePlatformApiRestartRequestState: jest.Mock;
+};
 
 describe('PlatformSettingsService', () => {
   let service: PlatformSettingsService;
@@ -78,6 +83,7 @@ describe('PlatformSettingsService', () => {
     installSecretsValue = null;
     process.env = { ...envSnapshot };
     delete process.env[INSTALLER_MANAGED_FLAG];
+    delete process.env.NODERAX_RUNTIME_ROLE;
     jest.clearAllMocks();
     jest.useRealTimers();
     service = new PlatformSettingsService(auditLogsService as never);
@@ -192,6 +198,37 @@ describe('PlatformSettingsService', () => {
     expect(killSpy).toHaveBeenCalledTimes(1);
     expect(killSpy).toHaveBeenCalledWith(process.pid, 'SIGTERM');
     expect(auditLogsService.record).toHaveBeenCalledTimes(1);
+    expect(service.createRestartResponse().message).toContain(
+      'already in progress',
+    );
+
+    killSpy.mockRestore();
+  });
+
+  it('writes a shared restart request instead of killing the local process in runtime_ha', () => {
+    process.env[INSTALLER_MANAGED_FLAG] = 'true';
+    process.env.NODERAX_RUNTIME_ROLE = 'runtime_ha';
+    const killSpy = jest
+      .spyOn(process, 'kill')
+      .mockImplementation(() => true as never);
+
+    service.scheduleApiRestart({
+      id: 'user-1',
+      email: 'admin@noderax.net',
+    } as never);
+
+    expect(
+      installStateModule.writePlatformApiRestartRequestState,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      installStateModule.writePlatformApiRestartRequestState,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestedByUserId: 'user-1',
+        requestedByEmailSnapshot: 'admin@noderax.net',
+      }),
+    );
+    expect(killSpy).not.toHaveBeenCalled();
     expect(service.createRestartResponse().message).toContain(
       'already in progress',
     );

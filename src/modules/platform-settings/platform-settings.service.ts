@@ -9,6 +9,7 @@ import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import {
   INSTALLER_MANAGED_FLAG,
+  writePlatformApiRestartRequestState,
   readInstallSecrets,
   readManagedInstallEnv,
   readInstallState,
@@ -25,6 +26,7 @@ import {
   type PlatformSettingsValuesDto,
   UpdatePlatformSettingsDto,
 } from './dto/platform-settings.dto';
+import { randomUUID } from 'crypto';
 
 const PLATFORM_SETTINGS_ENV_KEYS = [
   'CORS_ORIGIN',
@@ -176,12 +178,17 @@ export class PlatformSettingsService {
   }
 
   createRestartResponse(): PlatformApiRestartResponseDto {
+    const clusterRestart = this.shouldUseClusterRestart();
     return {
       accepted: true,
       requestedAt: new Date().toISOString(),
       message: this.restartScheduled
-        ? 'API restart is already in progress. Wait for the process supervisor to bring the service back.'
-        : 'API restart requested. The current process will exit and should come back if it is supervised by Docker, systemd, or another process manager.',
+        ? clusterRestart
+          ? 'Runtime API restart is already in progress. Wait for both API instances to be recreated.'
+          : 'API restart is already in progress. Wait for the process supervisor to bring the service back.'
+        : clusterRestart
+          ? 'Runtime API restart requested. Both API instances will be recreated by the host supervisor.'
+          : 'API restart requested. The current process will exit and should come back if it is supervised by Docker, systemd, or another process manager.',
     };
   }
 
@@ -191,7 +198,12 @@ export class PlatformSettingsService {
     }
 
     this.restartScheduled = true;
-    this.logger.warn('API restart requested. Exiting current process shortly.');
+    const clusterRestart = this.shouldUseClusterRestart();
+    this.logger.warn(
+      clusterRestart
+        ? 'Runtime API restart requested. Writing shared restart request for both API instances.'
+        : 'API restart requested. Exiting current process shortly.',
+    );
 
     if (actor) {
       void this.auditLogsService.record({
@@ -205,6 +217,16 @@ export class PlatformSettingsService {
           actorEmailSnapshot: actor.email,
         },
       });
+    }
+
+    if (clusterRestart) {
+      writePlatformApiRestartRequestState({
+        requestId: randomUUID(),
+        requestedAt: new Date().toISOString(),
+        requestedByUserId: actor?.id ?? null,
+        requestedByEmailSnapshot: actor?.email ?? null,
+      });
+      return;
     }
 
     const restartTimer = setTimeout(() => {
@@ -262,6 +284,13 @@ export class PlatformSettingsService {
     return (
       process.env[INSTALLER_MANAGED_FLAG] === 'true' ||
       Boolean(readInstallState())
+    );
+  }
+
+  private shouldUseClusterRestart() {
+    return (
+      this.isEditableDeployment() &&
+      process.env.NODERAX_RUNTIME_ROLE === 'runtime_ha'
     );
   }
 

@@ -70,6 +70,15 @@ export type PlatformUpdateRequestState = {
   targetReleaseId: string | null;
 };
 
+export type PlatformApiRestartRequestState = {
+  version: 1;
+  source: 'installer';
+  requestId: string;
+  requestedAt: string;
+  requestedByUserId: string | null;
+  requestedByEmailSnapshot: string | null;
+};
+
 export type PlatformUpdateState = {
   version: 1;
   source: 'installer';
@@ -112,6 +121,8 @@ export const INSTALL_SECRETS_FILENAME = 'install-secrets.json';
 export const INSTALL_TRANSITION_FILENAME = 'install-transition.json';
 export const PLATFORM_UPDATE_REQUEST_FILENAME = 'platform-update-request.json';
 export const PLATFORM_UPDATE_STATE_FILENAME = 'platform-update-state.json';
+export const PLATFORM_API_RESTART_REQUEST_FILENAME =
+  'platform-api-restart-request.json';
 export const INSTALLER_MANAGED_FLAG = 'NODERAX_INSTALLER_MANAGED';
 export const BOOT_MODE_ENV = 'NODERAX_BOOT_MODE';
 
@@ -186,6 +197,9 @@ export const getPlatformUpdateRequestPath = () =>
 
 export const getPlatformUpdateStatePath = () =>
   join(getInstallStateDir(), PLATFORM_UPDATE_STATE_FILENAME);
+
+export const getPlatformApiRestartRequestPath = () =>
+  join(getInstallStateDir(), PLATFORM_API_RESTART_REQUEST_FILENAME);
 
 const probeInstallStateWritable = () => {
   const installStatePath = getInstallStatePath();
@@ -375,6 +389,28 @@ export const readPlatformUpdateRequestState =
     return parsed;
   };
 
+export const readPlatformApiRestartRequestState =
+  (): PlatformApiRestartRequestState | null => {
+    const requestPath = getPlatformApiRestartRequestPath();
+    if (!existsSync(requestPath)) {
+      return null;
+    }
+
+    const raw = readFileSync(requestPath, 'utf8');
+    const parsed = JSON.parse(raw) as PlatformApiRestartRequestState;
+
+    if (
+      parsed?.version !== 1 ||
+      parsed?.source !== 'installer' ||
+      typeof parsed?.requestId !== 'string' ||
+      typeof parsed?.requestedAt !== 'string'
+    ) {
+      throw new Error('Platform API restart request file is invalid.');
+    }
+
+    return parsed;
+  };
+
 export const readPlatformUpdateState = (): PlatformUpdateState | null => {
   const statePath = getPlatformUpdateStatePath();
   if (!existsSync(statePath)) {
@@ -504,6 +540,28 @@ export const clearInstallTransitionState = () => {
   }
 
   unlinkSync(transitionPath);
+};
+
+export const writePlatformApiRestartRequestState = (
+  request: Omit<PlatformApiRestartRequestState, 'version' | 'source'>,
+) => {
+  const requestPath = getPlatformApiRestartRequestPath();
+  const payload: PlatformApiRestartRequestState = {
+    version: 1,
+    source: 'installer',
+    ...request,
+  };
+
+  writeInstallerStateFile(requestPath, payload);
+};
+
+export const clearPlatformApiRestartRequestState = () => {
+  const requestPath = getPlatformApiRestartRequestPath();
+  if (!existsSync(requestPath)) {
+    return;
+  }
+
+  unlinkSync(requestPath);
 };
 
 const writeInstallerStateFile = (path: string, payload: object) => {
