@@ -252,6 +252,12 @@ export class PlatformApiRestartResponseDto {
   accepted: true;
 
   @ApiProperty({
+    enum: ['process', 'cluster'],
+    example: 'cluster',
+  })
+  scope: 'process' | 'cluster';
+
+  @ApiProperty({
     example: '2026-04-01T10:15:00.000Z',
     format: 'date-time',
   })

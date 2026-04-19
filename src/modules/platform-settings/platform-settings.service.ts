@@ -181,6 +181,7 @@ export class PlatformSettingsService {
     const clusterRestart = this.shouldUseClusterRestart();
     return {
       accepted: true,
+      scope: clusterRestart ? 'cluster' : 'process',
       requestedAt: new Date().toISOString(),
       message: this.restartScheduled
         ? clusterRestart
