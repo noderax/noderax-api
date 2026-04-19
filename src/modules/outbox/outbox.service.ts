@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { hostname } from 'os';
@@ -13,6 +13,25 @@ export type EnqueueOutboxEventInput = {
 };
 
 export type ClaimedOutboxEvent = OutboxEventEntity;
+export type OutboxDeadLetterPreview = {
+  id: string;
+  type: string;
+  attempts: number;
+  lastError: string | null;
+  updatedAt: string;
+};
+
+export type OutboxOperationalSnapshot = {
+  workerId: string;
+  backlogCount: number;
+  dueCount: number;
+  failedCount: number;
+  deadLetterCount: number;
+  deadLetters: OutboxDeadLetterPreview[];
+};
+
+const OUTBOX_DEAD_LETTER_PREVIEW_LIMIT = 8;
+const OUTBOX_WEB_REMEDIATE_TYPES = ['event.created'] as const;
 
 @Injectable()
 export class OutboxService {
@@ -209,7 +228,7 @@ export class OutboxService {
     });
   }
 
-  async getOperationalSnapshot() {
+  async getOperationalSnapshot(): Promise<OutboxOperationalSnapshot> {
     const [backlogCount, dueCount, failedCount, deadLetterCount] =
       await Promise.all([
         this.outboxRepository.count({
@@ -234,12 +253,115 @@ export class OutboxService {
         }),
       ]);
 
+    const deadLetters =
+      deadLetterCount > 0
+        ? await this.getDeadLetterPreview(OUTBOX_DEAD_LETTER_PREVIEW_LIMIT)
+        : [];
+
     return {
       workerId: this.workerId,
       backlogCount,
       dueCount,
       failedCount,
       deadLetterCount,
+      deadLetters,
     };
+  }
+
+  async getDeadLetterPreview(
+    limit = OUTBOX_DEAD_LETTER_PREVIEW_LIMIT,
+  ): Promise<OutboxDeadLetterPreview[]> {
+    const records = await this.outboxRepository.find({
+      where: {
+        status: 'dead_letter',
+        type: In([...OUTBOX_WEB_REMEDIATE_TYPES]),
+      },
+      order: {
+        updatedAt: 'DESC',
+      },
+      take: Math.max(1, Math.min(limit, 25)),
+    });
+
+    return records.map((record) => ({
+      id: record.id,
+      type: record.type,
+      attempts: record.attempts,
+      lastError: record.lastError,
+      updatedAt: record.updatedAt.toISOString(),
+    }));
+  }
+
+  async requeueDeadLetters(ids: string[]): Promise<number> {
+    const eligibleIds = await this.assertEligibleDeadLetterIds(ids);
+
+    if (eligibleIds.length === 0) {
+      return 0;
+    }
+
+    const result = await this.outboxRepository.update(
+      { id: In(eligibleIds) },
+      {
+        status: 'failed',
+        attempts: 0,
+        availableAt: new Date(),
+        lockedAt: null,
+        lockedBy: null,
+        processedAt: null,
+        lastError: null,
+      },
+    );
+
+    return result.affected ?? 0;
+  }
+
+  async deleteDeadLetters(ids: string[]): Promise<number> {
+    const eligibleIds = await this.assertEligibleDeadLetterIds(ids);
+
+    if (eligibleIds.length === 0) {
+      return 0;
+    }
+
+    const result = await this.outboxRepository.delete({
+      id: In(eligibleIds),
+    });
+
+    return result.affected ?? 0;
+  }
+
+  private async assertEligibleDeadLetterIds(ids: string[]): Promise<string[]> {
+    const normalizedIds = Array.from(
+      new Set(
+        ids.filter(
+          (id): id is string => typeof id === 'string' && id.length > 0,
+        ),
+      ),
+    );
+
+    if (normalizedIds.length === 0) {
+      throw new BadRequestException(
+        'At least one dead-letter outbox event id is required.',
+      );
+    }
+
+    const eligible = await this.outboxRepository.find({
+      where: {
+        id: In(normalizedIds),
+        status: 'dead_letter',
+        type: In([...OUTBOX_WEB_REMEDIATE_TYPES]),
+      },
+      select: {
+        id: true,
+        type: true,
+        status: true,
+      },
+    });
+
+    if (eligible.length !== normalizedIds.length) {
+      throw new BadRequestException(
+        'Only dead-letter event.created outbox entries may be remediated from the web UI.',
+      );
+    }
+
+    return normalizedIds;
   }
 }

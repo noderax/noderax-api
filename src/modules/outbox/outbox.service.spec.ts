@@ -18,7 +18,10 @@ describe('OutboxService', () => {
   beforeEach(() => {
     outboxRepository = {
       find: jest.fn(),
+      count: jest.fn(),
+      delete: jest.fn(),
       update: jest.fn(),
+      createQueryBuilder: jest.fn(),
     } as unknown as jest.Mocked<Repository<OutboxEventEntity>>;
 
     queryRunner = {
@@ -104,5 +107,65 @@ describe('OutboxService', () => {
       ),
     ).rejects.toThrow('Cannot mark outbox event as failed without an id');
     expect(outboxRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('includes dead-letter preview records in the operational snapshot', async () => {
+    const queryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getCount: jest.fn().mockResolvedValue(1),
+    };
+    outboxRepository.count
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(1);
+    outboxRepository.createQueryBuilder.mockReturnValue(queryBuilder as never);
+    outboxRepository.find.mockResolvedValueOnce([
+      {
+        id: 'outbox-1',
+        type: 'event.created',
+        attempts: 8,
+        lastError: 'boom',
+        updatedAt: new Date('2026-04-19T12:17:17.451Z'),
+      },
+    ] as never);
+
+    const snapshot = await service.getOperationalSnapshot();
+
+    expect(snapshot.deadLetterCount).toBe(1);
+    expect(snapshot.deadLetters).toEqual([
+      {
+        id: 'outbox-1',
+        type: 'event.created',
+        attempts: 8,
+        lastError: 'boom',
+        updatedAt: '2026-04-19T12:17:17.451Z',
+      },
+    ]);
+  });
+
+  it('requeues eligible dead-letter event notifications', async () => {
+    outboxRepository.find.mockResolvedValueOnce([
+      {
+        id: 'outbox-1',
+        status: 'dead_letter',
+        type: 'event.created',
+      },
+    ] as never);
+    outboxRepository.update.mockResolvedValue({ affected: 1 } as never);
+
+    const affected = await service.requeueDeadLetters(['outbox-1']);
+
+    expect(affected).toBe(1);
+    expect(outboxRepository.update).toHaveBeenCalled();
+  });
+
+  it('rejects web remediation for unsupported dead-letter ids', async () => {
+    outboxRepository.find.mockResolvedValueOnce([] as never);
+
+    await expect(service.deleteDeadLetters(['outbox-1'])).rejects.toThrow(
+      'Only dead-letter event.created outbox entries may be remediated from the web UI.',
+    );
+    expect(outboxRepository.delete).not.toHaveBeenCalled();
   });
 });

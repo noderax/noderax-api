@@ -411,11 +411,27 @@ export class AppService {
     }
 
     const snapshot = await this.outboxService.getOperationalSnapshot();
+    const meta = {
+      backlogCount: snapshot.backlogCount,
+      dueCount: snapshot.dueCount,
+      failedCount: snapshot.failedCount,
+      deadLetterCount: snapshot.deadLetterCount,
+      deadLetters: snapshot.deadLetters,
+      actions:
+        snapshot.deadLetterCount > 0
+          ? [
+              { id: 'requeue', label: 'Requeue failed events' },
+              { id: 'delete', label: 'Delete dead-letter events' },
+            ]
+          : [],
+    };
+
     if (snapshot.deadLetterCount > 0) {
       return {
         healthy: false,
         status: 'dead_letter',
         detail: `deadLetter=${snapshot.deadLetterCount}`,
+        meta,
       };
     }
 
@@ -424,6 +440,7 @@ export class AppService {
         healthy: true,
         status: 'degraded',
         detail: `backlog=${snapshot.backlogCount};due=${snapshot.dueCount};failed=${snapshot.failedCount}`,
+        meta,
       };
     }
 
@@ -431,6 +448,7 @@ export class AppService {
       healthy: true,
       status: 'ready',
       detail: `backlog=${snapshot.backlogCount}`,
+      meta,
     };
   }
 }
