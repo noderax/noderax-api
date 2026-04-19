@@ -466,6 +466,65 @@ describe('NotificationsService node-level delivery filters', () => {
     ).rejects.toThrow(/Event notification delivery failed/);
   });
 
+  it('does not throw when Telegram succeeds and email fails with error propagation enabled', async () => {
+    workspacesRepository.findOne.mockResolvedValue({
+      id: 'workspace-1',
+      name: 'Default Workspace',
+      automationEmailEnabled: true,
+      automationTelegramEnabled: true,
+      automationEmailLevels: [EventSeverity.WARNING, EventSeverity.CRITICAL],
+      automationTelegramLevels: [EventSeverity.WARNING, EventSeverity.CRITICAL],
+      automationTelegramBotToken: 'token',
+      automationTelegramChatId: '-100123',
+    });
+    nodesRepository.findOne.mockResolvedValue({
+      id: 'node-1',
+      name: 'srv-01',
+      notificationEmailEnabled: true,
+      notificationEmailLevels: [
+        EventSeverity.INFO,
+        EventSeverity.WARNING,
+        EventSeverity.CRITICAL,
+      ],
+      notificationTelegramEnabled: true,
+      notificationTelegramLevels: [
+        EventSeverity.INFO,
+        EventSeverity.WARNING,
+        EventSeverity.CRITICAL,
+      ],
+    });
+    usersRepository.find.mockImplementation(async ({ where }) => {
+      if ('role' in where) {
+        return [];
+      }
+
+      if ('criticalEventEmailsEnabled' in where) {
+        return [];
+      }
+
+      return [{ email: 'workspace-admin@example.com' }];
+    });
+    mailerService.sendMail.mockRejectedValueOnce(new Error('smtp failed'));
+
+    await expect(
+      service.notifyEvent(
+        {
+          id: 'event-1',
+          workspaceId: 'workspace-1',
+          nodeId: 'node-1',
+          type: 'node.maintenance.enabled',
+          severity: EventSeverity.WARNING,
+          message: 'Maintenance enabled',
+          createdAt: new Date('2026-04-05T12:00:00.000Z'),
+        } as never,
+        { propagateErrors: true },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mailerService.sendMail).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves the existing critical email behavior for workspace-scoped events without a node id', async () => {
     workspacesRepository.findOne.mockResolvedValue({
       id: 'workspace-1',

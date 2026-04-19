@@ -162,6 +162,8 @@ export class NotificationsService {
     );
 
     const errors: Error[] = [];
+    let attemptedDeliveries = 0;
+    let successfulDeliveries = 0;
 
     if (
       workspace.automationTelegramEnabled &&
@@ -170,8 +172,10 @@ export class NotificationsService {
       workspace.automationTelegramLevels.includes(event.severity) &&
       nodeTelegramEnabled
     ) {
+      attemptedDeliveries += 1;
       try {
         await this.sendTelegramMessage(workspace, event, node);
+        successfulDeliveries += 1;
       } catch (error) {
         const telegramError =
           error instanceof Error ? error : new Error(String(error));
@@ -202,6 +206,7 @@ export class NotificationsService {
           workspace.automationEmailLevels.includes(event.severity));
 
     if (shouldSendEmail) {
+      attemptedDeliveries += 1;
       try {
         const [
           platformAdmins,
@@ -274,6 +279,7 @@ export class NotificationsService {
             text: email.text,
             html: email.html,
           });
+          successfulDeliveries += 1;
         }
       } catch (error) {
         const emailError =
@@ -297,6 +303,13 @@ export class NotificationsService {
     }
 
     if (errors.length > 0) {
+      if (successfulDeliveries > 0) {
+        this.logger.warn(
+          `Event notification delivered partially for event ${event.id}: ${successfulDeliveries}/${attemptedDeliveries} channels succeeded; suppressing retry to avoid duplicate notifications`,
+        );
+        return;
+      }
+
       const error = new Error(
         `Event notification delivery failed for event ${event.id}: ${errors
           .map((error) => error.message)
