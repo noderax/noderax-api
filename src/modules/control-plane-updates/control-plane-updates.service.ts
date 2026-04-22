@@ -32,7 +32,9 @@ export class ControlPlaneUpdatesService {
     private readonly auditLogsService: AuditLogsService,
   ) {}
 
-  async getSummary(forceRefresh = false): Promise<ControlPlaneUpdateSummaryDto> {
+  async getSummary(
+    forceRefresh = false,
+  ): Promise<ControlPlaneUpdateSummaryDto> {
     const deploymentMode = this.getDeploymentMode();
     const supported = deploymentMode === 'installer_managed';
     const currentRelease = this.readCurrentRelease();
@@ -65,9 +67,9 @@ export class ControlPlaneUpdatesService {
 
     const updateAvailable = Boolean(
       supported &&
-        latestReleaseId &&
-        latestReleaseId !== currentReleaseId &&
-        latestReleaseId !== preparedReleaseId,
+      latestReleaseId &&
+      latestReleaseId !== currentReleaseId &&
+      latestReleaseId !== preparedReleaseId,
     );
     const operation = this.toOperationDto(
       state,
@@ -76,12 +78,22 @@ export class ControlPlaneUpdatesService {
       preparedReleaseId,
     );
 
+    const [
+      hydratedCurrentRelease,
+      hydratedLatestRelease,
+      hydratedPreparedRelease,
+    ] = await Promise.all([
+      this.releaseCatalogService.hydrateRelease(currentRelease),
+      this.releaseCatalogService.hydrateRelease(latestRelease),
+      this.releaseCatalogService.hydrateRelease(preparedRelease),
+    ]);
+
     return {
       supported,
       deploymentMode,
-      currentRelease,
-      latestRelease,
-      preparedRelease,
+      currentRelease: hydratedCurrentRelease,
+      latestRelease: hydratedLatestRelease,
+      preparedRelease: hydratedPreparedRelease,
       updateAvailable,
       operation,
       releaseCheckedAt: checkedAt?.toISOString() ?? null,
@@ -99,7 +111,9 @@ export class ControlPlaneUpdatesService {
       );
     }
 
-    if (summary.preparedRelease?.releaseId === summary.latestRelease.releaseId) {
+    if (
+      summary.preparedRelease?.releaseId === summary.latestRelease.releaseId
+    ) {
       throw new ConflictException(
         `Control-plane release ${summary.latestRelease.version} is already prepared.`,
       );
@@ -312,8 +326,12 @@ export class ControlPlaneUpdatesService {
   }
 
   private readCurrentRelease(): ControlPlaneReleaseDto | null {
-    const releaseId = this.readProcessString(process.env.NODERAX_PLATFORM_RELEASE_ID);
-    const version = this.readProcessString(process.env.NODERAX_PLATFORM_VERSION);
+    const releaseId = this.readProcessString(
+      process.env.NODERAX_PLATFORM_RELEASE_ID,
+    );
+    const version = this.readProcessString(
+      process.env.NODERAX_PLATFORM_VERSION,
+    );
 
     if (!releaseId && !version) {
       return null;
@@ -322,21 +340,21 @@ export class ControlPlaneUpdatesService {
     return {
       version: version ?? '1.0.0',
       releaseId: releaseId ?? version ?? 'unknown',
-      releasedAt: this.readProcessString(process.env.NODERAX_PLATFORM_RELEASED_AT),
+      releasedAt: this.readProcessString(
+        process.env.NODERAX_PLATFORM_RELEASED_AT,
+      ),
       builtAt: null,
-      bundleSha256: this.readProcessString(process.env.NODERAX_PLATFORM_BUNDLE_SHA256),
+      bundleSha256: this.readProcessString(
+        process.env.NODERAX_PLATFORM_BUNDLE_SHA256,
+      ),
       bundleUrl: null,
       manifestUrl: null,
     };
   }
 
   private toOperationDto(
-    state:
-      | ReturnType<typeof readPlatformUpdateState>
-      | null,
-    request:
-      | ReturnType<typeof readPlatformUpdateRequestState>
-      | null,
+    state: ReturnType<typeof readPlatformUpdateState> | null,
+    request: ReturnType<typeof readPlatformUpdateRequestState> | null,
     currentReleaseId?: string | null,
     preparedReleaseId?: string | null,
   ): ControlPlaneUpdateOperationDto | null {
@@ -363,7 +381,8 @@ export class ControlPlaneUpdatesService {
         completedAt: state.completedAt,
         requestedByEmailSnapshot: state.requestedByEmailSnapshot,
         rollbackStatus: state.rollbackStatus,
-        targetReleaseId: state.targetRelease?.releaseId ?? request?.targetReleaseId ?? null,
+        targetReleaseId:
+          state.targetRelease?.releaseId ?? request?.targetReleaseId ?? null,
         targetVersion: state.targetRelease?.version ?? null,
       };
     }
@@ -375,7 +394,8 @@ export class ControlPlaneUpdatesService {
     return {
       operation: request.operation,
       status: 'queued',
-      message: 'Waiting for the host supervisor to start the control-plane update.',
+      message:
+        'Waiting for the host supervisor to start the control-plane update.',
       error: null,
       requestedAt: request.requestedAt,
       startedAt: null,
@@ -398,6 +418,7 @@ export class ControlPlaneUpdatesService {
       bundleSha256: release.bundleSha256 ?? null,
       bundleUrl: release.bundleUrl ?? null,
       manifestUrl: release.manifestUrl ?? null,
+      changelog: release.changelog ?? null,
     };
   }
 
@@ -421,12 +442,8 @@ export class ControlPlaneUpdatesService {
 
   private reconcileStaleNoopApplyState(
     currentRelease: ControlPlaneReleaseDto | null,
-    state:
-      | ReturnType<typeof readPlatformUpdateState>
-      | null,
-    request:
-      | ReturnType<typeof readPlatformUpdateRequestState>
-      | null,
+    state: ReturnType<typeof readPlatformUpdateState> | null,
+    request: ReturnType<typeof readPlatformUpdateRequestState> | null,
   ) {
     const currentReleaseId = currentRelease?.releaseId ?? null;
     if (!currentReleaseId) {
@@ -467,12 +484,8 @@ export class ControlPlaneUpdatesService {
 
   private reconcileStaleActiveApplyState(
     currentRelease: ControlPlaneReleaseDto | null,
-    state:
-      | ReturnType<typeof readPlatformUpdateState>
-      | null,
-    request:
-      | ReturnType<typeof readPlatformUpdateRequestState>
-      | null,
+    state: ReturnType<typeof readPlatformUpdateState> | null,
+    request: ReturnType<typeof readPlatformUpdateRequestState> | null,
   ) {
     if (
       !state ||
@@ -497,7 +510,11 @@ export class ControlPlaneUpdatesService {
     const targetReleaseId =
       state.targetRelease?.releaseId ?? request?.targetReleaseId ?? null;
 
-    if (currentReleaseId && targetReleaseId && currentReleaseId === targetReleaseId) {
+    if (
+      currentReleaseId &&
+      targetReleaseId &&
+      currentReleaseId === targetReleaseId
+    ) {
       this.logger.warn(
         `Completing stale control-plane apply state for already-active release ${currentReleaseId}.`,
       );
@@ -631,7 +648,9 @@ export class ControlPlaneUpdatesService {
   }
 
   private readProcessString(value: string | undefined) {
-    return typeof value === 'string' && value.trim().length ? value.trim() : null;
+    return typeof value === 'string' && value.trim().length
+      ? value.trim()
+      : null;
   }
 
   private shouldSuppressCompletedOperation(input: {

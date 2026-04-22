@@ -29,7 +29,7 @@ import { TerminalSessionsService } from './terminal-sessions.service';
 const TERMINAL_SOCKET_RATE_LIMIT_WINDOW_MS = 5_000;
 const TERMINAL_SOCKET_RATE_LIMITS = {
   attach: 20,
-  input: 240,
+  input: 600,
   resize: 60,
   terminate: 20,
 } as const;

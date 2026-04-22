@@ -34,6 +34,7 @@ describe('ControlPlaneUpdatesService', () => {
 
     releaseCatalogService = {
       getLatestRelease: jest.fn(),
+      hydrateRelease: jest.fn(async (release) => release),
     } as unknown as jest.Mocked<ControlPlaneReleaseCatalogService>;
 
     agentUpdatesService = {
@@ -103,6 +104,43 @@ describe('ControlPlaneUpdatesService', () => {
 
     expect(summary.updateAvailable).toBe(false);
     expect(summary.preparedRelease).toBeNull();
+  });
+
+  it('returns hydrated release changelog metadata in the summary', async () => {
+    releaseCatalogService.getLatestRelease.mockResolvedValue({
+      checkedAt: new Date('2026-04-12T12:00:00Z'),
+      release: {
+        version: '1.0.3',
+        releaseId: 'release-next',
+        releasedAt: '2026-04-12T12:00:00Z',
+        builtAt: '2026-04-12T12:00:00Z',
+        bundleSha256: 'sha-next',
+        bundleUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/1.0.3/platform-bundle.tar.zst',
+        manifestUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/1.0.3/release-manifest.json',
+      },
+    });
+    releaseCatalogService.hydrateRelease.mockImplementation(async (release) =>
+      release
+        ? {
+            ...release,
+            changelog: [
+              {
+                title: 'Notifications',
+                items: ['Improved SMTP delivery diagnostics.'],
+              },
+            ],
+          }
+        : null,
+    );
+
+    const summary = await service.getSummary();
+
+    expect(summary.currentRelease?.changelog?.[0]?.title).toBe('Notifications');
+    expect(summary.latestRelease?.changelog?.[0]?.items).toContain(
+      'Improved SMTP delivery diagnostics.',
+    );
   });
 
   it('rejects apply when an agent rollout is still active', async () => {
@@ -238,7 +276,8 @@ describe('ControlPlaneUpdatesService', () => {
         bundleUrl: null,
         manifestUrl: null,
       },
-      message: 'Rolling the runtime services onto the prepared control-plane release.',
+      message:
+        'Rolling the runtime services onto the prepared control-plane release.',
       error: null,
       rollbackStatus: null,
       auditLoggedAt: null,
@@ -322,7 +361,8 @@ describe('ControlPlaneUpdatesService', () => {
         bundleUrl: null,
         manifestUrl: null,
       },
-      message: 'Rolling the runtime services onto the prepared control-plane release.',
+      message:
+        'Rolling the runtime services onto the prepared control-plane release.',
       error: null,
       rollbackStatus: null,
       auditLoggedAt: null,

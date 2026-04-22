@@ -14,6 +14,22 @@ export const CONTROL_PLANE_UPDATE_STATUSES = [
   'failed',
 ] as const;
 
+export class ControlPlaneReleaseChangelogSectionDto {
+  @ApiProperty({
+    example: 'Runtime',
+  })
+  title: string;
+
+  @ApiProperty({
+    type: [String],
+    example: [
+      'Improved terminal websocket resilience during reconnects.',
+      'Reduced noisy runtime alert handling in the topbar.',
+    ],
+  })
+  items: string[];
+}
+
 export class ControlPlaneReleaseDto {
   @ApiProperty({
     example: '1.0.0',
@@ -56,6 +72,12 @@ export class ControlPlaneReleaseDto {
       'https://cdn.noderax.net/noderax-platform/releases/latest/release-manifest.json',
   })
   manifestUrl?: string | null;
+
+  @ApiPropertyOptional({
+    type: [ControlPlaneReleaseChangelogSectionDto],
+    nullable: true,
+  })
+  changelog?: ControlPlaneReleaseChangelogSectionDto[] | null;
 }
 
 export class ControlPlaneUpdateOperationDto {

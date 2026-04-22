@@ -43,6 +43,10 @@ export type PlatformReleaseState = {
   bundleSha256?: string | null;
   bundleUrl?: string | null;
   manifestUrl?: string | null;
+  changelog?: Array<{
+    title: string;
+    items: string[];
+  }> | null;
 };
 
 export type PlatformUpdateOperation = 'download' | 'apply';
