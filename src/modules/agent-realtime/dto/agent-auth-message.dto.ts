@@ -1,8 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
-import { ValidateNested } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 import { NodeRootAccessAgentReportDto } from '../../nodes/dto/node-root-access-state.dto';
+import { AgentNodeLocationDto } from '../../nodes/dto/node-location.dto';
 
 export class AgentAuthMessageDto {
   @ApiProperty({
@@ -61,4 +68,14 @@ export class AgentAuthMessageDto {
   @ValidateNested()
   @Type(() => NodeRootAccessAgentReportDto)
   rootAccess?: NodeRootAccessAgentReportDto;
+
+  @ApiPropertyOptional({
+    type: AgentNodeLocationDto,
+    description:
+      'Optional cloud metadata location reported during realtime authentication.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentNodeLocationDto)
+  location?: AgentNodeLocationDto;
 }

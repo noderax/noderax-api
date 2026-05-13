@@ -141,7 +141,14 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
       ADD COLUMN IF NOT EXISTS "agentVersion" varchar(64) NULL,
       ADD COLUMN IF NOT EXISTS "platformVersion" varchar(120) NULL,
       ADD COLUMN IF NOT EXISTS "kernelVersion" varchar(120) NULL,
-      ADD COLUMN IF NOT EXISTS "lastVersionReportedAt" TIMESTAMPTZ NULL
+      ADD COLUMN IF NOT EXISTS "lastVersionReportedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "locationProvider" varchar(24) NULL,
+      ADD COLUMN IF NOT EXISTS "locationSource" varchar(40) NULL,
+      ADD COLUMN IF NOT EXISTS "locationRegion" varchar(80) NULL,
+      ADD COLUMN IF NOT EXISTS "locationZone" varchar(80) NULL,
+      ADD COLUMN IF NOT EXISTS "locationLatitude" double precision NULL,
+      ADD COLUMN IF NOT EXISTS "locationLongitude" double precision NULL,
+      ADD COLUMN IF NOT EXISTS "locationUpdatedAt" TIMESTAMPTZ NULL
     `);
 
     await this.dataSource.query(`
@@ -194,6 +201,11 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
     await this.dataSource.query(`
       CREATE INDEX IF NOT EXISTS "IDX_nodes_team_id"
       ON "nodes" ("teamId")
+    `);
+
+    await this.dataSource.query(`
+      CREATE INDEX IF NOT EXISTS "IDX_nodes_location_provider_region"
+      ON "nodes" ("locationProvider", "locationRegion")
     `);
 
     await this.dataSource.query(`

@@ -14,6 +14,7 @@ import { AGENTS_CONFIG_KEY, agentsConfig } from '../../config';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import { RedisService } from '../../redis/redis.service';
 import { NodesService } from '../nodes/nodes.service';
+import type { NodeLocationInput } from '../nodes/node-location.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OutboxService } from '../outbox/outbox.service';
@@ -179,6 +180,7 @@ export class EnrollmentsService {
       kernelVersion: this.readString(enrollment.additionalInfo, [
         'kernelVersion',
       ]),
+      location: this.readLocation(enrollment.additionalInfo),
     });
 
     enrollment.status = EnrollmentStatus.APPROVED;
@@ -376,6 +378,7 @@ export class EnrollmentsService {
       agentVersion: this.readString(additionalInfo, ['agentVersion']),
       platformVersion: this.readString(additionalInfo, ['platformVersion']),
       kernelVersion: this.readString(additionalInfo, ['kernelVersion']),
+      location: this.readLocation(additionalInfo),
     });
 
     nodeInstall.hostname = hostname;
@@ -729,6 +732,28 @@ export class EnrollmentsService {
     }
 
     return null;
+  }
+
+  private readLocation(
+    record: Record<string, unknown> | null,
+  ): NodeLocationInput | null {
+    const location =
+      record?.location &&
+      typeof record.location === 'object' &&
+      !Array.isArray(record.location)
+        ? (record.location as Record<string, unknown>)
+        : null;
+
+    if (!location) {
+      return null;
+    }
+
+    return {
+      provider: this.readString(location, ['provider']),
+      source: this.readString(location, ['source']),
+      region: this.readString(location, ['region']),
+      zone: this.readString(location, ['zone']),
+    };
   }
 
   private resolveDefaultNodeInstallMessage(

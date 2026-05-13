@@ -179,6 +179,7 @@ export class AgentRealtimeGateway
           platformVersion: body.platformVersion,
           kernelVersion: body.kernelVersion,
           rootAccess: body.rootAccess,
+          location: body.location,
         });
 
       if (previousSocketId && previousSocketId !== client.id) {

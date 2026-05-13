@@ -31,6 +31,7 @@ import { NodesService } from '../nodes/nodes.service';
 import { TasksService } from '../tasks/tasks.service';
 import { TaskEntity } from '../tasks/entities/task.entity';
 import { AgentMetricsDto } from '../metrics/dto/agent-metrics.dto';
+import type { NodeLocationInput } from '../nodes/node-location.util';
 import { AgentTaskLifecycleEventEntity } from './entities/agent-task-lifecycle-event.entity';
 import { AgentTaskDispatchPayload } from './types/agent-realtime-events.type';
 
@@ -244,6 +245,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     agentVersion?: string;
     platformVersion?: string;
     kernelVersion?: string;
+    location?: NodeLocationInput;
     rootAccess?: {
       appliedProfile?: NodeRootAccessProfile | null;
       lastAppliedAt?: string | null;
@@ -275,6 +277,7 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
       agentVersion: input.agentVersion ?? null,
       platformVersion: input.platformVersion ?? null,
       kernelVersion: input.kernelVersion ?? null,
+      location: input.location ?? null,
     });
     const rootedNode =
       (await this.nodesService.recordAgentRootAccessState(

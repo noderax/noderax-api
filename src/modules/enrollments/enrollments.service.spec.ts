@@ -172,6 +172,7 @@ describe('EnrollmentsService', () => {
       agentVersion: null,
       platformVersion: null,
       kernelVersion: null,
+      location: null,
     });
     expect(result).toEqual({
       nodeId: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
@@ -182,6 +183,41 @@ describe('EnrollmentsService', () => {
         status: EnrollmentStatus.APPROVED,
         nodeId: 'b7f88611-b63e-4c95-9f37-4afb5c0cf275',
         agentToken: 'agent-token',
+      }),
+    );
+  });
+
+  it('passes cloud metadata location from enrollment additional info to node creation', async () => {
+    const enrollment = buildEnrollment({
+      additionalInfo: {
+        os: 'ubuntu-24.04',
+        arch: 'amd64',
+        location: {
+          provider: 'aws',
+          source: 'cloud_metadata',
+          region: 'eu-central-1',
+          zone: 'eu-central-1a',
+        },
+      },
+    });
+    enrollmentsRepository.createQueryBuilder.mockReturnValue(
+      createQueryBuilderMock(enrollment),
+    );
+    enrollmentTokensService.issueAgentToken.mockReturnValue('agent-token');
+
+    await service.finalize('raw-token', {
+      email: 'admin@example.com',
+      nodeName: 'Enrollment Node',
+    });
+
+    expect(nodesService.createFromEnrollment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location: {
+          provider: 'aws',
+          source: 'cloud_metadata',
+          region: 'eu-central-1',
+          zone: 'eu-central-1a',
+        },
       }),
     );
   });

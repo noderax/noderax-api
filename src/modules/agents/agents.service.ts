@@ -64,6 +64,7 @@ export class AgentsService {
       agentVersion: agentRegisterDto.agentVersion ?? null,
       platformVersion: agentRegisterDto.platformVersion ?? null,
       kernelVersion: agentRegisterDto.kernelVersion ?? null,
+      location: agentRegisterDto.location ?? null,
     });
 
     await this.eventsService.record({
@@ -108,6 +109,7 @@ export class AgentsService {
         agentVersion: agentHeartbeatDto.agentVersion ?? null,
         platformVersion: agentHeartbeatDto.platformVersion ?? null,
         kernelVersion: agentHeartbeatDto.kernelVersion ?? null,
+        location: agentHeartbeatDto.location ?? null,
       });
 
     if (transitionedToOnline) {

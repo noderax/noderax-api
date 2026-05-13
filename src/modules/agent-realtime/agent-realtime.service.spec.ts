@@ -195,10 +195,37 @@ describe('AgentRealtimeService', () => {
       agentVersion: '1.0.0',
       platformVersion: null,
       kernelVersion: null,
+      location: null,
     });
     expect(agentUpdatesService.observeNodeVersion).toHaveBeenCalledWith({
       id: 'node-1',
       agentVersion: '1.0.0',
+    });
+  });
+
+  it('passes realtime auth cloud metadata location to node status updates', async () => {
+    await service.authenticateSocket({
+      socketId: 'socket-1',
+      nodeId: 'node-1',
+      agentToken: 'token-1',
+      location: {
+        provider: 'gcp',
+        source: 'cloud_metadata',
+        region: 'europe-west3',
+        zone: 'europe-west3-c',
+      },
+    });
+
+    expect(nodesService.markOnline).toHaveBeenCalledWith('node-1', {
+      agentVersion: null,
+      platformVersion: null,
+      kernelVersion: null,
+      location: {
+        provider: 'gcp',
+        source: 'cloud_metadata',
+        region: 'europe-west3',
+        zone: 'europe-west3-c',
+      },
     });
   });
 

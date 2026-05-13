@@ -12,6 +12,11 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { EventSeverity } from '../../events/entities/event-severity.enum';
+import type {
+  NodeLocationDto,
+  NodeLocationProvider,
+  NodeLocationSource,
+} from '../dto/node-location.dto';
 import type { NodeRootAccessProfile as NodeRootAccessProfileValue } from './node-root-access-profile.enum';
 import { NodeRootAccessProfile } from './node-root-access-profile.enum';
 import type { NodeRootAccessSyncStatus as NodeRootAccessSyncStatusValue } from './node-root-access-sync-status.enum';
@@ -101,6 +106,13 @@ export class NodeEntity {
     nullable: true,
   })
   teamName?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Cloud metadata based node location with approximate region center coordinates.',
+  })
+  location?: NodeLocationDto | null;
 
   @ApiPropertyOptional({
     example: false,
@@ -266,6 +278,55 @@ export class NodeEntity {
   })
   @Column({ type: 'timestamptz', nullable: true })
   lastVersionReportedAt?: Date | null;
+
+  @ApiPropertyOptional({
+    enum: ['aws', 'gcp', 'azure'],
+    nullable: true,
+  })
+  @Column({ length: 24, nullable: true })
+  locationProvider?: NodeLocationProvider | null;
+
+  @ApiPropertyOptional({
+    enum: ['cloud_metadata'],
+    nullable: true,
+  })
+  @Column({ length: 40, nullable: true })
+  locationSource?: NodeLocationSource | null;
+
+  @ApiPropertyOptional({
+    example: 'eu-central-1',
+    nullable: true,
+  })
+  @Column({ length: 80, nullable: true })
+  locationRegion?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'eu-central-1a',
+    nullable: true,
+  })
+  @Column({ length: 80, nullable: true })
+  locationZone?: string | null;
+
+  @ApiPropertyOptional({
+    example: 50.1109,
+    nullable: true,
+  })
+  @Column({ type: 'double precision', nullable: true })
+  locationLatitude?: number | null;
+
+  @ApiPropertyOptional({
+    example: 8.6821,
+    nullable: true,
+  })
+  @Column({ type: 'double precision', nullable: true })
+  locationLongitude?: number | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  locationUpdatedAt?: Date | null;
 
   @ApiPropertyOptional({
     format: 'date-time',

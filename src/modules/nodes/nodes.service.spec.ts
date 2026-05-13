@@ -121,6 +121,60 @@ describe('NodesService.assertNodeAllowsOperationalRoot', () => {
   });
 });
 
+describe('NodesService node location updates', () => {
+  it('stores region coordinates when an existing agent registration reports location', async () => {
+    const node = buildNode({
+      status: 'offline' as NodeEntity['status'],
+    });
+    const nodesRepository = {
+      findOne: jest.fn().mockResolvedValue(node),
+      save: jest.fn().mockImplementation(async (input: NodeEntity) => input),
+    };
+    const service = new NodesService(
+      nodesRepository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const result = await service.upsertFromAgentRegistration({
+      hostname: 'srv-01.example',
+      os: 'ubuntu-24.04',
+      arch: 'amd64',
+      agentTokenHash: 'agent-token-hash',
+      location: {
+        provider: 'aws',
+        source: 'cloud_metadata',
+        region: 'eu-central-1',
+        zone: 'eu-central-1a',
+      },
+    });
+
+    expect(nodesRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        locationProvider: 'aws',
+        locationSource: 'cloud_metadata',
+        locationRegion: 'eu-central-1',
+        locationZone: 'eu-central-1a',
+        locationLatitude: 50.1109,
+        locationLongitude: 8.6821,
+        locationUpdatedAt: expect.any(Date),
+      }),
+    );
+    expect(result.location).toEqual(
+      expect.objectContaining({
+        provider: 'aws',
+        region: 'eu-central-1',
+        latitude: 50.1109,
+        longitude: 8.6821,
+      }),
+    );
+  });
+});
+
 describe('NodesService.updateNotificationSettings', () => {
   const actor: AuthenticatedUser = {
     id: 'user-1',

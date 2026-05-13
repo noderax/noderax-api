@@ -8,6 +8,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { AgentNodeLocationDto } from '../../nodes/dto/node-location.dto';
 
 class ConsumeNodeInstallAdditionalInfoDto {
   @ApiPropertyOptional({
@@ -54,6 +55,14 @@ class ConsumeNodeInstallAdditionalInfoDto {
   @IsString()
   @MaxLength(120)
   kernelVersion?: string;
+
+  @ApiPropertyOptional({
+    type: AgentNodeLocationDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentNodeLocationDto)
+  location?: AgentNodeLocationDto;
 }
 
 export class ConsumeNodeInstallDto {

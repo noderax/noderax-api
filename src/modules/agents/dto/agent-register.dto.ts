@@ -1,6 +1,12 @@
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import { AgentNodeLocationDto } from '../../nodes/dto/node-location.dto';
 
 export class AgentRegisterDto {
   @ApiProperty({
@@ -75,4 +81,10 @@ export class AgentRegisterDto {
   @Transform(({ value }) => value?.trim())
   @IsString()
   agentVersion?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentNodeLocationDto)
+  location?: AgentNodeLocationDto;
 }

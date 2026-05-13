@@ -58,6 +58,13 @@ describe('NodesService realtime publishing', () => {
       lastSeenAt: new Date('2026-04-13T13:10:00.000Z'),
       agentVersion: '1.0.0',
       lastVersionReportedAt: new Date('2026-04-13T13:10:00.000Z'),
+      locationProvider: 'aws',
+      locationSource: 'cloud_metadata',
+      locationRegion: 'eu-central-1',
+      locationZone: 'eu-central-1a',
+      locationLatitude: 50.1109,
+      locationLongitude: 8.6821,
+      locationUpdatedAt: new Date('2026-04-13T13:10:00.000Z'),
     });
 
     expect(realtimeGateway.emitNodeStatusUpdate).toHaveBeenCalledWith(
@@ -65,6 +72,12 @@ describe('NodesService realtime publishing', () => {
         nodeId: 'node-1',
         workspaceId: 'workspace-1',
         sourceInstanceId: 'instance-1',
+        location: expect.objectContaining({
+          provider: 'aws',
+          region: 'eu-central-1',
+          latitude: 50.1109,
+          longitude: 8.6821,
+        }),
       }),
     );
     expect(redisService.publish).toHaveBeenCalledWith(

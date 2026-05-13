@@ -5,7 +5,10 @@ import {
   IsString,
   IsUUID,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { AgentNodeLocationDto } from '../../nodes/dto/node-location.dto';
 
 export class AgentHeartbeatDto {
   @ApiProperty({
@@ -64,4 +67,14 @@ export class AgentHeartbeatDto {
   @IsOptional()
   @IsDateString()
   sentAt?: string;
+
+  @ApiPropertyOptional({
+    type: AgentNodeLocationDto,
+    description:
+      'Optional cloud metadata location reported by the agent runtime.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgentNodeLocationDto)
+  location?: AgentNodeLocationDto;
 }

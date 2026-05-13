@@ -29,6 +29,12 @@ import { UpdateNodeNotificationsDto } from './dto/update-node-notifications.dto'
 import { UpdateNodeRootAccessDto } from './dto/update-node-root-access.dto';
 import { NodeEntity } from './entities/node.entity';
 import {
+  buildNodeLocationDto,
+  resolveNodeLocationFields,
+  type NodeLocationFields,
+  type NodeLocationInput,
+} from './node-location.util';
+import {
   NODE_ROOT_ACCESS_PROFILES,
   NodeRootAccessProfile,
 } from './entities/node-root-access-profile.enum';
@@ -215,6 +221,7 @@ export class NodesService {
     agentVersion?: string | null;
     platformVersion?: string | null;
     kernelVersion?: string | null;
+    location?: NodeLocationInput | null;
   }): Promise<NodeEntity> {
     await this.assertHostnameAvailable(input.hostname);
     await this.workspacesService.assertWorkspaceWritable(input.workspaceId);
@@ -242,6 +249,7 @@ export class NodesService {
         input.agentVersion || input.platformVersion || input.kernelVersion
           ? new Date()
           : null,
+      ...this.resolveLocationPatch(input.location),
       teamId: team?.id ?? null,
       notificationEmailEnabled: true,
       notificationEmailLevels: [...DEFAULT_NODE_NOTIFICATION_LEVELS],
@@ -267,6 +275,7 @@ export class NodesService {
     agentVersion?: string | null;
     platformVersion?: string | null;
     kernelVersion?: string | null;
+    location?: NodeLocationInput | null;
   }): Promise<NodeEntity> {
     const existingNode = await this.nodesRepository.findOne({
       where: { hostname: input.hostname },
@@ -291,8 +300,11 @@ export class NodesService {
         input.agentVersion || input.platformVersion || input.kernelVersion
           ? now
           : existingNode.lastVersionReportedAt;
+      this.applyLocationPatch(existingNode, input.location, now);
 
-      return this.nodesRepository.save(existingNode);
+      return this.populateTeamMetadata(
+        await this.nodesRepository.save(existingNode),
+      );
     }
 
     const node = this.nodesRepository.create({
@@ -312,6 +324,7 @@ export class NodesService {
         input.agentVersion || input.platformVersion || input.kernelVersion
           ? now
           : null,
+      ...this.resolveLocationPatch(input.location, now),
       notificationEmailEnabled: true,
       notificationEmailLevels: [...DEFAULT_NODE_NOTIFICATION_LEVELS],
       notificationTelegramEnabled: true,
@@ -325,7 +338,7 @@ export class NodesService {
       rootAccessLastError: null,
     });
 
-    return this.nodesRepository.save(node);
+    return this.populateTeamMetadata(await this.nodesRepository.save(node));
   }
 
   async updateTeamAssignment(
@@ -810,9 +823,11 @@ export class NodesService {
       agentVersion?: string | null;
       platformVersion?: string | null;
       kernelVersion?: string | null;
+      location?: NodeLocationInput | null;
     },
   ): Promise<{ node: NodeEntity; transitionedToOnline: boolean }> {
     const now = new Date();
+    const locationUpdate = this.resolveLocationPatch(updates?.location, now);
     const versionUpdate =
       updates?.agentVersion ||
       updates?.platformVersion ||
@@ -832,6 +847,7 @@ export class NodesService {
         lastSeenAt: now,
         updatedAt: now,
         ...versionUpdate,
+        ...locationUpdate,
       })
       .where('id = :nodeId', { nodeId })
       .andWhere('status = :status', { status: NodeStatus.OFFLINE })
@@ -861,6 +877,7 @@ export class NodesService {
     if (updates?.kernelVersion) {
       node.kernelVersion = updates.kernelVersion;
     }
+    this.applyLocationPatch(node, updates?.location, now);
     if (
       updates?.agentVersion ||
       updates?.platformVersion ||
@@ -870,7 +887,9 @@ export class NodesService {
     }
 
     return {
-      node: await this.nodesRepository.save(node),
+      node: await this.populateTeamMetadata(
+        await this.nodesRepository.save(node),
+      ),
       transitionedToOnline: false,
     };
   }
@@ -923,6 +942,13 @@ export class NodesService {
       | 'lastSeenAt'
       | 'agentVersion'
       | 'lastVersionReportedAt'
+      | 'locationProvider'
+      | 'locationSource'
+      | 'locationRegion'
+      | 'locationZone'
+      | 'locationLatitude'
+      | 'locationLongitude'
+      | 'locationUpdatedAt'
     >,
   ): Promise<void> {
     const statusPayload = {
@@ -933,6 +959,7 @@ export class NodesService {
       lastSeenAt: node.lastSeenAt,
       agentVersion: node.agentVersion ?? null,
       lastVersionReportedAt: node.lastVersionReportedAt ?? null,
+      location: buildNodeLocationDto(node),
     };
 
     const payload = {
@@ -1004,13 +1031,43 @@ export class NodesService {
       })
       .where('status = :status', { status: NodeStatus.ONLINE })
       .andWhere('lastSeenAt < :cutoff', { cutoff })
-      .returning(['id', 'workspaceId', 'name', 'hostname', 'status', 'lastSeenAt'])
+      .returning([
+        'id',
+        'workspaceId',
+        'name',
+        'hostname',
+        'status',
+        'lastSeenAt',
+        'agentVersion',
+        'lastVersionReportedAt',
+        'locationProvider',
+        'locationSource',
+        'locationRegion',
+        'locationZone',
+        'locationLatitude',
+        'locationLongitude',
+        'locationUpdatedAt',
+      ])
       .execute();
 
     const offlineNodes = updateResult.raw as Array<
       Pick<
         NodeEntity,
-        'id' | 'workspaceId' | 'name' | 'hostname' | 'status' | 'lastSeenAt'
+        | 'id'
+        | 'workspaceId'
+        | 'name'
+        | 'hostname'
+        | 'status'
+        | 'lastSeenAt'
+        | 'agentVersion'
+        | 'lastVersionReportedAt'
+        | 'locationProvider'
+        | 'locationSource'
+        | 'locationRegion'
+        | 'locationZone'
+        | 'locationLatitude'
+        | 'locationLongitude'
+        | 'locationUpdatedAt'
       >
     >;
 
@@ -1173,6 +1230,9 @@ export class NodesService {
     input: T,
   ): Promise<T> {
     const nodes = Array.isArray(input) ? input : [input];
+    nodes.forEach((node) => {
+      node.location = buildNodeLocationDto(node);
+    });
     const teamIds = Array.from(
       new Set(
         nodes
@@ -1209,5 +1269,25 @@ export class NodesService {
     });
 
     return input;
+  }
+
+  private resolveLocationPatch(
+    location: NodeLocationInput | null | undefined,
+    updatedAt = new Date(),
+  ): Partial<NodeLocationFields> {
+    return resolveNodeLocationFields(location, updatedAt) ?? {};
+  }
+
+  private applyLocationPatch(
+    node: NodeEntity,
+    location: NodeLocationInput | null | undefined,
+    updatedAt = new Date(),
+  ): void {
+    const patch = resolveNodeLocationFields(location, updatedAt);
+    if (!patch) {
+      return;
+    }
+
+    Object.assign(node, patch);
   }
 }
