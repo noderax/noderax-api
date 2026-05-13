@@ -1,12 +1,15 @@
 FROM node:20-alpine AS base
 
+ARG PNPM_VERSION=10.33.0
+
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
 WORKDIR /app
 
 RUN apk add --no-cache su-exec \
-  && corepack enable
+  && corepack enable \
+  && corepack prepare "pnpm@${PNPM_VERSION}" --activate
 
 
 FROM base AS build-deps
