@@ -75,6 +75,85 @@ describe('node location utilities', () => {
     ).toBeNull();
   });
 
+  it('stores manual coordinates when reported by the agent', () => {
+    const updatedAt = new Date('2026-05-12T10:00:00.000Z');
+
+    const fields = resolveNodeLocationFields(
+      {
+        provider: 'manual',
+        source: 'manual',
+        region: 'Istanbul Home Lab',
+        zone: 'Rack 1',
+        latitude: 41.0082,
+        longitude: 28.9784,
+      },
+      updatedAt,
+    );
+
+    expect(fields).toEqual({
+      locationProvider: 'manual',
+      locationSource: 'manual',
+      locationRegion: 'Istanbul Home Lab',
+      locationZone: 'Rack 1',
+      locationLatitude: 41.0082,
+      locationLongitude: 28.9784,
+      locationUpdatedAt: updatedAt,
+    });
+  });
+
+  it('stores public IP coordinates when reported by IPinfo', () => {
+    const fields = resolveNodeLocationFields({
+      provider: 'public_ip',
+      source: 'ipinfo',
+      region: 'Istanbul, TR',
+      latitude: '41.0082',
+      longitude: '28.9784',
+    });
+
+    expect(fields).toEqual(
+      expect.objectContaining({
+        locationProvider: 'public_ip',
+        locationSource: 'ipinfo',
+        locationRegion: 'Istanbul, TR',
+        locationZone: null,
+        locationLatitude: 41.0082,
+        locationLongitude: 28.9784,
+      }),
+    );
+  });
+
+  it('ignores manual and public IP locations without valid coordinates', () => {
+    expect(
+      resolveNodeLocationFields({
+        provider: 'manual',
+        source: 'manual',
+        region: 'Istanbul',
+      }),
+    ).toBeNull();
+
+    expect(
+      resolveNodeLocationFields({
+        provider: 'public_ip',
+        source: 'ipinfo',
+        region: 'Istanbul',
+        latitude: 91,
+        longitude: 28.9784,
+      }),
+    ).toBeNull();
+  });
+
+  it('ignores provider and source mismatches', () => {
+    expect(
+      resolveNodeLocationFields({
+        provider: 'manual',
+        source: 'cloud_metadata',
+        region: 'Istanbul',
+        latitude: 41.0082,
+        longitude: 28.9784,
+      }),
+    ).toBeNull();
+  });
+
   it('serializes node location DTOs', () => {
     const updatedAt = new Date('2026-05-12T10:00:00.000Z');
 

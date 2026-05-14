@@ -17,6 +17,10 @@ import type {
   NodeLocationProvider,
   NodeLocationSource,
 } from '../dto/node-location.dto';
+import {
+  NODE_LOCATION_PROVIDERS,
+  NODE_LOCATION_SOURCES,
+} from '../dto/node-location.dto';
 import type { NodeRootAccessProfile as NodeRootAccessProfileValue } from './node-root-access-profile.enum';
 import { NodeRootAccessProfile } from './node-root-access-profile.enum';
 import type { NodeRootAccessSyncStatus as NodeRootAccessSyncStatusValue } from './node-root-access-sync-status.enum';
@@ -280,14 +284,14 @@ export class NodeEntity {
   lastVersionReportedAt?: Date | null;
 
   @ApiPropertyOptional({
-    enum: ['aws', 'gcp', 'azure'],
+    enum: NODE_LOCATION_PROVIDERS,
     nullable: true,
   })
   @Column({ length: 24, nullable: true })
   locationProvider?: NodeLocationProvider | null;
 
   @ApiPropertyOptional({
-    enum: ['cloud_metadata'],
+    enum: NODE_LOCATION_SOURCES,
     nullable: true,
   })
   @Column({ length: 40, nullable: true })

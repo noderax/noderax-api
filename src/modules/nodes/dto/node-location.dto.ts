@@ -1,8 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
-export const NODE_LOCATION_PROVIDERS = ['aws', 'gcp', 'azure'] as const;
-export const NODE_LOCATION_SOURCES = ['cloud_metadata'] as const;
+export const NODE_LOCATION_PROVIDERS = [
+  'aws',
+  'gcp',
+  'azure',
+  'manual',
+  'public_ip',
+] as const;
+export const NODE_LOCATION_SOURCES = [
+  'cloud_metadata',
+  'manual',
+  'ipinfo',
+] as const;
 
 export type NodeLocationProvider = (typeof NODE_LOCATION_PROVIDERS)[number];
 export type NodeLocationSource = (typeof NODE_LOCATION_SOURCES)[number];
@@ -26,21 +45,49 @@ export class AgentNodeLocationDto {
 
   @ApiProperty({
     example: 'eu-central-1',
-    description: 'Cloud provider region code reported by the agent.',
+    description:
+      'Cloud provider region code or human-readable location label reported by the agent.',
   })
   @IsString()
   @MinLength(2)
+  @MaxLength(80)
   region: string;
 
   @ApiPropertyOptional({
     example: 'eu-central-1a',
     nullable: true,
-    description: 'Optional cloud availability zone reported by the agent.',
+    description:
+      'Optional cloud availability zone or manual location detail reported by the agent.',
   })
   @IsOptional()
   @IsString()
   @MinLength(1)
+  @MaxLength(80)
   zone?: string;
+
+  @ApiPropertyOptional({
+    example: 41.0082,
+    nullable: true,
+    description:
+      'Latitude reported by manual or public-IP location sources. Cloud metadata locations derive this server-side.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number | null;
+
+  @ApiPropertyOptional({
+    example: 28.9784,
+    nullable: true,
+    description:
+      'Longitude reported by manual or public-IP location sources. Cloud metadata locations derive this server-side.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number | null;
 }
 
 export class NodeLocationDto extends AgentNodeLocationDto {

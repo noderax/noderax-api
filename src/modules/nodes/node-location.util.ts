@@ -3,7 +3,10 @@ import type {
   NodeLocationProvider,
   NodeLocationSource,
 } from './dto/node-location.dto';
-import { NODE_LOCATION_PROVIDERS } from './dto/node-location.dto';
+import {
+  NODE_LOCATION_PROVIDERS,
+  NODE_LOCATION_SOURCES,
+} from './dto/node-location.dto';
 import type { NodeEntity } from './entities/node.entity';
 
 export type NodeLocationInput = {
@@ -11,6 +14,8 @@ export type NodeLocationInput = {
   source?: string | null;
   region?: string | null;
   zone?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
 };
 
 export type NodeLocationFields = Pick<
@@ -30,7 +35,7 @@ type RegionCoordinate = {
 };
 
 const REGION_COORDINATES: Record<
-  NodeLocationProvider,
+  CloudLocationProvider,
   Record<string, RegionCoordinate>
 > = {
   aws: {
@@ -155,27 +160,67 @@ const REGION_COORDINATES: Record<
   },
 };
 
+const CLOUD_LOCATION_PROVIDERS = ['aws', 'gcp', 'azure'] as const;
+type CloudLocationProvider = (typeof CLOUD_LOCATION_PROVIDERS)[number];
+
 export const resolveNodeLocationFields = (
   input: NodeLocationInput | null | undefined,
   updatedAt = new Date(),
 ): NodeLocationFields | null => {
   const provider = normalizeProvider(input?.provider);
-  const zone = normalizeToken(input?.zone);
-  const region = normalizeRegion(input?.region) ?? deriveRegion(provider, zone);
-
-  if (!provider || !region) {
+  if (!provider) {
     return null;
   }
 
-  const coordinates = REGION_COORDINATES[provider][region] ?? null;
+  const requestedSource = input?.source?.trim();
+  const source = normalizeSource(input?.source);
+  if (requestedSource && !source) {
+    return null;
+  }
+  const effectiveSource = source ?? defaultSourceForProvider(provider);
+  if (!effectiveSource || !isValidProviderSource(provider, effectiveSource)) {
+    return null;
+  }
+
+  if (isCloudProvider(provider)) {
+    const zone = normalizeToken(input?.zone);
+    const region =
+      normalizeCloudRegion(input?.region) ?? deriveRegion(provider, zone);
+
+    if (!region) {
+      return null;
+    }
+
+    const coordinates = REGION_COORDINATES[provider][region] ?? null;
+
+    return {
+      locationProvider: provider,
+      locationSource: effectiveSource,
+      locationRegion: region,
+      locationZone: zone,
+      locationLatitude: coordinates?.lat ?? null,
+      locationLongitude: coordinates?.lng ?? null,
+      locationUpdatedAt: updatedAt,
+    };
+  }
+
+  const region = normalizeLocationLabel(input?.region);
+  const zone = normalizeLocationLabel(input?.zone);
+  const coordinates = normalizeInputCoordinates(
+    input?.latitude,
+    input?.longitude,
+  );
+  if (!region || !coordinates) {
+    return null;
+  }
 
   return {
     locationProvider: provider,
-    locationSource: 'cloud_metadata',
+    locationSource: effectiveSource,
     locationRegion: region,
     locationZone: zone,
-    locationLatitude: coordinates?.lat ?? null,
-    locationLongitude: coordinates?.lng ?? null,
+    locationLatitude: coordinates.lat,
+    locationLongitude: coordinates.lng,
     locationUpdatedAt: updatedAt,
   };
 };
@@ -211,14 +256,21 @@ const normalizeProvider = (
   value: string | null | undefined,
 ): NodeLocationProvider | null => {
   const normalized = normalizeToken(value);
-  return NODE_LOCATION_PROVIDERS.includes(
-    normalized as NodeLocationProvider,
-  )
+  return NODE_LOCATION_PROVIDERS.includes(normalized as NodeLocationProvider)
     ? (normalized as NodeLocationProvider)
     : null;
 };
 
-const normalizeRegion = (value: string | null | undefined) =>
+const normalizeSource = (
+  value: string | null | undefined,
+): NodeLocationSource | null => {
+  const normalized = normalizeToken(value);
+  return NODE_LOCATION_SOURCES.includes(normalized as NodeLocationSource)
+    ? (normalized as NodeLocationSource)
+    : null;
+};
+
+const normalizeCloudRegion = (value: string | null | undefined) =>
   normalizeToken(value)?.replace(/\s+/g, '');
 
 const normalizeToken = (value: string | null | undefined) => {
@@ -226,8 +278,71 @@ const normalizeToken = (value: string | null | undefined) => {
   return normalized ? normalized : null;
 };
 
+const normalizeLocationLabel = (value: string | null | undefined) => {
+  const normalized = value?.trim().replace(/\s+/g, ' ');
+  if (!normalized) {
+    return null;
+  }
+  return normalized.slice(0, 80);
+};
+
+const normalizeInputCoordinates = (
+  latitude: number | string | null | undefined,
+  longitude: number | string | null | undefined,
+): RegionCoordinate | null => {
+  const lat = normalizeCoordinate(latitude, -90, 90);
+  const lng = normalizeCoordinate(longitude, -180, 180);
+  if (lat === null || lng === null) {
+    return null;
+  }
+  return { lat, lng };
+};
+
+const normalizeCoordinate = (
+  value: number | string | null | undefined,
+  min: number,
+  max: number,
+) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    return null;
+  }
+  return parsed;
+};
+
+const defaultSourceForProvider = (
+  provider: NodeLocationProvider,
+): NodeLocationSource | null => {
+  if (isCloudProvider(provider)) {
+    return 'cloud_metadata';
+  }
+  if (provider === 'manual') {
+    return 'manual';
+  }
+  if (provider === 'public_ip') {
+    return 'ipinfo';
+  }
+  return null;
+};
+
+const isValidProviderSource = (
+  provider: NodeLocationProvider,
+  source: NodeLocationSource,
+) => {
+  if (isCloudProvider(provider)) {
+    return source === 'cloud_metadata';
+  }
+  if (provider === 'manual') {
+    return source === 'manual';
+  }
+  return provider === 'public_ip' && source === 'ipinfo';
+};
+
 const deriveRegion = (
-  provider: NodeLocationProvider | null,
+  provider: CloudLocationProvider | null,
   zone: string | null,
 ) => {
   if (!provider || !zone) {
@@ -244,3 +359,8 @@ const deriveRegion = (
 
   return null;
 };
+
+const isCloudProvider = (
+  provider: NodeLocationProvider,
+): provider is CloudLocationProvider =>
+  CLOUD_LOCATION_PROVIDERS.includes(provider as CloudLocationProvider);
