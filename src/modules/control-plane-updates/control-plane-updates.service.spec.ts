@@ -143,6 +143,42 @@ describe('ControlPlaneUpdatesService', () => {
     );
   });
 
+  it('preserves release changelog metadata in queued download state', async () => {
+    releaseCatalogService.getLatestRelease.mockResolvedValue({
+      checkedAt: new Date('2026-04-12T12:00:00Z'),
+      release: {
+        version: '1.0.1',
+        releaseId: 'release-next',
+        releasedAt: '2026-04-12T12:00:00Z',
+        builtAt: '2026-04-12T12:00:00Z',
+        bundleSha256: 'sha-next',
+        bundleUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-next/platform-bundle.tar.zst',
+        manifestUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-next/release-manifest.json',
+        changelog: [
+          {
+            title: 'Release notes',
+            items: ['Show control-plane changelog details in updates.'],
+          },
+        ],
+      },
+    });
+
+    await service.queueDownload({
+      actorType: 'user',
+      actorUserId: 'user-1',
+      actorEmailSnapshot: 'admin@noderax.test',
+    });
+
+    expect(readPlatformUpdateState()?.targetRelease?.changelog).toEqual([
+      {
+        title: 'Release notes',
+        items: ['Show control-plane changelog details in updates.'],
+      },
+    ]);
+  });
+
   it('rejects apply when an agent rollout is still active', async () => {
     writePlatformUpdateState({
       operation: 'download',

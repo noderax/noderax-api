@@ -437,6 +437,7 @@ export class ControlPlaneUpdatesService {
       bundleSha256: release.bundleSha256 ?? null,
       bundleUrl: release.bundleUrl ?? null,
       manifestUrl: release.manifestUrl ?? null,
+      changelog: release.changelog ?? null,
     };
   }
 
