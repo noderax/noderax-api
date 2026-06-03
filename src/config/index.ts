@@ -4,6 +4,7 @@ export * from './auth.config';
 export * from './bootstrap.config';
 export * from './cors.utils';
 export * from './database.config';
+export * from './logging-levels';
 export * from './mail.config';
 export * from './redis.config';
 export * from './runtime-security';

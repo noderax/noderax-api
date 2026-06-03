@@ -24,6 +24,7 @@ import {
   authConfig,
   bootstrapConfig,
   buildCorsOptions,
+  resolveNestLogLevels,
   assertSafeProductionConfiguration,
 } from './config';
 import {
@@ -52,6 +53,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(rootModule, {
     bufferLogs: true,
+    logger: resolveNestLogLevels(process.env.NODE_ENV),
   });
 
   app.use(helmet());

@@ -1,3 +1,9 @@
+x-json-log-rotation: &json-log-rotation
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   api:
     build:
@@ -7,6 +13,7 @@ services:
     image: noderax-api:latest
     restart: unless-stopped
     init: true
+    logging: *json-log-rotation
     env_file:
       - .env
     environment:
@@ -53,6 +60,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *json-log-rotation
     environment:
       POSTGRES_USER: ${DB_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
@@ -73,6 +81,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *json-log-rotation
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-change-this-redis-password}
     command:

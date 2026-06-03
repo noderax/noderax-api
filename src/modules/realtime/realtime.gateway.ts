@@ -204,7 +204,8 @@ export class RealtimeGateway
       return;
     }
 
-    const workspaces = await this.workspacesService.findAccessibleWorkspaces(user);
+    const workspaces =
+      await this.workspacesService.findAccessibleWorkspaces(user);
     for (const workspace of workspaces) {
       await Promise.resolve(
         client.join(`${REALTIME_WORKSPACE_ROOM_PREFIX}${workspace.id}`),

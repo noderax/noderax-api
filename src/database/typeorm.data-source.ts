@@ -5,6 +5,7 @@ import { APP_ENTITIES } from './app-entities';
 import { normalizeDatabaseEnvAliases } from '../config/database-env.utils';
 import { applyFileBackedEnv } from '../config/file-backed-env.utils';
 import { buildPostgresSslOptions } from '../config/database-ssl.utils';
+import { resolveTypeOrmLoggingOptions } from './typeorm-logging';
 
 applyFileBackedEnv();
 normalizeDatabaseEnvAliases();
@@ -25,7 +26,10 @@ export default new DataSource({
   entities: [...APP_ENTITIES],
   migrations: [join(__dirname, 'migrations/*{.ts,.js}')],
   synchronize: false,
-  logging: isTrue(process.env.DATABASE_LOGGING ?? process.env.DB_LOGGING),
+  logging: resolveTypeOrmLoggingOptions(
+    process.env.NODE_ENV,
+    isTrue(process.env.DATABASE_LOGGING ?? process.env.DB_LOGGING),
+  ),
   ssl: buildPostgresSslOptions({
     enabled: isTrue(process.env.DATABASE_SSL ?? process.env.DB_SSL),
     caFile:

@@ -40,7 +40,8 @@ const isTrue = (value?: string | null) =>
 const trim = (value?: string | null) =>
   typeof value === 'string' ? value.trim() : '';
 
-const isSetupRuntimeRole = () => trim(process.env.NODERAX_RUNTIME_ROLE) === 'setup';
+const isSetupRuntimeRole = () =>
+  trim(process.env.NODERAX_RUNTIME_ROLE) === 'setup';
 const hasInstallerPresetMode = () =>
   hasRequiredValue(process.env.NODERAX_INSTALLER_PRESET_MODE);
 const isInstallerSetupContext = () =>

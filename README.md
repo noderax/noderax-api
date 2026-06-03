@@ -309,6 +309,71 @@ Production behavior:
 - PostgreSQL data, Redis data, and installer state are persisted in named volumes
 - Redis runs with AOF enabled and password protection
 - Runtime CORS must be configured with explicit origins before switching to production traffic
+- Production logging is restricted to warnings and errors; SQL query, debug, and request completion logs are disabled.
+- Docker `json-file` log rotation caps each service at `50m` times `3` files.
+
+### Production logging
+
+Production uses defensive logging defaults so container logs cannot grow from routine traffic:
+
+```ts
+const app = await NestFactory.create<NestExpressApplication>(rootModule, {
+  bufferLogs: true,
+  logger:
+    process.env.NODE_ENV === 'production'
+      ? ['error', 'warn']
+      : ['log', 'fatal', 'error', 'warn', 'debug', 'verbose'],
+});
+```
+
+TypeORM query logging is forced off in production even if `DATABASE_LOGGING=true` is present. Only failed queries/errors and ORM warnings remain:
+
+```ts
+logging:
+  process.env.NODE_ENV === 'production'
+    ? ['error', 'warn']
+    : database.logging,
+```
+
+HTTP request completion logs are skipped in production, while Prometheus request counters and latency summaries continue to be recorded:
+
+```ts
+if (process.env.NODE_ENV !== 'production') {
+  logger.log(
+    JSON.stringify({
+      msg: 'http.request.completed',
+      method,
+      route,
+      statusCode,
+      durationMs,
+    }),
+  );
+}
+```
+
+Production compose services use Docker log rotation:
+
+```yaml
+logging:
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+```
+
+Impact:
+
+- API log storage is capped at about `150 MB` per container; the HA runtime API pair is capped at about `300 MB`.
+- Removing SQL query and request completion output reduces disk I/O, JSON serialization work, and Docker daemon log pressure.
+- `docker logs` keeps less history by design; use centralized logging for long retention.
+
+Recommended production additions:
+
+- Ship warning/error logs to Loki, Vector, Fluent Bit, or another central log backend.
+- Add disk usage alerts for the Docker data root and the Noderax state directories.
+- Keep SQL query debugging limited to development or short-lived staging sessions.
+- Scrub secrets and PII before forwarding logs outside the host.
+- Alert on API error rate and container restarts instead of relying on high-volume request logs.
 
 ## Agent Updates And Official Releases
 

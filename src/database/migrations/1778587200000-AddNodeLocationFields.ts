@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddNodeLocationFields1778587200000
-  implements MigrationInterface
-{
+export class AddNodeLocationFields1778587200000 implements MigrationInterface {
   name = 'AddNodeLocationFields1778587200000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

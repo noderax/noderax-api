@@ -60,7 +60,9 @@ export const assertSafeProductionConfiguration = (
     }
 
     if (equalsAny(input.adminEmail, ['admin@example.com'])) {
-      issues.push('ADMIN_EMAIL must not use the example default in production.');
+      issues.push(
+        'ADMIN_EMAIL must not use the example default in production.',
+      );
     }
   }
 

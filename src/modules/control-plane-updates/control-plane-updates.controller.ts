@@ -1,4 +1,12 @@
-import { Controller, Get, Header, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -70,10 +78,7 @@ export class ControlPlaneUpdatesController {
   @ApiOkResponse({
     type: ControlPlaneUpdateSummaryDto,
   })
-  queueApply(
-    @CurrentUser() actor: AuthenticatedUser,
-    @Req() request: Request,
-  ) {
+  queueApply(@CurrentUser() actor: AuthenticatedUser, @Req() request: Request) {
     return this.controlPlaneUpdatesService.queueApply({
       actorType: 'user',
       actorUserId: actor.id,

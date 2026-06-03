@@ -12,6 +12,7 @@ import { PrometheusMetricsService } from '../../runtime/prometheus-metrics.servi
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger(LoggingInterceptor.name);
+  private readonly shouldLogRequests = process.env.NODE_ENV !== 'production';
 
   constructor(
     private readonly prometheusMetricsService: PrometheusMetricsService,
@@ -50,14 +51,16 @@ export class LoggingInterceptor implements NestInterceptor {
           'Observed HTTP request duration in seconds.',
         );
 
-        this.logger.log(
-          JSON.stringify({
-            msg: 'http.request.completed',
-            ...logContext,
-            statusCode,
-            durationMs: duration,
-          }),
-        );
+        if (this.shouldLogRequests) {
+          this.logger.log(
+            JSON.stringify({
+              msg: 'http.request.completed',
+              ...logContext,
+              statusCode,
+              durationMs: duration,
+            }),
+          );
+        }
       }),
     );
   }
