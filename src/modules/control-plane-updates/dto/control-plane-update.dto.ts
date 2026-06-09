@@ -9,6 +9,7 @@ export const CONTROL_PLANE_UPDATE_STATUSES = [
   'loading_images',
   'prepared',
   'applying',
+  'migrating_database',
   'recreating_services',
   'completed',
   'failed',

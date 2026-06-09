@@ -279,10 +279,13 @@ export class EnrollmentsService {
       ...this.toNodeInstallStatusResponse(saved),
       installCommand: this.buildInstallCommand(
         agents.installScriptUrl,
+        agents.releaseManifestUrl,
+        agents.releaseMinisignPublicKey,
         publicApiUrl,
         token,
       ),
       scriptUrl: agents.installScriptUrl,
+      releaseManifestUrl: agents.releaseManifestUrl,
       apiUrl: publicApiUrl,
     };
   }
@@ -575,18 +578,24 @@ export class EnrollmentsService {
 
   private buildInstallCommand(
     scriptUrl: string,
+    manifestUrl: string,
+    minisignPublicKey: string,
     apiUrl: string,
     token: string,
   ): string {
     return [
-      'curl -fsSL',
-      this.shellEscape(scriptUrl),
-      '| sudo bash -s --',
-      '--api-url',
-      this.shellEscape(apiUrl),
-      '--bootstrap-token',
-      this.shellEscape(token),
-    ].join(' ');
+      'set -euo pipefail',
+      'tmp="$(mktemp -d)"',
+      'trap \'rm -rf "$tmp"\' EXIT',
+      `curl -fsSLo "$tmp/install.sh" ${this.shellEscape(scriptUrl)}`,
+      `curl -fsSLo "$tmp/release-manifest.json" ${this.shellEscape(manifestUrl)}`,
+      `curl -fsSLo "$tmp/release-manifest.json.minisig" ${this.shellEscape(`${manifestUrl}.minisig`)}`,
+      `minisign -Vm "$tmp/release-manifest.json" -P ${this.shellEscape(minisignPublicKey)}`,
+      'expected_sha="$(python3 -c \'import json,sys; print(json.load(open(sys.argv[1]))["installer"]["sha256"])\' "$tmp/release-manifest.json")"',
+      'actual_sha="$(sha256sum "$tmp/install.sh" | awk \'{print $1}\')"',
+      'test "$expected_sha" = "$actual_sha"',
+      `sudo env NODERAX_AGENT_RELEASE_MANIFEST_URL=${this.shellEscape(manifestUrl)} NODERAX_AGENT_MINISIGN_PUBLIC_KEY=${this.shellEscape(minisignPublicKey)} bash "$tmp/install.sh" --api-url ${this.shellEscape(apiUrl)} --bootstrap-token ${this.shellEscape(token)}`,
+    ].join('\n');
   }
 
   private shellEscape(value: string): string {

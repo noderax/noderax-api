@@ -174,6 +174,9 @@ cp .env.example .env
 - `AGENT_ENROLLMENT_TOKEN`
 - `AGENT_PUBLIC_API_URL`
 - `AGENT_INSTALL_SCRIPT_URL`
+- `AGENT_RELEASE_MANIFEST_URL`
+- `AGENT_RELEASE_MINISIGN_PUBLIC_KEY`
+- `AGENT_ROOT_ACCESS_MAX_DURATION_MINUTES`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USERNAME`
@@ -188,7 +191,7 @@ For installer-managed deployments, `NODERAX_STATE_DIR` should point to a writabl
 
 If `SMTP_HOST` is left blank, mail delivery remains disabled. Invite, reset-password, and operational email flows only send when SMTP is configured. In tests, the API uses JSON transport and exposes captured deliveries through the in-memory mailer service.
 
-`AGENT_PUBLIC_API_URL` should point to the externally reachable API origin used by target servers. In installer-managed setups, the setup flow populates this from the system API URL. `AGENT_INSTALL_SCRIPT_URL` controls the installer script URL embedded into the generated node install command.
+`AGENT_PUBLIC_API_URL` should point to the externally reachable API origin used by target servers. In installer-managed setups, the setup flow populates this from the system API URL. `AGENT_INSTALL_SCRIPT_URL` controls the installer script URL embedded into the generated node install command. `AGENT_RELEASE_MANIFEST_URL` and `AGENT_RELEASE_MINISIGN_PUBLIC_KEY` pin the signed release manifest used to verify the installer SHA-256 before `sudo` execution. `AGENT_ROOT_ACCESS_MAX_DURATION_MINUTES` caps explicit non-off root grants and defaults to `120`.
 
 `CORS_ORIGIN` should be a comma-separated list of explicit web origins in production. The same policy is applied to HTTP, `/realtime`, `/terminal`, and `/agent-realtime`.
 
@@ -419,7 +422,7 @@ After installation completes, the normal application surface becomes active.
 ## Node Bootstrap Flow
 
 - Workspace owners, admins, and platform admins can create one-click install commands through `POST /workspaces/:workspaceId/node-installs`
-- The response includes the full `curl | sudo bash` installer command, the public API URL, the installer script URL, the install record ID, and the initial live status payload
+- The response includes the full signed-manifest verification installer command, the public API URL, the installer script URL, the release manifest URL, the install record ID, and the initial live status payload
 - When `AGENT_PUBLIC_API_URL` is configured, it is always used as the installer command origin so target hosts receive a deterministic public API endpoint
 - Install tokens are single-use and short-lived
 - Install status can be read through `GET /workspaces/:workspaceId/node-installs/:installId`

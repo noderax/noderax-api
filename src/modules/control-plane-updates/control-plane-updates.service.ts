@@ -613,6 +613,7 @@ export class ControlPlaneUpdatesService {
       operation.status === 'extracting' ||
       operation.status === 'loading_images' ||
       operation.status === 'applying' ||
+      operation.status === 'migrating_database' ||
       operation.status === 'recreating_services'
     ) {
       throw new ConflictException(

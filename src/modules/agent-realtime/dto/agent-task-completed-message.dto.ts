@@ -8,6 +8,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  Min,
 } from 'class-validator';
 import {
   AGENT_TASK_TERMINAL_STATUSES,
@@ -104,4 +105,13 @@ export class AgentTaskCompletedMessageDto {
   @IsOptional()
   @IsInt()
   durationMs?: number;
+
+  @IsOptional()
+  @IsUUID()
+  eventId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  eventSeq?: number;
 }

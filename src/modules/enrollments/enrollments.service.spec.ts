@@ -116,6 +116,9 @@ describe('EnrollmentsService', () => {
       getOrThrow: jest.fn().mockReturnValue({
         publicApiUrl: 'https://api.example.com',
         installScriptUrl: 'https://cdn.example.com/install.sh',
+        releaseManifestUrl:
+          'https://cdn.example.com/releases/latest/release-manifest.json',
+        releaseMinisignPublicKey: 'RWQ0000000000000000000000000000000000000000',
       }),
     };
 
@@ -399,7 +402,14 @@ describe('EnrollmentsService', () => {
         status: NodeInstallStatus.PENDING,
         stage: 'command_generated',
         progressPercent: 5,
+        releaseManifestUrl:
+          'https://cdn.example.com/releases/latest/release-manifest.json',
       }),
+    );
+    expect(result.installCommand).not.toContain('| sudo bash');
+    expect(result.installCommand).toContain('minisign -Vm');
+    expect(result.installCommand).toContain(
+      'test "$expected_sha" = "$actual_sha"',
     );
   });
 
@@ -408,6 +418,9 @@ describe('EnrollmentsService', () => {
     configService.getOrThrow.mockReturnValue({
       publicApiUrl: 'http://localhost:3000',
       installScriptUrl: 'https://cdn.example.com/install.sh',
+      releaseManifestUrl:
+        'https://cdn.example.com/releases/latest/release-manifest.json',
+      releaseMinisignPublicKey: 'RWQ0000000000000000000000000000000000000000',
     });
     enrollmentTokensService.issueEnrollmentToken.mockResolvedValue({
       token: 'raw-install-token',
@@ -443,6 +456,9 @@ describe('EnrollmentsService', () => {
     configService.getOrThrow.mockReturnValue({
       publicApiUrl: 'http://nginx/api/v1',
       installScriptUrl: 'https://cdn.example.com/install.sh',
+      releaseManifestUrl:
+        'https://cdn.example.com/releases/latest/release-manifest.json',
+      releaseMinisignPublicKey: 'RWQ0000000000000000000000000000000000000000',
     });
     enrollmentTokensService.issueEnrollmentToken.mockResolvedValue({
       token: 'raw-install-token',

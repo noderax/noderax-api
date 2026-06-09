@@ -34,6 +34,7 @@ export class TerminalSessionSchemaBootstrap implements OnModuleInit {
         "cols" integer NOT NULL DEFAULT 120,
         "rows" integer NOT NULL DEFAULT 34,
         "runAsRoot" boolean NOT NULL DEFAULT false,
+        "rootAccessGrantId" uuid NULL,
         "retentionExpiresAt" TIMESTAMPTZ NOT NULL,
         "transcriptBytes" bigint NOT NULL DEFAULT 0,
         "chunkCount" integer NOT NULL DEFAULT 0,
@@ -46,7 +47,8 @@ export class TerminalSessionSchemaBootstrap implements OnModuleInit {
 
     await this.dataSource.query(`
       ALTER TABLE "terminal_sessions"
-      ADD COLUMN IF NOT EXISTS "runAsRoot" boolean NOT NULL DEFAULT false
+      ADD COLUMN IF NOT EXISTS "runAsRoot" boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS "rootAccessGrantId" uuid NULL
     `);
 
     await this.dataSource.query(`

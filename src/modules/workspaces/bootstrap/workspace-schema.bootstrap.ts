@@ -133,6 +133,10 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
       ADD COLUMN IF NOT EXISTS "rootAccessSyncStatus" "node_root_access_sync_status_enum" NOT NULL DEFAULT 'pending',
       ADD COLUMN IF NOT EXISTS "rootAccessUpdatedAt" TIMESTAMPTZ NULL,
       ADD COLUMN IF NOT EXISTS "rootAccessUpdatedByUserId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "rootAccessExpiresAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "rootAccessReason" text NULL,
+      ADD COLUMN IF NOT EXISTS "rootAccessGrantedByUserId" uuid NULL,
+      ADD COLUMN IF NOT EXISTS "rootAccessGrantId" uuid NULL,
       ADD COLUMN IF NOT EXISTS "rootAccessLastAppliedAt" TIMESTAMPTZ NULL,
       ADD COLUMN IF NOT EXISTS "rootAccessLastError" text NULL,
       ADD COLUMN IF NOT EXISTS "maintenanceReason" text NULL,
@@ -148,7 +152,11 @@ export class WorkspaceSchemaBootstrap implements OnModuleInit {
       ADD COLUMN IF NOT EXISTS "locationZone" varchar(80) NULL,
       ADD COLUMN IF NOT EXISTS "locationLatitude" double precision NULL,
       ADD COLUMN IF NOT EXISTS "locationLongitude" double precision NULL,
-      ADD COLUMN IF NOT EXISTS "locationUpdatedAt" TIMESTAMPTZ NULL
+      ADD COLUMN IF NOT EXISTS "locationUpdatedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "pendingAgentTokenHash" varchar NULL,
+      ADD COLUMN IF NOT EXISTS "pendingAgentTokenExpiresAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "agentTokenRotatedAt" TIMESTAMPTZ NULL,
+      ADD COLUMN IF NOT EXISTS "agentTokenRevokedAt" TIMESTAMPTZ NULL
     `);
 
     await this.dataSource.query(`

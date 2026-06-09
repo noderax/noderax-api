@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,6 +20,7 @@ import {
 import { SWAGGER_BEARER_AUTH_NAME } from '../../common/constants/swagger.constants';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
+import { Request } from 'express';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user-role.enum';
 import { CreateBatchScheduledTaskDto } from './dto/create-batch-scheduled-task.dto';
@@ -53,8 +55,15 @@ export class ScheduledTasksController {
   create(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateScheduledTaskDto,
+    @Req() request: Request,
   ) {
-    return this.scheduledTasksService.create(user.id, undefined, dto);
+    return this.scheduledTasksService.create(user.id, undefined, dto, {
+      actorType: 'user',
+      actorUserId: user.id,
+      actorEmailSnapshot: user.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Post('batch')
@@ -74,8 +83,15 @@ export class ScheduledTasksController {
   createBatch(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateBatchScheduledTaskDto,
+    @Req() request: Request,
   ) {
-    return this.scheduledTasksService.createBatch(user.id, undefined, dto);
+    return this.scheduledTasksService.createBatch(user.id, undefined, dto, {
+      actorType: 'user',
+      actorUserId: user.id,
+      actorEmailSnapshot: user.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Get()
@@ -99,8 +115,19 @@ export class ScheduledTasksController {
     description: 'Scheduled task updated.',
     type: ScheduledTaskEntity,
   })
-  update(@Param('id') id: string, @Body() dto: UpdateScheduledTaskDto) {
-    return this.scheduledTasksService.updateEnabled(id, dto);
+  update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateScheduledTaskDto,
+    @Req() request: Request,
+  ) {
+    return this.scheduledTasksService.updateEnabled(id, dto, undefined, {
+      actorType: 'user',
+      actorUserId: user.id,
+      actorEmailSnapshot: user.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Delete(':id')
@@ -116,7 +143,17 @@ export class ScheduledTasksController {
       },
     },
   })
-  remove(@Param('id') id: string) {
-    return this.scheduledTasksService.delete(id);
+  remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Req() request: Request,
+  ) {
+    return this.scheduledTasksService.delete(id, undefined, {
+      actorType: 'user',
+      actorUserId: user.id,
+      actorEmailSnapshot: user.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 }

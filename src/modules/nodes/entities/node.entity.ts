@@ -227,6 +227,33 @@ export class NodeEntity {
     nullable: true,
   })
   @Column({ type: 'timestamptz', nullable: true })
+  rootAccessExpiresAt?: Date | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+  })
+  @Column({ type: 'text', nullable: true })
+  rootAccessReason?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  rootAccessGrantedByUserId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @Column({ type: 'uuid', nullable: true })
+  rootAccessGrantId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
   rootAccessLastAppliedAt?: Date | null;
 
   @ApiPropertyOptional({
@@ -345,6 +372,28 @@ export class NodeEntity {
   @ApiHideProperty()
   @Column({ nullable: true, select: false })
   agentTokenHash: string | null;
+
+  @ApiHideProperty()
+  @Column({ nullable: true, select: false })
+  pendingAgentTokenHash?: string | null;
+
+  @ApiHideProperty()
+  @Column({ type: 'timestamptz', nullable: true, select: false })
+  pendingAgentTokenExpiresAt?: Date | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  agentTokenRotatedAt?: Date | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  agentTokenRevokedAt?: Date | null;
 
   @ApiProperty({
     format: 'date-time',

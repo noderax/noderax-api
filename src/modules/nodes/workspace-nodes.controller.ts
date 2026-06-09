@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -187,6 +188,85 @@ export class WorkspaceNodesController {
       this.nodesService.buildDesiredRootAccessSnapshot(node),
     );
 
+    return node;
+  }
+
+  @Post(':id/agent-token/rotate')
+  @UseGuards(WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  async rotateAgentToken(
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    const hasRoute = await this.agentRealtimeService.hasActiveNodeRoute(id);
+    if (!hasRoute) {
+      throw new ConflictException(
+        'Agent token rotation requires an active realtime route. Revoke and re-enroll offline nodes.',
+      );
+    }
+
+    const rotation = await this.nodesService.stageAgentTokenRotation(
+      id,
+      workspaceId,
+      actor,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+
+    const delivered =
+      await this.agentRealtimeService.dispatchAgentTokenRotation(
+        rotation.node.id,
+        {
+          agentToken: rotation.agentToken,
+          expiresAt: rotation.expiresAt.toISOString(),
+        },
+      );
+
+    if (!delivered) {
+      await this.nodesService.clearPendingAgentTokenRotation(rotation.node.id);
+      throw new ConflictException(
+        'Agent token rotation could not be delivered over realtime.',
+      );
+    }
+
+    return {
+      nodeId: rotation.node.id,
+      expiresAt: rotation.expiresAt.toISOString(),
+    };
+  }
+
+  @Post(':id/agent-token/revoke')
+  @UseGuards(WorkspaceRolesGuard)
+  @WorkspaceRoles(WorkspaceMembershipRole.OWNER, WorkspaceMembershipRole.ADMIN)
+  async revokeAgentToken(
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    const node = await this.nodesService.revokeAgentToken(
+      id,
+      workspaceId,
+      actor,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+    await this.agentRealtimeService.disconnectNode(
+      node.id,
+      'agent-token-revoked',
+    );
     return node;
   }
 

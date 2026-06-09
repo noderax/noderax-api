@@ -267,6 +267,88 @@ describe('ControlPlaneUpdatesService', () => {
     );
   });
 
+  it('treats database migration apply state as an active operation', async () => {
+    const now = new Date().toISOString();
+    writePlatformUpdateState({
+      operation: 'apply',
+      status: 'migrating_database',
+      requestedAt: now,
+      startedAt: now,
+      completedAt: null,
+      requestedByUserId: 'user-1',
+      requestedByEmailSnapshot: 'admin@noderax.test',
+      currentRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      targetRelease: {
+        version: '1.0.1',
+        releaseId: 'release-next',
+        releasedAt: '2026-04-12T12:00:00Z',
+        bundleSha256: 'sha-next',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      preparedRelease: {
+        version: '1.0.1',
+        releaseId: 'release-next',
+        releasedAt: '2026-04-12T12:00:00Z',
+        bundleSha256: 'sha-next',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      previousRelease: {
+        version: '1.0.0',
+        releaseId: 'release-current',
+        releasedAt: '2026-04-12T11:00:00Z',
+        bundleSha256: 'sha-current',
+        builtAt: null,
+        bundleUrl: null,
+        manifestUrl: null,
+      },
+      message:
+        'Applying pending database migrations for the prepared control-plane release.',
+      error: null,
+      rollbackStatus: null,
+      auditLoggedAt: null,
+    });
+
+    releaseCatalogService.getLatestRelease.mockResolvedValue({
+      checkedAt: new Date('2026-04-12T12:00:00Z'),
+      release: {
+        version: '1.0.1',
+        releaseId: 'release-next',
+        releasedAt: '2026-04-12T12:00:00Z',
+        builtAt: '2026-04-12T12:00:00Z',
+        bundleSha256: 'sha-next',
+        bundleUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-next/platform-bundle.tar.zst',
+        manifestUrl:
+          'https://cdn.noderax.net/noderax-platform/releases/by-id/release-next/release-manifest.json',
+      },
+    });
+
+    const summary = await service.getSummary();
+
+    expect(summary.operation?.status).toBe('migrating_database');
+    await expect(
+      service.queueDownload({
+        actorType: 'user',
+        actorUserId: 'user-1',
+        actorEmailSnapshot: 'admin@noderax.test',
+      }),
+    ).rejects.toThrow(
+      'Control-plane apply is already migrating_database. Wait for the current operation to finish before starting another one.',
+    );
+  });
+
   it('clears stale no-op apply state when the installed release already matches the target', async () => {
     writePlatformUpdateState({
       operation: 'apply',

@@ -8,8 +8,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
@@ -54,6 +55,9 @@ const DEFAULT_NODE_NOTIFICATION_LEVELS = [
   EventSeverity.WARNING,
   EventSeverity.CRITICAL,
 ];
+const AGENT_TOKEN_ROTATION_PENDING_MS = 5 * 60 * 1000;
+const ROOT_ACCESS_MIN_DURATION_MINUTES = 5;
+const ROOT_ACCESS_DEFAULT_MAX_DURATION_MINUTES = 120;
 
 @Injectable()
 export class NodesService {
@@ -108,6 +112,10 @@ export class NodesService {
       rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
       rootAccessUpdatedAt: null,
       rootAccessUpdatedByUserId: null,
+      rootAccessExpiresAt: null,
+      rootAccessReason: null,
+      rootAccessGrantedByUserId: null,
+      rootAccessGrantId: null,
       rootAccessLastAppliedAt: null,
       rootAccessLastError: null,
       maintenanceReason: null,
@@ -260,6 +268,10 @@ export class NodesService {
       rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
       rootAccessUpdatedAt: null,
       rootAccessUpdatedByUserId: null,
+      rootAccessExpiresAt: null,
+      rootAccessReason: null,
+      rootAccessGrantedByUserId: null,
+      rootAccessGrantId: null,
       rootAccessLastAppliedAt: null,
       rootAccessLastError: null,
     });
@@ -289,6 +301,9 @@ export class NodesService {
       existingNode.status = NodeStatus.ONLINE;
       existingNode.lastSeenAt = now;
       existingNode.agentTokenHash = input.agentTokenHash;
+      existingNode.pendingAgentTokenHash = null;
+      existingNode.pendingAgentTokenExpiresAt = null;
+      existingNode.agentTokenRevokedAt = null;
       existingNode.name = existingNode.name || existingNode.hostname;
       existingNode.agentVersion =
         input.agentVersion ?? existingNode.agentVersion;
@@ -334,8 +349,16 @@ export class NodesService {
       rootAccessSyncStatus: NodeRootAccessSyncStatus.PENDING,
       rootAccessUpdatedAt: null,
       rootAccessUpdatedByUserId: null,
+      rootAccessExpiresAt: null,
+      rootAccessReason: null,
+      rootAccessGrantedByUserId: null,
+      rootAccessGrantId: null,
       rootAccessLastAppliedAt: null,
       rootAccessLastError: null,
+      pendingAgentTokenHash: null,
+      pendingAgentTokenExpiresAt: null,
+      agentTokenRotatedAt: null,
+      agentTokenRevokedAt: null,
     });
 
     return this.populateTeamMetadata(await this.nodesRepository.save(node));
@@ -592,16 +615,55 @@ export class NodesService {
     const node = await this.findOneOrFail(nodeId, workspaceId);
     await this.workspacesService.assertWorkspaceAdmin(node.workspaceId, actor);
     await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+    const now = new Date();
+    const requestedProfile = dto.profile;
+    const isDisabling = requestedProfile === NodeRootAccessProfile.OFF;
+    const maxDurationMinutes = this.getRootAccessMaxDurationMinutes();
+    const durationMinutes = Math.trunc(dto.durationMinutes ?? 0);
+    const reason = dto.reason?.trim() ?? '';
+
+    if (!isDisabling) {
+      if (
+        !Number.isFinite(durationMinutes) ||
+        durationMinutes < ROOT_ACCESS_MIN_DURATION_MINUTES ||
+        durationMinutes > maxDurationMinutes
+      ) {
+        throw new BadRequestException(
+          `Root access duration must be between ${ROOT_ACCESS_MIN_DURATION_MINUTES} and ${maxDurationMinutes} minutes.`,
+        );
+      }
+
+      if (reason.length < 3) {
+        throw new BadRequestException(
+          'Root access reason is required when enabling a non-off profile.',
+        );
+      }
+    }
 
     const previousProfile = node.rootAccessProfile;
     const previousSyncStatus = node.rootAccessSyncStatus;
     const previousLastError = node.rootAccessLastError ?? null;
+    const previousExpiresAt = node.rootAccessExpiresAt ?? null;
+    const previousGrantId = node.rootAccessGrantId ?? null;
 
-    node.rootAccessProfile = dto.profile;
+    node.rootAccessProfile = requestedProfile;
     node.rootAccessSyncStatus = NodeRootAccessSyncStatus.PENDING;
-    node.rootAccessUpdatedAt = new Date();
+    node.rootAccessUpdatedAt = now;
     node.rootAccessUpdatedByUserId = actor.id;
     node.rootAccessLastError = null;
+    if (isDisabling) {
+      node.rootAccessExpiresAt = null;
+      node.rootAccessReason = null;
+      node.rootAccessGrantedByUserId = null;
+      node.rootAccessGrantId = null;
+    } else {
+      node.rootAccessExpiresAt = new Date(
+        now.getTime() + durationMinutes * 60 * 1000,
+      );
+      node.rootAccessReason = reason;
+      node.rootAccessGrantedByUserId = actor.id;
+      node.rootAccessGrantId = randomUUID();
+    }
 
     const saved = await this.populateTeamMetadata(
       await this.nodesRepository.save(node),
@@ -634,12 +696,23 @@ export class NodesService {
           rootAccessProfile: previousProfile,
           rootAccessSyncStatus: previousSyncStatus,
           rootAccessLastError: previousLastError,
+          rootAccessExpiresAt: this.formatTimestamp(previousExpiresAt),
+          rootAccessGrantId: previousGrantId,
         },
         after: {
           rootAccessProfile: saved.rootAccessProfile,
           rootAccessSyncStatus: saved.rootAccessSyncStatus,
           rootAccessLastError: saved.rootAccessLastError ?? null,
+          rootAccessExpiresAt: this.formatTimestamp(saved.rootAccessExpiresAt),
+          rootAccessReason: saved.rootAccessReason ?? null,
+          rootAccessGrantId: saved.rootAccessGrantId ?? null,
         },
+      },
+      metadata: {
+        durationMinutes: isDisabling ? null : durationMinutes,
+        reason: saved.rootAccessReason ?? null,
+        expiresAt: this.formatTimestamp(saved.rootAccessExpiresAt),
+        grantId: saved.rootAccessGrantId ?? null,
       },
       context,
     });
@@ -733,7 +806,9 @@ export class NodesService {
     }
 
     throw new BadRequestException(
-      `Node ${node.hostname} does not currently allow operational root access. Applied profile is ${node.rootAccessAppliedProfile}, desired profile is ${node.rootAccessProfile}, and sync status is ${node.rootAccessSyncStatus}.`,
+      this.isRootAccessGrantExpired(node)
+        ? `Node ${node.hostname} root access grant expired at ${this.formatTimestamp(node.rootAccessExpiresAt)}.`
+        : `Node ${node.hostname} does not currently allow operational root access. Applied profile is ${node.rootAccessAppliedProfile}, desired profile is ${node.rootAccessProfile}, and sync status is ${node.rootAccessSyncStatus}.`,
     );
   }
 
@@ -746,8 +821,12 @@ export class NodesService {
   }
 
   canNodeUseOperationalRoot(
-    node: Pick<NodeEntity, 'rootAccessAppliedProfile'>,
+    node: Pick<NodeEntity, 'rootAccessAppliedProfile' | 'rootAccessExpiresAt'>,
   ): boolean {
+    if (!this.isRootAccessGrantActive(node)) {
+      return false;
+    }
+
     return this.profileAllowsSurface(
       node.rootAccessAppliedProfile,
       'operational',
@@ -755,23 +834,44 @@ export class NodesService {
   }
 
   canNodeUseTaskRoot(
-    node: Pick<NodeEntity, 'rootAccessAppliedProfile'>,
+    node: Pick<NodeEntity, 'rootAccessAppliedProfile' | 'rootAccessExpiresAt'>,
   ): boolean {
+    if (!this.isRootAccessGrantActive(node)) {
+      return false;
+    }
+
     return this.profileAllowsSurface(node.rootAccessAppliedProfile, 'task');
   }
 
   canNodeUseTerminalRoot(
-    node: Pick<NodeEntity, 'rootAccessAppliedProfile'>,
+    node: Pick<NodeEntity, 'rootAccessAppliedProfile' | 'rootAccessExpiresAt'>,
   ): boolean {
+    if (!this.isRootAccessGrantActive(node)) {
+      return false;
+    }
+
     return this.profileAllowsSurface(node.rootAccessAppliedProfile, 'terminal');
   }
 
   buildDesiredRootAccessSnapshot(
-    node: Pick<NodeEntity, 'rootAccessProfile' | 'rootAccessUpdatedAt'>,
-  ): { profile: NodeRootAccessProfile; updatedAt: string | null } {
+    node: Pick<
+      NodeEntity,
+      | 'rootAccessProfile'
+      | 'rootAccessUpdatedAt'
+      | 'rootAccessExpiresAt'
+      | 'rootAccessGrantId'
+    >,
+  ): {
+    profile: NodeRootAccessProfile;
+    updatedAt: string | null;
+    expiresAt: string | null;
+    grantId: string | null;
+  } {
     return {
       profile: node.rootAccessProfile,
       updatedAt: this.formatTimestamp(node.rootAccessUpdatedAt),
+      expiresAt: this.formatTimestamp(node.rootAccessExpiresAt),
+      grantId: node.rootAccessGrantId ?? null,
     };
   }
 
@@ -782,6 +882,8 @@ export class NodesService {
     const node = await this.nodesRepository
       .createQueryBuilder('node')
       .addSelect('node.agentTokenHash')
+      .addSelect('node.pendingAgentTokenHash')
+      .addSelect('node.pendingAgentTokenExpiresAt')
       .where('node.id = :nodeId', { nodeId })
       .getOne();
 
@@ -789,27 +891,141 @@ export class NodesService {
       throw new NotFoundException(`Node ${nodeId} was not found`);
     }
 
-    if (!node.agentTokenHash) {
+    if (!node.agentTokenHash && !node.pendingAgentTokenHash) {
       throw new UnauthorizedException(
         'Agent token is not configured for this node',
       );
     }
 
     const providedHash = this.hashAgentToken(agentToken);
-    const storedHash = node.agentTokenHash;
-
-    // Constant-time comparison to prevent timing attacks
-    const providedBuffer = Buffer.from(providedHash);
-    const storedBuffer = Buffer.from(storedHash);
+    const now = new Date();
 
     if (
-      providedBuffer.length !== storedBuffer.length ||
-      !timingSafeEqual(providedBuffer, storedBuffer)
+      node.agentTokenHash &&
+      this.agentTokenHashMatches(providedHash, node.agentTokenHash)
     ) {
-      throw new UnauthorizedException('Invalid agent token');
+      if (
+        node.pendingAgentTokenExpiresAt &&
+        node.pendingAgentTokenExpiresAt.getTime() <= now.getTime()
+      ) {
+        node.pendingAgentTokenHash = null;
+        node.pendingAgentTokenExpiresAt = null;
+        await this.nodesRepository.save(node);
+      }
+      return node;
     }
 
-    return node;
+    if (
+      node.pendingAgentTokenHash &&
+      node.pendingAgentTokenExpiresAt &&
+      node.pendingAgentTokenExpiresAt.getTime() > now.getTime() &&
+      this.agentTokenHashMatches(providedHash, node.pendingAgentTokenHash)
+    ) {
+      node.agentTokenHash = node.pendingAgentTokenHash;
+      node.pendingAgentTokenHash = null;
+      node.pendingAgentTokenExpiresAt = null;
+      node.agentTokenRotatedAt = now;
+      node.agentTokenRevokedAt = null;
+      await this.nodesRepository.save(node);
+      return node;
+    }
+
+    throw new UnauthorizedException('Invalid agent token');
+  }
+
+  async stageAgentTokenRotation(
+    nodeId: string,
+    workspaceId: string | undefined,
+    actor: AuthenticatedUser,
+    context?: RequestAuditContext,
+  ): Promise<{ node: NodeEntity; agentToken: string; expiresAt: Date }> {
+    const node = await this.findOneOrFail(nodeId, workspaceId);
+    await this.workspacesService.assertWorkspaceAdmin(node.workspaceId, actor);
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+
+    if (node.status !== NodeStatus.ONLINE) {
+      throw new BadRequestException(
+        `Node ${node.hostname} must be online before rotating its agent token.`,
+      );
+    }
+
+    const agentToken = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + AGENT_TOKEN_ROTATION_PENDING_MS);
+
+    await this.nodesRepository.update(node.id, {
+      pendingAgentTokenHash: this.hashAgentToken(agentToken),
+      pendingAgentTokenExpiresAt: expiresAt,
+      agentTokenRevokedAt: null,
+      updatedAt: new Date(),
+    });
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: node.workspaceId,
+      action: 'node.agent-token.rotate.requested',
+      targetType: 'node',
+      targetId: node.id,
+      targetLabel: node.hostname,
+      metadata: {
+        nodeId: node.id,
+        pendingExpiresAt: expiresAt.toISOString(),
+      },
+      context,
+    });
+
+    return {
+      node: await this.findOneOrFail(node.id, node.workspaceId),
+      agentToken,
+      expiresAt,
+    };
+  }
+
+  async clearPendingAgentTokenRotation(nodeId: string): Promise<void> {
+    await this.nodesRepository.update(nodeId, {
+      pendingAgentTokenHash: null,
+      pendingAgentTokenExpiresAt: null,
+      updatedAt: new Date(),
+    });
+  }
+
+  async revokeAgentToken(
+    nodeId: string,
+    workspaceId: string | undefined,
+    actor: AuthenticatedUser,
+    context?: RequestAuditContext,
+  ): Promise<NodeEntity> {
+    const node = await this.findOneOrFail(nodeId, workspaceId);
+    await this.workspacesService.assertWorkspaceAdmin(node.workspaceId, actor);
+    await this.workspacesService.assertWorkspaceWritable(node.workspaceId);
+
+    const now = new Date();
+    await this.nodesRepository.update(node.id, {
+      agentTokenHash: null,
+      pendingAgentTokenHash: null,
+      pendingAgentTokenExpiresAt: null,
+      agentTokenRevokedAt: now,
+      status: NodeStatus.OFFLINE,
+      updatedAt: now,
+    });
+
+    const saved = await this.findOneOrFail(node.id, node.workspaceId);
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: node.workspaceId,
+      action: 'node.agent-token.revoked',
+      targetType: 'node',
+      targetId: node.id,
+      targetLabel: node.hostname,
+      metadata: {
+        nodeId: node.id,
+        revokedAt: now.toISOString(),
+      },
+      context,
+    });
+
+    await this.broadcastStatusUpdate(saved);
+    return saved;
   }
 
   async touchOnline(nodeId: string): Promise<NodeEntity> {
@@ -984,6 +1200,8 @@ export class NodesService {
       | 'rootAccessSyncStatus'
       | 'rootAccessUpdatedAt'
       | 'rootAccessUpdatedByUserId'
+      | 'rootAccessExpiresAt'
+      | 'rootAccessGrantId'
       | 'rootAccessLastAppliedAt'
       | 'rootAccessLastError'
     >,
@@ -996,6 +1214,8 @@ export class NodesService {
       rootAccessSyncStatus: node.rootAccessSyncStatus,
       rootAccessUpdatedAt: this.formatTimestamp(node.rootAccessUpdatedAt),
       rootAccessUpdatedByUserId: node.rootAccessUpdatedByUserId ?? null,
+      rootAccessExpiresAt: this.formatTimestamp(node.rootAccessExpiresAt),
+      rootAccessGrantId: node.rootAccessGrantId ?? null,
       rootAccessLastAppliedAt: this.formatTimestamp(
         node.rootAccessLastAppliedAt,
       ),
@@ -1094,8 +1314,73 @@ export class NodesService {
     return offlineNodes.length;
   }
 
+  @Cron('*/60 * * * * *')
+  async expireRootAccessGrants(): Promise<number> {
+    const now = new Date();
+    const expiredNodes = await this.nodesRepository
+      .createQueryBuilder('node')
+      .where('node.rootAccessProfile != :offProfile', {
+        offProfile: NodeRootAccessProfile.OFF,
+      })
+      .andWhere('node.rootAccessExpiresAt IS NOT NULL')
+      .andWhere('node.rootAccessExpiresAt <= :now', { now })
+      .getMany();
+
+    for (const node of expiredNodes) {
+      const previousProfile = node.rootAccessProfile;
+      const previousGrantId = node.rootAccessGrantId ?? null;
+
+      node.rootAccessProfile = NodeRootAccessProfile.OFF;
+      node.rootAccessSyncStatus = NodeRootAccessSyncStatus.PENDING;
+      node.rootAccessUpdatedAt = now;
+      node.rootAccessUpdatedByUserId = null;
+      node.rootAccessExpiresAt = null;
+      node.rootAccessReason = null;
+      node.rootAccessGrantedByUserId = null;
+      node.rootAccessGrantId = null;
+      node.rootAccessLastError = null;
+
+      const saved = await this.nodesRepository.save(node);
+
+      await this.auditLogsService.record({
+        scope: 'workspace',
+        workspaceId: saved.workspaceId,
+        action: 'node.root-access.expired',
+        targetType: 'node',
+        targetId: saved.id,
+        targetLabel: saved.hostname,
+        metadata: {
+          nodeId: saved.id,
+          previousProfile,
+          previousGrantId,
+          expiredAt: now.toISOString(),
+        },
+        context: {
+          actorType: 'system',
+        },
+      });
+
+      await this.broadcastRootAccessUpdate(saved);
+    }
+
+    return expiredNodes.length;
+  }
+
   hashAgentToken(agentToken: string): string {
     return createHash('sha256').update(agentToken).digest('hex');
+  }
+
+  private agentTokenHashMatches(
+    providedHash: string,
+    storedHash: string,
+  ): boolean {
+    const providedBuffer = Buffer.from(providedHash);
+    const storedBuffer = Buffer.from(storedHash);
+
+    return (
+      providedBuffer.length === storedBuffer.length &&
+      timingSafeEqual(providedBuffer, storedBuffer)
+    );
   }
 
   private async assertHostnameAvailable(hostname: string): Promise<void> {
@@ -1165,12 +1450,50 @@ export class NodesService {
     node: NodeEntity,
     surface: NodeRootAccessSurface,
   ): void {
+    if (!this.isRootAccessGrantActive(node)) {
+      throw new BadRequestException(
+        this.isRootAccessGrantExpired(node)
+          ? `Node ${node.hostname} root access grant expired at ${this.formatTimestamp(node.rootAccessExpiresAt)}.`
+          : `Node ${node.hostname} does not have an active root access grant.`,
+      );
+    }
+
     if (this.profileAllowsSurface(node.rootAccessAppliedProfile, surface)) {
       return;
     }
 
     throw new BadRequestException(
       `Node ${node.hostname} does not currently allow ${surface} root access. Applied profile is ${node.rootAccessAppliedProfile}.`,
+    );
+  }
+
+  private isRootAccessGrantActive(
+    node: Pick<NodeEntity, 'rootAccessExpiresAt'>,
+  ): boolean {
+    return !this.isRootAccessGrantExpired(node);
+  }
+
+  private isRootAccessGrantExpired(
+    node: Pick<NodeEntity, 'rootAccessExpiresAt'>,
+  ): boolean {
+    return Boolean(
+      node.rootAccessExpiresAt &&
+      node.rootAccessExpiresAt.getTime() <= Date.now(),
+    );
+  }
+
+  private getRootAccessMaxDurationMinutes(): number {
+    const agents =
+      this.configService.get<ConfigType<typeof agentsConfig>>(
+        AGENTS_CONFIG_KEY,
+      );
+    const configured = agents?.rootAccessMaxDurationMinutes;
+
+    return Math.max(
+      ROOT_ACCESS_MIN_DURATION_MINUTES,
+      Number.isFinite(configured)
+        ? Number(configured)
+        : ROOT_ACCESS_DEFAULT_MAX_DURATION_MINUTES,
     );
   }
 

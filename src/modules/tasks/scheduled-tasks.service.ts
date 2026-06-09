@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { In, Repository } from 'typeorm';
 import { SYSTEM_EVENT_TYPES } from '../../common/constants/system-event.constants';
 import { RequestAuditContext } from '../../common/types/request-audit-context.type';
@@ -133,6 +133,7 @@ export class ScheduledTasksService {
     id: string,
     dto: UpdateScheduledTaskDto,
     workspaceId?: string,
+    context?: RequestAuditContext,
   ): Promise<ScheduledTaskEntity> {
     const scheduledTask = await this.findOneOrFail(id, workspaceId);
     await this.workspacesService.assertWorkspaceWritable(
@@ -174,12 +175,31 @@ export class ScheduledTasksService {
       },
     });
 
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: saved.workspaceId,
+      action: 'task-schedule.updated',
+      targetType: 'scheduled-task',
+      targetId: saved.id,
+      targetLabel: saved.name,
+      changes: {
+        before: { enabled: !saved.enabled },
+        after: {
+          enabled: saved.enabled,
+          nextRunAt: saved.nextRunAt?.toISOString() ?? null,
+        },
+      },
+      metadata: this.buildScheduledTaskAuditMetadata(saved),
+      context,
+    });
+
     return saved;
   }
 
   async delete(
     id: string,
     workspaceId?: string,
+    context?: RequestAuditContext,
   ): Promise<{ deleted: true; id: string }> {
     const scheduledTask = await this.findOneOrFail(id, workspaceId);
     await this.workspacesService.assertWorkspaceWritable(
@@ -197,6 +217,17 @@ export class ScheduledTasksService {
         scheduleName: scheduledTask.name,
         targetTeamId: scheduledTask.targetTeamId,
       },
+    });
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: scheduledTask.workspaceId,
+      action: 'task-schedule.deleted',
+      targetType: 'scheduled-task',
+      targetId: scheduledTask.id,
+      targetLabel: scheduledTask.name,
+      metadata: this.buildScheduledTaskAuditMetadata(scheduledTask),
+      context,
     });
 
     return {
@@ -681,7 +712,7 @@ export class ScheduledTasksService {
         targetId: saved.id,
         targetLabel: saved.name,
         metadata: {
-          nodeId: saved.nodeId,
+          ...this.buildScheduledTaskAuditMetadata(saved),
           templateId: saved.templateId,
         },
         context,
@@ -778,9 +809,9 @@ export class ScheduledTasksService {
       targetId: saved.id,
       targetLabel: saved.name,
       metadata: {
+        ...this.buildScheduledTaskAuditMetadata(saved),
         teamId: team.id,
         teamName: team.name,
-        templateId: saved.templateId,
       },
       context,
     });
@@ -798,6 +829,27 @@ export class ScheduledTasksService {
     }
 
     return normalizedNodeIds;
+  }
+
+  private buildScheduledTaskAuditMetadata(
+    scheduledTask: ScheduledTaskEntity,
+  ): Record<string, unknown> {
+    const command = scheduledTask.command;
+    return {
+      scheduleId: scheduledTask.id,
+      scheduleName: scheduledTask.name,
+      nodeId: scheduledTask.nodeId,
+      targetTeamId: scheduledTask.targetTeamId,
+      targetTeamName: scheduledTask.targetTeamName ?? null,
+      templateId: scheduledTask.templateId,
+      runAsRoot: scheduledTask.runAsRoot,
+      command,
+      commandSha256: createHash('sha256').update(command).digest('hex'),
+      commandLength: command.length,
+      commandTruncated: false,
+      cadence: scheduledTask.cadence,
+      timezone: scheduledTask.timezone,
+    };
   }
 
   private async resolveWorkspace(

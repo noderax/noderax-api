@@ -101,6 +101,30 @@ export class RedisService implements OnModuleDestroy {
     await this.client.set(key, serializedValue);
   }
 
+  async setIfAbsent(
+    key: string,
+    value: string | Record<string, unknown>,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
+    if (!this.client) {
+      return false;
+    }
+
+    await this.ensureConnected();
+    if (this.client.status !== 'ready') {
+      return false;
+    }
+
+    const serializedValue =
+      typeof value === 'string' ? value : JSON.stringify(value);
+    const result =
+      ttlSeconds && ttlSeconds > 0
+        ? await this.client.set(key, serializedValue, 'EX', ttlSeconds, 'NX')
+        : await this.client.set(key, serializedValue, 'NX');
+
+    return result === 'OK';
+  }
+
   async get(key: string): Promise<string | null> {
     if (!this.client) {
       return null;

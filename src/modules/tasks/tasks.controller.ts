@@ -30,11 +30,11 @@ import { TasksService } from './tasks.service';
   description: 'JWT authentication required.',
 })
 @Controller('tasks')
+@Roles(UserRole.PLATFORM_ADMIN)
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Post()
-  @Roles(UserRole.PLATFORM_ADMIN)
   @ApiOperation({
     summary: 'Create a task',
     description:
@@ -62,7 +62,6 @@ export class TasksController {
   }
 
   @Post('batch')
-  @Roles(UserRole.PLATFORM_ADMIN)
   @ApiOperation({
     summary: 'Create tasks for multiple nodes',
     description:
@@ -135,7 +134,6 @@ export class TasksController {
   }
 
   @Post(':id/cancel')
-  @Roles(UserRole.PLATFORM_ADMIN)
   @ApiOperation({
     summary: 'Request task cancellation',
     description:
@@ -151,7 +149,18 @@ export class TasksController {
   @ApiNotFoundResponse({
     description: 'Task not found.',
   })
-  cancel(@Param('id') id: string, @Body() dto: RequestTaskCancelDto) {
-    return this.tasksService.requestTaskCancellation(id, dto);
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: RequestTaskCancelDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    return this.tasksService.requestTaskCancellation(id, dto, undefined, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 }

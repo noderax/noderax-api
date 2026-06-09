@@ -101,6 +101,11 @@ export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
     process.env.AGENT_STALE_RUNNING_TASK_TIMEOUT_SECONDS,
     1800,
   ),
+  rootAccessMaxDurationMinutes: parsePositiveIntegerWithMin(
+    process.env.AGENT_ROOT_ACCESS_MAX_DURATION_MINUTES,
+    120,
+    5,
+  ),
   enrollmentToken: process.env.AGENT_ENROLLMENT_TOKEN ?? '',
   highCpuThreshold: parseFloat(process.env.AGENT_HIGH_CPU_THRESHOLD ?? '90'),
   publicApiUrl: normalizeUrl(
@@ -112,4 +117,10 @@ export const agentsConfig = registerAs(AGENTS_CONFIG_KEY, () => ({
     process.env.AGENT_INSTALL_SCRIPT_URL,
     'https://cdn.noderax.net/noderax-agent/install.sh',
   ),
+  releaseManifestUrl: normalizeUrl(
+    process.env.AGENT_RELEASE_MANIFEST_URL,
+    'https://cdn.noderax.net/noderax-agent/releases/latest/release-manifest.json',
+  ),
+  releaseMinisignPublicKey:
+    process.env.AGENT_RELEASE_MINISIGN_PUBLIC_KEY?.trim() ?? '',
 }));

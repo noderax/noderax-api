@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { Brackets, Repository } from 'typeorm';
 import {
   isPackageTaskType,
@@ -407,6 +407,7 @@ export class TasksService {
     taskId: string,
     dto: RequestTaskCancelDto,
     workspaceId?: string,
+    context?: import('../../common/types/request-audit-context.type').RequestAuditContext,
   ): Promise<TaskEntity> {
     const task = await this.findOneOrFail(taskId, workspaceId);
     await this.workspacesService.assertWorkspaceWritable(task.workspaceId);
@@ -487,6 +488,28 @@ export class TasksService {
         cancelRequestedAt: savedTask.cancelRequestedAt?.toISOString() ?? null,
       }),
     );
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: savedTask.workspaceId,
+      action: 'task.cancel.requested',
+      targetType: 'task',
+      targetId: savedTask.id,
+      targetLabel: savedTask.type,
+      changes: {
+        before: { status: previousStatus },
+        after: {
+          status: savedTask.status,
+          cancelRequestedAt: savedTask.cancelRequestedAt?.toISOString() ?? null,
+          cancelReason: savedTask.cancelReason,
+        },
+      },
+      metadata: {
+        ...this.buildTaskAuditMetadata(savedTask, undefined),
+        reason: normalizedReason,
+      },
+      context,
+    });
 
     return savedTask;
   }
@@ -1590,8 +1613,7 @@ export class TasksService {
         targetId: savedTask.id,
         targetLabel: savedTask.type,
         metadata: {
-          nodeId: savedTask.nodeId,
-          hostname: node.hostname,
+          ...this.buildTaskAuditMetadata(savedTask, node),
         },
         context,
       });
@@ -1678,6 +1700,37 @@ export class TasksService {
       taskId: task.id,
       taskType: task.type,
       taskStatus: task.status,
+    };
+  }
+
+  private buildTaskAuditMetadata(
+    task: TaskEntity,
+    node?: Pick<NodeEntity, 'hostname'>,
+  ): Record<string, unknown> {
+    const command =
+      typeof task.payload?.command === 'string' ? task.payload.command : null;
+    const commandHash = command
+      ? createHash('sha256').update(command).digest('hex')
+      : null;
+    const runAsRoot = task.payload?.runAsRoot === true;
+
+    return {
+      taskId: task.id,
+      taskType: task.type,
+      taskStatus: task.status,
+      nodeId: task.nodeId,
+      hostname: node?.hostname ?? null,
+      runAsRoot,
+      rootScope:
+        typeof task.payload?.rootScope === 'string'
+          ? task.payload.rootScope
+          : null,
+      command,
+      commandSha256: commandHash,
+      commandLength: command ? command.length : null,
+      commandTruncated: false,
+      templateId: task.templateId ?? null,
+      targetTeamId: task.targetTeamId ?? null,
     };
   }
 

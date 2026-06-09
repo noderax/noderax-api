@@ -11,6 +11,7 @@ import { ConfigService, ConfigType } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { JwtPayload } from '../../common/types/jwt-payload.type';
@@ -25,6 +26,7 @@ import {
   verifyTotpToken,
 } from '../../common/utils/totp.util';
 import { AUTH_CONFIG_KEY, authConfig } from '../../config';
+import { RedisService } from '../../redis/redis.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { UserEntity } from '../users/entities/user.entity';
 import { UserInvitationStatus } from '../users/entities/user-invitation.entity';
@@ -75,6 +77,7 @@ type TerminalConnectTokenPayload = JwtPayload & {
   type: 'terminal_session';
   sessionId: string;
   workspaceId: string;
+  jti: string;
 };
 
 type OidcDiscoveryDocument = {
@@ -131,6 +134,8 @@ async function loadJoseModule() {
 
 @Injectable()
 export class AuthService {
+  private readonly consumedTerminalTokenJtis = new Set<string>();
+
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -142,6 +147,7 @@ export class AuthService {
     @InjectRepository(OidcIdentityEntity)
     private readonly oidcIdentitiesRepository: Repository<OidcIdentityEntity>,
     private readonly auditLogsService: AuditLogsService,
+    private readonly redisService: RedisService,
   ) {}
 
   async login(loginDto: LoginDto): Promise<LoginResponseDto> {
@@ -215,6 +221,7 @@ export class AuthService {
     sessionId: string;
     workspaceId: string;
   }): Promise<{ token: string; expiresAt: string }> {
+    const jti = randomUUID();
     const token = await this.jwtService.signAsync(
       {
         sub: input.user.id,
@@ -225,6 +232,7 @@ export class AuthService {
         type: 'terminal_session',
         sessionId: input.sessionId,
         workspaceId: input.workspaceId,
+        jti,
       } satisfies TerminalConnectTokenPayload,
       {
         expiresIn: TERMINAL_CONNECT_TOKEN_EXPIRY,
@@ -249,9 +257,16 @@ export class AuthService {
       if (
         payload.type !== 'terminal_session' ||
         !payload.sessionId ||
-        !payload.workspaceId
+        !payload.workspaceId ||
+        !payload.jti
       ) {
         throw new UnauthorizedException('Invalid terminal connection token.');
+      }
+
+      if (!(await this.consumeTerminalConnectTokenJti(payload.jti))) {
+        throw new UnauthorizedException(
+          'Terminal connection token has already been used.',
+        );
       }
 
       return {
@@ -262,6 +277,23 @@ export class AuthService {
     } catch (error) {
       throw this.createTokenVerificationException(error);
     }
+  }
+
+  private async consumeTerminalConnectTokenJti(jti: string): Promise<boolean> {
+    const key = `terminal-connect-token:used:${jti}`;
+    if (this.redisService.isEnabled()) {
+      return this.redisService.setIfAbsent(key, '1', 180);
+    }
+
+    if (this.consumedTerminalTokenJtis.has(jti)) {
+      return false;
+    }
+
+    this.consumedTerminalTokenJtis.add(jti);
+    setTimeout(() => {
+      this.consumedTerminalTokenJtis.delete(jti);
+    }, 180_000).unref?.();
+    return true;
   }
 
   async initiateMfaSetup(userId: string): Promise<MfaSetupResponseDto> {

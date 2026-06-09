@@ -335,6 +335,58 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async dispatchAgentTokenRotation(
+    nodeId: string,
+    payload: {
+      agentToken: string;
+      expiresAt: string;
+    },
+  ): Promise<boolean> {
+    try {
+      return await this.emitEventToNode(
+        nodeId,
+        AGENT_REALTIME_SERVER_EVENTS.TOKEN_ROTATE,
+        {
+          type: AGENT_REALTIME_SERVER_EVENTS.TOKEN_ROTATE,
+          agentToken: payload.agentToken,
+          expiresAt: payload.expiresAt,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to dispatch agent token rotation to node ${nodeId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+  }
+
+  async disconnectNode(nodeId: string, reason: string): Promise<boolean> {
+    const socketId = this.nodeToSocketId.get(nodeId);
+    if (!socketId) {
+      const route = await this.getNodeRoute(nodeId);
+      if (!route || route.instanceId === this.instanceId) {
+        return false;
+      }
+
+      await this.redisService.publish(
+        PUBSUB_CHANNELS.AGENT_REALTIME_TERMINAL_CONTROL,
+        {
+          targetInstanceId: route.instanceId,
+          nodeId,
+          event: 'agent.disconnect',
+          payload: { reason },
+        },
+      );
+      return true;
+    }
+
+    const disconnected = this.socketDisconnect?.(socketId) ?? false;
+    if (disconnected) {
+      await this.handleSocketDisconnect(socketId);
+    }
+    return disconnected;
+  }
+
   async ingestRealtimeMetrics(
     socketId: string,
     payload: Omit<AgentMetricsDto, 'nodeId' | 'agentToken'>,
@@ -384,17 +436,44 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
     nodeId: string;
     taskId: string;
     eventType: string;
+    eventId?: string;
+    eventSeq?: number;
     eventTimestamp?: string;
     payload: Record<string, unknown>;
   }): Promise<boolean> {
     const eventTimestamp = input.eventTimestamp
       ? new Date(input.eventTimestamp)
       : new Date();
+    const eventSeq =
+      typeof input.eventSeq === 'number' ? Math.floor(input.eventSeq) : null;
+
+    if (eventSeq !== null) {
+      const latest = await this.lifecycleEventsRepository
+        .createQueryBuilder('event')
+        .select('MAX(event.eventSeq)', 'maxEventSeq')
+        .where('event.nodeId = :nodeId', { nodeId: input.nodeId })
+        .getRawOne<{ maxEventSeq?: string | number | null }>();
+      const maxEventSeq =
+        latest?.maxEventSeq === null || latest?.maxEventSeq === undefined
+          ? null
+          : Number(latest.maxEventSeq);
+
+      if (
+        maxEventSeq !== null &&
+        Number.isFinite(maxEventSeq) &&
+        eventSeq <= maxEventSeq
+      ) {
+        this.incrementCounter('events.stale-seq');
+        return false;
+      }
+    }
 
     const event = this.lifecycleEventsRepository.create({
       nodeId: input.nodeId,
       taskId: input.taskId,
       eventType: input.eventType,
+      eventId: input.eventId ?? null,
+      eventSeq: eventSeq !== null ? String(eventSeq) : null,
       eventTimestamp,
       payload: input.payload,
     });
@@ -598,6 +677,8 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
         return 'dispatch';
       case AGENT_REALTIME_SERVER_EVENTS.ROOT_ACCESS_UPDATED:
         return 'root-access';
+      case AGENT_REALTIME_SERVER_EVENTS.TOKEN_ROTATE:
+        return 'token-rotate';
       default:
         return 'terminal';
     }
@@ -646,6 +727,11 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
 
     const socketId = this.nodeToSocketId.get(message.nodeId);
     if (!socketId || !this.socketEmitter) {
+      return;
+    }
+
+    if (message.event === 'agent.disconnect') {
+      this.socketDisconnect?.(socketId);
       return;
     }
 

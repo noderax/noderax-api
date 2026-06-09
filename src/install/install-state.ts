@@ -59,6 +59,7 @@ export type PlatformUpdateStatus =
   | 'loading_images'
   | 'prepared'
   | 'applying'
+  | 'migrating_database'
   | 'recreating_services'
   | 'completed'
   | 'failed';
@@ -436,6 +437,7 @@ export const readPlatformUpdateState = (): PlatformUpdateState | null => {
       'loading_images',
       'prepared',
       'applying',
+      'migrating_database',
       'recreating_services',
       'completed',
       'failed',

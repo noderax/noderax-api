@@ -103,11 +103,19 @@ export class WorkspaceScheduledTasksController {
     type: ScheduledTaskEntity,
   })
   update(
+    @CurrentUser() user: AuthenticatedUser,
     @Param('workspaceId') workspaceId: string,
     @Param('id') id: string,
     @Body() dto: UpdateScheduledTaskDto,
+    @Req() request: Request,
   ) {
-    return this.scheduledTasksService.updateEnabled(id, dto, workspaceId);
+    return this.scheduledTasksService.updateEnabled(id, dto, workspaceId, {
+      actorType: 'user',
+      actorUserId: user.id,
+      actorEmailSnapshot: user.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 
   @Delete(':id')
@@ -116,7 +124,18 @@ export class WorkspaceScheduledTasksController {
   @ApiOperation({
     summary: 'Delete a scheduled task in a workspace',
   })
-  remove(@Param('workspaceId') workspaceId: string, @Param('id') id: string) {
-    return this.scheduledTasksService.delete(id, workspaceId);
+  remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Req() request: Request,
+  ) {
+    return this.scheduledTasksService.delete(id, workspaceId, {
+      actorType: 'user',
+      actorUserId: user.id,
+      actorEmailSnapshot: user.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 }

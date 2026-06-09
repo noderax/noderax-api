@@ -688,7 +688,12 @@ export class AgentUpdatesService {
 
     if (
       updateState.operation === 'apply' &&
-      ['queued', 'applying', 'recreating_services'].includes(updateState.status)
+      [
+        'queued',
+        'applying',
+        'migrating_database',
+        'recreating_services',
+      ].includes(updateState.status)
     ) {
       throw new ConflictException(
         'A control-plane apply is already in progress. Wait for the platform update to finish before starting an agent rollout.',

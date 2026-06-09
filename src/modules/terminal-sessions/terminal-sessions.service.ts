@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
+import { createHash } from 'crypto';
 import { Repository } from 'typeorm';
 import { PUBSUB_CHANNELS } from '../../common/constants/pubsub.constants';
 import {
@@ -75,6 +76,10 @@ type TerminalSessionMetadataPatch = Partial<
   >
 >;
 
+const TERMINAL_COMMAND_AUDIT_MAX_LENGTH = 8192;
+const DANGEROUS_TERMINAL_SEQUENCE_PATTERN =
+  /\x1b\][\s\S]*?(?:\x07|\x1b\\)|\x1b[P^_][\s\S]*?(?:\x07|\x1b\\)|[\x90\x9d\x9e\x9f][\s\S]*?(?:\x07|\x1b\\)/g;
+
 @Injectable()
 export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TerminalSessionsService.name);
@@ -83,6 +88,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
   private readonly terminationTimers = new Map<string, NodeJS.Timeout>();
   private readonly socketToAttachment = new Map<string, SocketAttachment>();
   private readonly localControllerCounts = new Map<string, number>();
+  private readonly commandBuffers = new Map<string, string>();
   private readonly unsubscribers: Array<() => Promise<void>> = [];
   private cleanupInProgress = false;
 
@@ -200,6 +206,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
         cols: dto.cols ?? 120,
         rows: dto.rows ?? 34,
         runAsRoot,
+        rootAccessGrantId: runAsRoot ? (node.rootAccessGrantId ?? null) : null,
         retentionExpiresAt: this.buildRetentionExpiry(),
         transcriptBytes: '0',
         chunkCount: 0,
@@ -231,6 +238,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
         cols: session.cols,
         rows: session.rows,
         runAsRoot: session.runAsRoot,
+        rootAccessGrantId: session.rootAccessGrantId,
       },
       context,
     });
@@ -480,6 +488,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       direction: TerminalTranscriptDirection.STDIN,
       payload,
     });
+    await this.auditSubmittedTerminalCommands(session, payload, user);
 
     const dispatched = await this.agentRealtimeService.sendTerminalInput(
       session.nodeId,
@@ -630,8 +639,9 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       return null;
     }
 
+    const sanitizedPayload = this.sanitizeTerminalOutputPayload(input.payload);
     const currentBytes = this.readTranscriptBytes(session);
-    const decodedBytes = Buffer.from(input.payload, 'base64').byteLength;
+    const decodedBytes = Buffer.from(sanitizedPayload, 'base64').byteLength;
     if (currentBytes + decodedBytes > TERMINAL_MAX_TRANSCRIPT_BYTES) {
       await this.appendChunk(session, {
         direction: TerminalTranscriptDirection.SYSTEM,
@@ -671,7 +681,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
 
     const chunk = await this.appendChunk(session, {
       direction: input.direction,
-      payload: input.payload,
+      payload: sanitizedPayload,
       sourceTimestamp: this.parseOptionalDate(input.timestamp) ?? undefined,
     });
 
@@ -832,6 +842,7 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     this.clearPendingOpenTimer(session.id);
     this.clearDetachTimer(session.id);
     this.clearTerminationTimer(session.id);
+    this.commandBuffers.delete(session.id);
 
     session.status = input.status;
     session.closedAt = input.closedAt ?? new Date();
@@ -1039,6 +1050,82 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
     return transactionResult.chunk;
   }
 
+  private sanitizeTerminalOutputPayload(payload: string): string {
+    const decoded = Buffer.from(payload, 'base64').toString('utf8');
+    const sanitized = decoded.replace(DANGEROUS_TERMINAL_SEQUENCE_PATTERN, '');
+    return Buffer.from(sanitized, 'utf8').toString('base64');
+  }
+
+  private async auditSubmittedTerminalCommands(
+    session: TerminalSessionEntity,
+    payload: string,
+    user: AuthenticatedUser,
+  ): Promise<void> {
+    const decoded = Buffer.from(payload, 'base64').toString('utf8');
+    if (!decoded) {
+      return;
+    }
+
+    let buffer = this.commandBuffers.get(session.id) ?? '';
+    for (const char of decoded) {
+      if (char === '\r' || char === '\n') {
+        const command = buffer.trim();
+        buffer = '';
+        if (command) {
+          await this.recordSubmittedTerminalCommand(session, command, user);
+        }
+        continue;
+      }
+
+      if (char === '\b' || char === '\x7f') {
+        buffer = buffer.slice(0, -1);
+        continue;
+      }
+
+      if (char === '\t' || char >= ' ') {
+        buffer += char;
+      }
+    }
+
+    this.commandBuffers.set(session.id, buffer);
+  }
+
+  private async recordSubmittedTerminalCommand(
+    session: TerminalSessionEntity,
+    command: string,
+    user: AuthenticatedUser,
+  ): Promise<void> {
+    const commandSha256 = createHash('sha256').update(command).digest('hex');
+    const truncated = command.length > TERMINAL_COMMAND_AUDIT_MAX_LENGTH;
+    const storedCommand = truncated
+      ? command.slice(0, TERMINAL_COMMAND_AUDIT_MAX_LENGTH)
+      : command;
+
+    await this.auditLogsService.record({
+      scope: 'workspace',
+      workspaceId: session.workspaceId,
+      action: 'terminal.command.submitted',
+      targetType: 'terminal_session',
+      targetId: session.id,
+      targetLabel: session.nodeId,
+      metadata: {
+        nodeId: session.nodeId,
+        sessionId: session.id,
+        runAsRoot: session.runAsRoot,
+        rootAccessGrantId: session.rootAccessGrantId,
+        command: storedCommand,
+        commandSha256,
+        commandLength: command.length,
+        commandTruncated: truncated,
+      },
+      context: {
+        actorType: 'user',
+        actorUserId: user.id,
+        actorEmailSnapshot: user.email,
+      },
+    });
+  }
+
   private readTranscriptBytes(session: TerminalSessionEntity): number {
     const raw = Number(session.transcriptBytes ?? 0);
     return Number.isFinite(raw) && raw >= 0 ? raw : 0;
@@ -1154,6 +1241,8 @@ export class TerminalSessionsService implements OnModuleInit, OnModuleDestroy {
       exitCode: session.exitCode,
       cols: session.cols,
       rows: session.rows,
+      runAsRoot: session.runAsRoot,
+      rootAccessGrantId: session.rootAccessGrantId,
       retentionExpiresAt: session.retentionExpiresAt.toISOString(),
       createdAt: session.createdAt.toISOString(),
       updatedAt: session.updatedAt.toISOString(),

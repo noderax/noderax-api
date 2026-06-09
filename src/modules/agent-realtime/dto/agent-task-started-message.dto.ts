@@ -2,9 +2,11 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Min,
 } from 'class-validator';
 
 export class AgentTaskStartedMessageDto {
@@ -47,4 +49,13 @@ export class AgentTaskStartedMessageDto {
   @IsOptional()
   @IsDateString()
   timestamp?: string;
+
+  @IsOptional()
+  @IsUUID()
+  eventId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  eventSeq?: number;
 }

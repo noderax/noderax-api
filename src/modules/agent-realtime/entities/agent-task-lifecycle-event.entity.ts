@@ -7,6 +7,12 @@ import {
 } from 'typeorm';
 
 @Index('IDX_agent_task_lifecycle_task_created', ['taskId', 'createdAt'])
+@Index('UQ_agent_task_lifecycle_node_event_id', ['nodeId', 'eventId'], {
+  unique: true,
+})
+@Index('UQ_agent_task_lifecycle_node_event_seq', ['nodeId', 'eventSeq'], {
+  unique: true,
+})
 @Index(
   'UQ_agent_task_lifecycle_idempotency',
   ['taskId', 'eventType', 'eventTimestamp'],
@@ -27,6 +33,12 @@ export class AgentTaskLifecycleEventEntity {
 
   @Column({ length: 64 })
   eventType: string;
+
+  @Column({ length: 64, nullable: true })
+  eventId?: string | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  eventSeq?: string | null;
 
   @Column({ type: 'timestamptz' })
   eventTimestamp: Date;

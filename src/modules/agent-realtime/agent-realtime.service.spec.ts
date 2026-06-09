@@ -30,6 +30,7 @@ describe('AgentRealtimeService', () => {
     lifecycleRepository = {
       create: jest.fn((value) => value),
       save: jest.fn(),
+      createQueryBuilder: jest.fn(),
     } as unknown as jest.Mocked<Repository<AgentTaskLifecycleEventEntity>>;
 
     nodesService = {
@@ -128,6 +129,27 @@ describe('AgentRealtimeService', () => {
 
     expect(first).toBe(true);
     expect(second).toBe(false);
+  });
+
+  it('rejects stale lifecycle events using per-node event sequence', async () => {
+    lifecycleRepository.createQueryBuilder.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn().mockResolvedValue({ maxEventSeq: '42' }),
+    } as any);
+
+    const accepted = await service.registerLifecycleEvent({
+      nodeId: 'node-1',
+      taskId: 'task-1',
+      eventType: 'task.log',
+      eventId: '018f6d96-7c08-7c0d-9a5a-000000000001',
+      eventSeq: 41,
+      eventTimestamp: '2026-03-20T12:00:00.000Z',
+      payload: { type: 'task.log' },
+    });
+
+    expect(accepted).toBe(false);
+    expect(lifecycleRepository.save).not.toHaveBeenCalled();
   });
 
   it('dispatches protocol-compliant task envelope to local socket', async () => {

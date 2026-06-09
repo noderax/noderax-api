@@ -41,6 +41,7 @@ export class RealtimeGateway
   server: Server;
 
   private readonly logger = new Logger(RealtimeGateway.name);
+  private sequence = 0;
 
   constructor(
     private readonly realtimeAuthService: RealtimeAuthService,
@@ -57,7 +58,7 @@ export class RealtimeGateway
 
     this.server
       .to(`${REALTIME_WORKSPACE_ROOM_PREFIX}${payload.workspaceId}`)
-      .emit(eventName, payload);
+      .emit(eventName, this.withRealtimeMeta(payload));
   }
 
   private emitToNodeRoom(eventName: string, payload: Record<string, unknown>) {
@@ -67,7 +68,30 @@ export class RealtimeGateway
 
     this.server
       .to(`${REALTIME_NODE_ROOM_PREFIX}${payload.nodeId}`)
-      .emit(eventName, payload);
+      .emit(eventName, this.withRealtimeMeta(payload));
+  }
+
+  private withRealtimeMeta(payload: Record<string, unknown>) {
+    if (typeof payload.sequence !== 'number') {
+      payload.sequence = ++this.sequence;
+    }
+    const sequence = payload.sequence;
+    const sourceInstance =
+      typeof payload.sourceInstance === 'string'
+        ? payload.sourceInstance
+        : typeof payload.sourceInstanceId === 'string'
+          ? payload.sourceInstanceId
+          : undefined;
+    if (sourceInstance) {
+      payload.sourceInstance = sourceInstance;
+    }
+
+    payload.meta = {
+      ...((payload.meta as Record<string, unknown> | undefined) ?? {}),
+      sequence,
+      sourceInstance,
+    };
+    return payload;
   }
 
   afterInit(server: Server) {

@@ -83,6 +83,16 @@ export const validationSchema = Joi.object({
   AGENT_INSTALL_SCRIPT_URL: Joi.string()
     .uri()
     .default('https://cdn.noderax.net/noderax-agent/install.sh'),
+  AGENT_RELEASE_MANIFEST_URL: Joi.string()
+    .uri()
+    .default(
+      'https://cdn.noderax.net/noderax-agent/releases/latest/release-manifest.json',
+    ),
+  AGENT_RELEASE_MINISIGN_PUBLIC_KEY: Joi.string().allow('').default(''),
+  AGENT_ROOT_ACCESS_MAX_DURATION_MINUTES: Joi.number()
+    .integer()
+    .min(5)
+    .default(120),
 
   // Bootstrap
   SEED_DEFAULT_ADMIN: Joi.boolean().default(false),

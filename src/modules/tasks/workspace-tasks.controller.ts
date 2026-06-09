@@ -173,7 +173,15 @@ export class WorkspaceTasksController {
     @Param('workspaceId') workspaceId: string,
     @Param('id') id: string,
     @Body() dto: RequestTaskCancelDto,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
   ) {
-    return this.tasksService.requestTaskCancellation(id, dto, workspaceId);
+    return this.tasksService.requestTaskCancellation(id, dto, workspaceId, {
+      actorType: 'user',
+      actorUserId: actor.id,
+      actorEmailSnapshot: actor.email,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
   }
 }

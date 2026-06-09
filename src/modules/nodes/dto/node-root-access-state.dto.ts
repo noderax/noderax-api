@@ -20,6 +20,22 @@ export class NodeRootAccessDesiredSnapshotDto {
   @IsOptional()
   @IsISO8601()
   updatedAt?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsISO8601()
+  expiresAt?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  grantId?: string | null;
 }
 
 export class NodeRootAccessAgentReportDto {

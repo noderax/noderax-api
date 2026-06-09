@@ -81,6 +81,10 @@ export class TerminalSessionEntity {
   @Column({ type: 'boolean', default: false })
   runAsRoot: boolean;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true })
+  rootAccessGrantId: string | null;
+
   @ApiProperty({ format: 'date-time' })
   @Column({ type: 'timestamptz' })
   retentionExpiresAt: Date;

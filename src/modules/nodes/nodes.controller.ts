@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -40,6 +41,7 @@ import { NodesService } from './nodes.service';
   description: 'JWT authentication required.',
 })
 @Controller('nodes')
+@Roles(UserRole.PLATFORM_ADMIN)
 export class NodesController {
   constructor(
     private readonly nodesService: NodesService,
@@ -78,7 +80,6 @@ export class NodesController {
     return this.nodesService.findOneOrFail(id);
   }
 
-  @Roles(UserRole.PLATFORM_ADMIN)
   @Post()
   @ApiOperation({
     summary: 'Create a node manually',
@@ -96,7 +97,6 @@ export class NodesController {
     return this.nodesService.create(createNodeDto);
   }
 
-  @Roles(UserRole.PLATFORM_ADMIN)
   @Post(':id/team')
   assignTeam(
     @Param('id') id: string,
@@ -119,7 +119,6 @@ export class NodesController {
     );
   }
 
-  @Roles(UserRole.PLATFORM_ADMIN)
   @Post(':id/maintenance/enable')
   enableMaintenance(
     @Param('id') id: string,
@@ -142,7 +141,6 @@ export class NodesController {
     );
   }
 
-  @Roles(UserRole.PLATFORM_ADMIN)
   @Post(':id/maintenance/disable')
   disableMaintenance(
     @Param('id') id: string,
@@ -158,7 +156,6 @@ export class NodesController {
     });
   }
 
-  @Roles(UserRole.PLATFORM_ADMIN)
   @Post(':id/root-access')
   async updateRootAccess(
     @Param('id') id: string,
@@ -188,7 +185,79 @@ export class NodesController {
     return node;
   }
 
-  @Roles(UserRole.PLATFORM_ADMIN)
+  @Post(':id/agent-token/rotate')
+  async rotateAgentToken(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    const hasRoute = await this.agentRealtimeService.hasActiveNodeRoute(id);
+    if (!hasRoute) {
+      throw new ConflictException(
+        'Agent token rotation requires an active realtime route. Revoke and re-enroll offline nodes.',
+      );
+    }
+
+    const rotation = await this.nodesService.stageAgentTokenRotation(
+      id,
+      undefined,
+      actor,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+
+    const delivered =
+      await this.agentRealtimeService.dispatchAgentTokenRotation(
+        rotation.node.id,
+        {
+          agentToken: rotation.agentToken,
+          expiresAt: rotation.expiresAt.toISOString(),
+        },
+      );
+
+    if (!delivered) {
+      await this.nodesService.clearPendingAgentTokenRotation(rotation.node.id);
+      throw new ConflictException(
+        'Agent token rotation could not be delivered over realtime.',
+      );
+    }
+
+    return {
+      nodeId: rotation.node.id,
+      expiresAt: rotation.expiresAt.toISOString(),
+    };
+  }
+
+  @Post(':id/agent-token/revoke')
+  async revokeAgentToken(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Req() request: Request,
+  ) {
+    const node = await this.nodesService.revokeAgentToken(
+      id,
+      undefined,
+      actor,
+      {
+        actorType: 'user',
+        actorUserId: actor.id,
+        actorEmailSnapshot: actor.email,
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+    await this.agentRealtimeService.disconnectNode(
+      node.id,
+      'agent-token-revoked',
+    );
+    return node;
+  }
+
   @Post(':id/notifications')
   updateNotifications(
     @Param('id') id: string,
@@ -211,7 +280,6 @@ export class NodesController {
     );
   }
 
-  @Roles(UserRole.PLATFORM_ADMIN)
   @Delete(':id')
   @ApiOperation({
     summary: 'Delete a node',
