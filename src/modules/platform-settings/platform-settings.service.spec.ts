@@ -19,6 +19,11 @@ let installSecretsValue: {
 
 jest.mock('../../install/install-state', () => ({
   INSTALLER_MANAGED_FLAG: 'NODERAX_INSTALLER_MANAGED',
+  isInstallerManagedDeployment: jest.fn(
+    () =>
+      process.env.NODERAX_INSTALLER_MANAGED === 'true' ||
+      Boolean(installStateValue),
+  ),
   readInstallState: jest.fn(() => installStateValue),
   readInstallSecrets: jest.fn(() => installSecretsValue),
   readManagedInstallEnv: jest.fn(
@@ -86,7 +91,13 @@ describe('PlatformSettingsService', () => {
     delete process.env.NODERAX_RUNTIME_ROLE;
     jest.clearAllMocks();
     jest.useRealTimers();
-    service = new PlatformSettingsService(auditLogsService as never);
+    const dataSource = {
+      query: jest.fn().mockResolvedValue([]),
+    };
+    service = new PlatformSettingsService(
+      auditLogsService as never,
+      dataSource as never,
+    );
   });
 
   afterAll(() => {

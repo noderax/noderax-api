@@ -26,6 +26,7 @@ import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import { UserRole } from '../users/entities/user-role.enum';
+import { DataUsageResponseDto } from './dto/data-usage.dto';
 import {
   PlatformApiRestartResponseDto,
   PlatformSettingsResponseDto,
@@ -76,6 +77,21 @@ export class PlatformSettingsController {
     @Body() dto: UpdatePlatformSettingsDto,
   ): PlatformSettingsResponseDto {
     return this.platformSettingsService.updateSettings(dto, actor);
+  }
+
+  @Get('data-usage')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary: 'Get database storage usage',
+    description:
+      'Returns per-table on-disk size and estimated row counts plus total database size.',
+  })
+  @ApiOkResponse({
+    description: 'Database storage usage snapshot.',
+    type: DataUsageResponseDto,
+  })
+  getDataUsage(): Promise<DataUsageResponseDto> {
+    return this.platformSettingsService.getDataUsage();
   }
 
   @Post('validate/smtp')

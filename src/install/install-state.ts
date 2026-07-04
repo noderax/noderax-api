@@ -289,6 +289,9 @@ export const readInstallState = (): InstallState | null => {
 
 export const hasInstallState = () => existsSync(getInstallStatePath());
 
+export const isInstallerManagedDeployment = () =>
+  process.env[INSTALLER_MANAGED_FLAG] === 'true' || Boolean(readInstallState());
+
 export const readManagedInstallEnv = (state: InstallState) =>
   state.managedEnv ?? state.runtimeEnv ?? {};
 

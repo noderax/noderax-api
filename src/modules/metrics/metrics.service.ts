@@ -121,6 +121,17 @@ export class MetricsService {
     return metricsQuery.getMany();
   }
 
+  async deleteMetricsOlderThan(days: number): Promise<number> {
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+    const result = await this.metricsRepository
+      .createQueryBuilder()
+      .delete()
+      .where('"recordedAt" < :cutoff', { cutoff })
+      .execute();
+
+    return result.affected ?? 0;
+  }
+
   private resolvePercentageMetric(
     directValue: number | undefined,
     nestedValue: Record<string, unknown> | undefined,

@@ -4,11 +4,14 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { MailSettingsDto } from '../../common/dto/mail-settings.dto';
+import { DataUsageResponseDto } from './dto/data-usage.dto';
 import { ValidateSmtpResponseDto } from '../../common/dto/validate-smtp-response.dto';
 import { AuthenticatedUser } from '../../common/types/authenticated-user.type';
 import {
   INSTALLER_MANAGED_FLAG,
+  isInstallerManagedDeployment,
   writePlatformApiRestartRequestState,
   readInstallSecrets,
   readManagedInstallEnv,
@@ -86,10 +89,44 @@ export class PlatformSettingsService {
   private readonly logger = new Logger(PlatformSettingsService.name);
   private restartScheduled = false;
 
-  constructor(private readonly auditLogsService: AuditLogsService) {}
+  constructor(
+    private readonly auditLogsService: AuditLogsService,
+    private readonly dataSource: DataSource,
+  ) {}
 
   getSettings(): PlatformSettingsResponseDto {
     return this.buildResponse();
+  }
+
+  async getDataUsage(): Promise<DataUsageResponseDto> {
+    const tableRows = (await this.dataSource.query(`
+      SELECT c.relname AS "table",
+             pg_total_relation_size(c.oid)::bigint AS "totalBytes",
+             GREATEST(c.reltuples, 0)::bigint AS "estimatedRows"
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relkind = 'r'
+      ORDER BY pg_total_relation_size(c.oid) DESC
+    `)) as Array<{
+      table: string;
+      totalBytes: string | number;
+      estimatedRows: string | number;
+    }>;
+
+    const dbSizeRows = (await this.dataSource.query(
+      `SELECT pg_database_size(current_database())::bigint AS "size"`,
+    )) as Array<{ size: string | number }>;
+
+    return {
+      totalDatabaseBytes: Number(dbSizeRows[0]?.size ?? 0),
+      rowsAreEstimated: true,
+      tables: tableRows.map((row) => ({
+        table: row.table,
+        totalBytes: Number(row.totalBytes ?? 0),
+        estimatedRows: Number(row.estimatedRows ?? 0),
+      })),
+    };
   }
 
   updateSettings(
@@ -283,10 +320,7 @@ export class PlatformSettingsService {
   }
 
   private isEditableDeployment() {
-    return (
-      process.env[INSTALLER_MANAGED_FLAG] === 'true' ||
-      Boolean(readInstallState())
-    );
+    return isInstallerManagedDeployment();
   }
 
   private shouldUseClusterRestart() {

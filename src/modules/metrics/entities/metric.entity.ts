@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 
 @Entity({ name: 'metrics' })
+@Index('IDX_metrics_workspace_recorded_at', ['workspaceId', 'recordedAt'])
 export class MetricEntity {
   @ApiProperty({
     format: 'uuid',
