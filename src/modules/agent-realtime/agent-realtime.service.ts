@@ -75,8 +75,8 @@ export class AgentRealtimeService implements OnModuleInit, OnModuleDestroy {
   private realtimePingCheckIntervalSeconds = 5;
   private enableRealtimeTaskDispatch = false;
   private socketEmitter:
-    | ((socketId: string, event: string, payload: unknown) => boolean)
-    | null = null;
+    ((socketId: string, event: string, payload: unknown) => boolean) | null =
+    null;
 
   constructor(
     @InjectRepository(AgentTaskLifecycleEventEntity)

@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import * as request from 'supertest';
+import request from 'supertest';
 import { MailerService } from '../src/modules/notifications/mailer.service';
 import { ScheduledTaskEntity } from '../src/modules/tasks/entities/scheduled-task.entity';
 import { apiPath } from './helpers/api-path';

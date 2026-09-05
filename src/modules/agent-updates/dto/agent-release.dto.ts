@@ -1,8 +1,4 @@
-import {
-  ApiProperty,
-  ApiPropertyOptional,
-  getSchemaPath,
-} from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AGENT_RELEASE_CHANNELS } from '../entities/agent-update-statuses';
 
 export class AgentReleaseArtifactDto {
@@ -68,8 +64,8 @@ export class AgentReleaseDto {
   channel: 'tag';
 
   @ApiProperty({
-    type: 'array',
-    items: { $ref: getSchemaPath(AgentReleaseNotesSectionDto) },
+    type: AgentReleaseNotesSectionDto,
+    isArray: true,
   })
   notes: AgentReleaseNotesSectionDto[];
 

@@ -733,3 +733,7 @@ Dependency hardening notes:
 - The bundled installer and platform-settings flows are designed for writable persistent storage.
 - Workspace-scoped routes are the primary surface for the current web app.
 - Legacy env-driven installs are still supported, but new installs should prefer the setup flow.
+
+## Dependency updates (2026-09-05)
+
+Use Node.js 24.15+ and pnpm 10.33.0. TypeScript stays on 6.0.x because ts-jest requires <7 and typescript-eslint requires <6.1. NestJS stays on 11.x because the current throttler does not declare NestJS 12 support. TypeORM stays on 0.3.x because 1.x schema introspection is incompatible with the pg-mem E2E database; ioredis stays on 5.x to match TypeORM's peer range. ESLint uses flat configuration. Security overrides live in pnpm-workspace.yaml.

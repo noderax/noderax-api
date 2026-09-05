@@ -11,7 +11,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import * as compression from 'compression';
+import compression from 'compression';
 import helmet from 'helmet';
 import { DataType, newDb } from 'pg-mem';
 import { randomUUID } from 'crypto';

@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import * as request from 'supertest';
+import request from 'supertest';
 import { EventsService } from '../src/modules/events/events.service';
 import { EventSeverity } from '../src/modules/events/entities/event-severity.enum';
 import { MailerService } from '../src/modules/notifications/mailer.service';

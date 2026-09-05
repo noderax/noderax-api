@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import * as request from 'supertest';
+import request from 'supertest';
 import { EnrollmentEntity } from '../src/modules/enrollments/entities/enrollment.entity';
 import { EnrollmentTokensService } from '../src/modules/enrollments/enrollment-tokens.service';
 import { NodeInstallEntity } from '../src/modules/enrollments/entities/node-install.entity';
@@ -373,7 +373,7 @@ describe('Enrollments (e2e)', () => {
       'https://cdn.example.com/noderax-agent/install.sh',
     );
     expect(createInstall.body.installCommand).toContain(
-      "curl -fsSL 'https://cdn.example.com/noderax-agent/install.sh'",
+      'curl -fsSLo "$tmp/install.sh" \'https://cdn.example.com/noderax-agent/install.sh\'',
     );
 
     const bootstrapToken = extractBootstrapToken(

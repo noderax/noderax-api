@@ -63,10 +63,7 @@ export class SetupService {
     }
 
     const bootMode = process.env[BOOT_MODE_ENV] as
-      | 'setup'
-      | 'installed'
-      | 'legacy'
-      | undefined;
+      'setup' | 'installed' | 'legacy' | undefined;
 
     switch (bootMode) {
       case 'installed':

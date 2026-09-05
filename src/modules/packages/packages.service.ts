@@ -19,9 +19,7 @@ const PACKAGE_WAIT_POLL_INTERVAL_MS = 250;
 const PACKAGE_RECENT_TASK_SCAN_LIMIT = 50;
 
 type PackageReadResponse =
-  | ListPackagesResponseDto
-  | SearchPackagesResponseDto
-  | PackageTaskAcceptedDto;
+  ListPackagesResponseDto | SearchPackagesResponseDto | PackageTaskAcceptedDto;
 
 export interface PackageHttpResponse<T extends PackageReadResponse> {
   statusCode: HttpStatus.OK | HttpStatus.ACCEPTED;
@@ -144,8 +142,7 @@ export class PackagesService {
     input: {
       nodeId: string;
       operation:
-        | typeof TASK_TYPES.PACKAGE_LIST
-        | typeof TASK_TYPES.PACKAGE_SEARCH;
+        typeof TASK_TYPES.PACKAGE_LIST | typeof TASK_TYPES.PACKAGE_SEARCH;
       term: string | null;
     },
   ): Promise<

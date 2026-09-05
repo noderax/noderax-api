@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { DataSource } from 'typeorm';
 import { TASK_TYPES } from '../src/common/constants/task-types.constants';

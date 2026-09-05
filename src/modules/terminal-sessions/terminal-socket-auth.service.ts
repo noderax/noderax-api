@@ -27,8 +27,7 @@ export class TerminalSocketAuthService {
 
   private extractAccessToken(client: Socket): string | null {
     const handshakeAuth = client.handshake.auth as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const tokenFromAuth = this.normalizeToken(
       handshakeAuth?.token ??
         handshakeAuth?.accessToken ??

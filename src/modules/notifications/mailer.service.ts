@@ -123,8 +123,7 @@ export class MailerService {
     }
 
     const activeTransporter = this.transporter as
-      | (Transporter & { close?: () => void })
-      | null;
+      (Transporter & { close?: () => void }) | null;
     activeTransporter?.close?.();
 
     this.transporter = settings.jsonTransport

@@ -8,11 +8,7 @@ import {
 } from 'typeorm';
 
 export type OutboxEventStatus =
-  | 'pending'
-  | 'processing'
-  | 'failed'
-  | 'delivered'
-  | 'dead_letter';
+  'pending' | 'processing' | 'failed' | 'delivered' | 'dead_letter';
 
 @Entity({ name: 'outbox_events' })
 @Index('IDX_outbox_events_status_available_at', ['status', 'availableAt'])

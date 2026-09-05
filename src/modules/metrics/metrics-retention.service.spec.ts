@@ -86,7 +86,10 @@ describe('MetricsRetentionService', () => {
   it('persists updated settings and reads them back live', () => {
     const { service } = buildService();
 
-    const updated = service.updateSettings({ enabled: true, retentionDays: 45 });
+    const updated = service.updateSettings({
+      enabled: true,
+      retentionDays: 45,
+    });
 
     expect(updated.enabled).toBe(true);
     expect(updated.retentionDays).toBe(45);

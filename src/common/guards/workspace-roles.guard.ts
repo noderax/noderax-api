@@ -22,9 +22,7 @@ export class WorkspaceRolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user as AuthenticatedUser | undefined;
     const membership = request.workspaceMembership as
-      | WorkspaceMembershipEntity
-      | null
-      | undefined;
+      WorkspaceMembershipEntity | null | undefined;
 
     if (!user) {
       return false;

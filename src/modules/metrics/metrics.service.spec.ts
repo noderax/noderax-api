@@ -18,7 +18,7 @@ describe('MetricsService', () => {
   it('emits realtime metrics immediately even when outbox is available', async () => {
     const metricsRepository: MockRepository<MetricEntity> = {
       create: jest.fn((value) => value),
-      save: jest.fn(async (value) => ({
+      save: jest.fn(async (value: Partial<MetricEntity>) => ({
         id: 'metric-1',
         recordedAt: new Date('2026-04-13T13:00:00.000Z'),
         ...value,

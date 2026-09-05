@@ -10,7 +10,8 @@ export class UpdateMetricsRetentionDto {
   enabled: boolean;
 
   @ApiProperty({
-    description: 'Delete metrics whose recordedAt is older than this many days.',
+    description:
+      'Delete metrics whose recordedAt is older than this many days.',
     example: 30,
     minimum: 1,
     maximum: 3650,

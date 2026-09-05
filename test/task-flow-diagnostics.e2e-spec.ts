@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { MailerService } from '../src/modules/notifications/mailer.service';
 import { apiPath } from './helpers/api-path';
 import { createE2eApp } from './helpers/e2e-app.factory';

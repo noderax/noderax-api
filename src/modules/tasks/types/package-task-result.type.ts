@@ -35,12 +35,10 @@ export interface NormalizedPackageMutationTaskResult {
 }
 
 export type NormalizedPackageReadTaskResult =
-  | NormalizedPackageListTaskResult
-  | NormalizedPackageSearchTaskResult;
+  NormalizedPackageListTaskResult | NormalizedPackageSearchTaskResult;
 
 export type NormalizedPackageTaskResult =
-  | NormalizedPackageReadTaskResult
-  | NormalizedPackageMutationTaskResult;
+  NormalizedPackageReadTaskResult | NormalizedPackageMutationTaskResult;
 
 export function isPackageReadOperation(
   operation: PackageReadTaskType | string,

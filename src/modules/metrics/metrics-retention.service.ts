@@ -255,9 +255,7 @@ export class MetricsRetentionService implements OnModuleInit, OnModuleDestroy {
 
   private readRetentionEnv(): Record<string, string | undefined> {
     const installState = readInstallState();
-    const managedEnv = installState
-      ? readManagedInstallEnv(installState)
-      : {};
+    const managedEnv = installState ? readManagedInstallEnv(installState) : {};
 
     return {
       [RETENTION_ENABLED_ENV_KEY]:
@@ -287,7 +285,10 @@ export class MetricsRetentionService implements OnModuleInit, OnModuleDestroy {
   }
 
   private clampRetentionDays(value: number): number {
-    return Math.min(Math.max(Math.trunc(value), MIN_RETENTION_DAYS), MAX_RETENTION_DAYS);
+    return Math.min(
+      Math.max(Math.trunc(value), MIN_RETENTION_DAYS),
+      MAX_RETENTION_DAYS,
+    );
   }
 
   private parseBoolean(value: string | undefined, fallback: boolean): boolean {
